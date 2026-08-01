@@ -1,0 +1,20 @@
+# Environment & Sensitive Config
+.env
+
+# Dependencies
+node_modules/
+
+# WhatsApp Session Data & Caches (Güvenlik için Git'e YÜKLENMEZ)
+whatsapp/session/
+.wwebjs_cache
+.cache/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
