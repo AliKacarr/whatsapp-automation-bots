@@ -7,10 +7,10 @@ Bu depo, WhatsApp gruplarında **anket gönderme**, **otomatik mesaj gönderme**
 ## 1. Anket Gönderme (2 Yöntem)
 
 ### Yöntem 1: Node.js Baileys Botu (Otomatik & Web Panelli)
-- **Açıklama**: Browser (Chrome/Puppeteer) gerektirmeyen, ultra hafif (~25MB RAM) Node.js altyapısıdır. Her gün saat **09:00 (TSİ)** 'da belirlediğiniz WhatsApp grubuna otomatik anket gönderir.
+- **Açıklama**: Browser (Chrome/Puppeteer) gerektirmeyen, ultra hafif (~25MB RAM) Node.js altyapısıdır. Belirlenen saatte (varsayılan: her gün 09:00 TSİ) WhatsApp grubunuza otomatik anket gönderir.
 - **`.env` Yapılandırması**: Proje dizininde `.env` dosyası oluşturup aşağıdaki bilgileri tanımlayın:
   ```env
-  WHATSAPP_GROUP_ID=120363026183848751@g.us
+  WHATSAPP_GROUP_ID=123456789012345678@g.us
   PING_URL=https://your-site.onrender.com/api/health
   PORT=3000
   ```
