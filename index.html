@@ -228,16 +228,30 @@
       <button id="sendPollBtn" class="btn btn-primary" onclick="triggerSendPoll()">
         🗳️ Anketi Şimdi Gönder
       </button>
+      <button id="showGroupsBtn" class="btn btn-info" onclick="loadGroupsList()">
+        📋 Grupları & JID Listesini Göster
+      </button>
       <button class="btn btn-secondary" onclick="triggerRestart()">
         🔄 Oturumu Sıfırla / Yeniden Başlat
       </button>
+    </div>
+
+    <!-- Gruplar Modal -->
+    <div id="groupsModal" style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.8); z-index:99; backdrop-filter: blur(8px); padding:20px;">
+      <div style="max-width: 480px; margin: 40px auto; background: #1e293b; border: 1px solid var(--border-color); border-radius: 20px; padding: 24px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.6);">
+        <h3 style="margin-bottom: 8px; font-size: 18px; color: #fff;">📋 Gruplarınız & JID Kodları</h3>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">.env dosyasındaki <b>WHATSAPP_GROUP_ID</b> için Kopyala butonuna basın.</p>
+        <div id="groupsListArea"></div>
+        <button class="btn btn-secondary" style="margin-top: 16px;" onclick="closeGroupsModal()">Kapat</button>
+      </div>
     </div>
 
     <div id="toastMsg" class="toast"></div>
   </div>
 
   <script>
-    let currentStatus = '';
+    let lastRenderedStatus = '';
+    let currentQrDataUrl = '';
 
     async function checkStatus() {
       try {
@@ -250,10 +264,10 @@
     }
 
     function renderState(data) {
-      currentStatus = data.status;
       const badge = document.getElementById('statusBadge');
       const content = document.getElementById('contentArea');
       const sendBtn = document.getElementById('sendPollBtn');
+      const showGroupsBtn = document.getElementById('showGroupsBtn');
       const lastSentRow = document.getElementById('lastSentRow');
       const lastSentTime = document.getElementById('lastSentTime');
 
@@ -267,55 +281,96 @@
         badge.innerHTML = '✅ WhatsApp Bağlı ve Aktif';
         sendBtn.disabled = false;
         sendBtn.style.opacity = '1';
+        if (showGroupsBtn) {
+          showGroupsBtn.disabled = false;
+          showGroupsBtn.style.opacity = '1';
+        }
 
-        content.innerHTML = `
-          <div style="padding: 10px 0;">
-            <div style="font-size: 48px; margin-bottom: 8px;">✅</div>
-            <h3 style="font-size: 18px;">Oturum Açıldı</h3>
-            <p style="color: var(--text-muted); font-size: 14px; margin-top: 4px;">
-              ${data.userInfo?.pushname ? 'Hoş geldin, <b>' + data.userInfo.pushname + '</b>' : 'Oturum aktif'}
-            </p>
-          </div>
-        `;
+        if (lastRenderedStatus !== 'READY') {
+          content.innerHTML = `
+            <div style="padding: 10px 0;">
+              <div style="font-size: 48px; margin-bottom: 8px;">✅</div>
+              <h3 style="font-size: 18px;">Oturum Açıldı</h3>
+              <p style="color: var(--text-muted); font-size: 14px; margin-top: 4px;">
+                ${data.userInfo?.pushname ? 'Hoş geldin, <b>' + data.userInfo.pushname + '</b>' : 'Oturum aktif'}
+              </p>
+            </div>
+          `;
+          lastRenderedStatus = 'READY';
+        }
       } else if (data.status === 'WAITING_FOR_QR' && data.qrDataUrl) {
         badge.className = 'badge badge-waiting';
         badge.innerHTML = '📲 QR Veya Kod İle Giriş Bekleniyor';
         sendBtn.disabled = true;
         sendBtn.style.opacity = '0.5';
+        if (showGroupsBtn) {
+          showGroupsBtn.disabled = true;
+          showGroupsBtn.style.opacity = '0.5';
+        }
 
-        content.innerHTML = `
-          <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 8px;">
-            <b>Yöntem 1:</b> WhatsApp -> <b>Bağlı Cihazlar</b> -> QR Kod Okutun:
-          </p>
-          <div class="qr-box">
-            <img src="${data.qrDataUrl}" alt="WhatsApp QR Code" />
-          </div>
-
-          <div class="pairing-box">
-            <p style="font-size: 13px; font-weight: 600; color: #fff;"><b>Yöntem 2:</b> Telefon Numarası İle (QR'sız 8-Haneli Kod)</p>
-            <div class="phone-input-group">
-              <input type="text" id="phoneNumInput" class="phone-input" placeholder="905xxxxxxxxx" />
-              <button class="btn btn-info" style="width: auto; padding: 0 16px;" onclick="getPairingCode()">Kod Al</button>
+        if (lastRenderedStatus !== 'WAITING_FOR_QR') {
+          content.innerHTML = `
+            <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 8px;">
+              <b>Yöntem 1:</b> WhatsApp -> <b>Bağlı Cihazlar</b> -> QR Kod Okutun:
+            </p>
+            <div class="qr-box">
+              <img id="qrImg" src="${data.qrDataUrl}" alt="WhatsApp QR Code" />
             </div>
-            <div id="pairingCodeResult" style="display:none;"></div>
-          </div>
-        `;
+
+            <div class="pairing-box">
+              <p style="font-size: 13px; font-weight: 600; color: #fff;"><b>Yöntem 2:</b> Telefon Numarası İle (QR'sız 8-Haneli Kod)</p>
+              <div class="phone-input-group">
+                <input type="text" id="phoneNumInput" class="phone-input" placeholder="5551234567" />
+                <button class="btn btn-info" style="width: auto; padding: 0 16px;" onclick="getPairingCode()">Kod Al</button>
+              </div>
+              <div id="pairingCodeResult" style="display:none;"></div>
+            </div>
+          `;
+          lastRenderedStatus = 'WAITING_FOR_QR';
+          currentQrDataUrl = data.qrDataUrl;
+        } else if (currentQrDataUrl !== data.qrDataUrl) {
+          const qrImg = document.getElementById('qrImg');
+          if (qrImg) {
+            qrImg.src = data.qrDataUrl;
+          }
+          currentQrDataUrl = data.qrDataUrl;
+        }
       } else if (data.status === 'INITIALIZING') {
         badge.className = 'badge badge-initializing';
         badge.innerHTML = '🚀 WhatsApp Başlatılıyor...';
         sendBtn.disabled = true;
         sendBtn.style.opacity = '0.5';
-        content.innerHTML = '<div class="spinner"></div><p style="font-size: 13px; color: var(--text-muted);">Baileys Engine hazırlanıyor...</p>';
+        if (showGroupsBtn) {
+          showGroupsBtn.disabled = true;
+          showGroupsBtn.style.opacity = '0.5';
+        }
+
+        if (lastRenderedStatus !== 'INITIALIZING') {
+          content.innerHTML = '<div class="spinner"></div><p style="font-size: 13px; color: var(--text-muted);">Baileys Engine hazırlanıyor...</p>';
+          lastRenderedStatus = 'INITIALIZING';
+        }
       } else {
         badge.className = 'badge badge-error';
         badge.innerHTML = '⚠️ Bağlantı Yok (' + (data.status || 'KAPALI') + ')';
         sendBtn.disabled = true;
         sendBtn.style.opacity = '0.5';
-        content.innerHTML = `
-          <p style="font-size: 14px; color: var(--text-muted); margin: 15px 0;">
-            ${data.lastError ? 'Hata: ' + data.lastError : 'Oturum kapalı. Yeniden başlatarak bağlantı kurabilirsiniz.'}
-          </p>
-        `;
+        if (showGroupsBtn) {
+          showGroupsBtn.disabled = true;
+          showGroupsBtn.style.opacity = '0.5';
+        }
+
+        const errorKey = 'ERROR_' + (data.lastError || '');
+        if (lastRenderedStatus !== errorKey) {
+          content.innerHTML = `
+            <p style="font-size: 14px; color: var(--text-muted); margin: 15px 0;">
+              ${data.lastError ? 'Hata: ' + data.lastError : 'Oturum kapalı. Yeniden başlatarak bağlantı kurabilirsiniz.'}
+            </p>
+            <button class="btn btn-info" style="margin-top: 10px;" onclick="triggerRestart(true)">
+              📲 Yeni QR Kod Üret / Yeniden Bağlan
+            </button>
+          `;
+          lastRenderedStatus = errorKey;
+        }
       }
     }
 
@@ -325,7 +380,7 @@
       const num = input?.value?.trim();
 
       if (!num) {
-        showToast('Lütfen telefon numaranızı girin (örn: 905551234567)', 'error');
+        showToast('Lütfen telefon numaranızı girin (örn: 5551234567)', 'error');
         return;
       }
 
@@ -341,9 +396,13 @@
           resDiv.style.display = 'block';
           resDiv.innerHTML = `
             <div class="pairing-code">${data.code}</div>
-            <p style="font-size: 12px; color: var(--text-muted);">
-              Telefondan <b>WhatsApp -> Bağlı Cihazlar -> Telefon Numarası İle Bağlan</b> kısmına bu 8 haneli kodu girin.
-            </p>
+            <div style="font-size: 12px; color: var(--text-muted); text-align: left; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin-top: 8px;">
+              <b>📱 Telefondan Yapılacak Adımlar:</b><br/>
+              1. Telefonunuzda WhatsApp -> <b>Bağlı Cihazlar</b> menüsüne gidin.<br/>
+              2. <b>Cihaz Bağla</b> butonuna dokunun.<br/>
+              3. Kamera ekranının altındaki <b>"Telefon numarasıyla bağlan"</b> yazısına dokunun.<br/>
+              4. Yukarıdaki <b>${data.code}</b> kodunu girin.
+            </div>
           `;
           showToast('✅ Kod üretildi! WhatsApp uygulamasından koda girin.', 'success');
         } else {
@@ -376,12 +435,12 @@
       }
     }
 
-    async function triggerRestart() {
-      if (!confirm('WhatsApp oturumu sıfırlanıp yeniden başlatılacak. Emin misiniz?')) return;
-      showToast('🔄 Yeniden başlatılıyor...', 'success');
+    async function triggerRestart(skipConfirm = false) {
+      if (!skipConfirm && !confirm('WhatsApp oturumu sıfırlanıp yeniden başlatılacak. Emin misiniz?')) return;
+      showToast('🔄 Oturum sıfırlanıyor, yeni QR kod üretiliyor...', 'success');
       try {
         await fetch('/api/restart', { method: 'POST' });
-        setTimeout(checkStatus, 2000);
+        setTimeout(checkStatus, 1500);
       } catch (err) {
         showToast('❌ Yeniden başlatma hatası', 'error');
       }
@@ -393,6 +452,54 @@
       toast.className = 'toast toast-' + type;
       toast.style.display = 'block';
       setTimeout(() => { toast.style.display = 'none'; }, 4000);
+    }
+
+    async function loadGroupsList() {
+      const modal = document.getElementById('groupsModal');
+      const list = document.getElementById('groupsListArea');
+      modal.style.display = 'block';
+      list.innerHTML = '<div class="spinner"></div><p style="font-size:13px; color:var(--text-muted);">Gruplar çekiliyor...</p>';
+
+      try {
+        const res = await fetch('/api/groups');
+        const data = await res.json();
+        if (data.success && data.groups) {
+          if (data.groups.length === 0) {
+            list.innerHTML = '<p style="color:var(--text-muted); font-size:14px;">Katıldığınız hiç grup bulunamadı veya oturum henüz hazır değil.</p>';
+            return;
+          }
+          let html = `<div style="max-height: 260px; overflow-y: auto; text-align: left; padding-right: 4px;">`;
+          data.groups.forEach(g => {
+            html += `
+              <div style="background: rgba(15,23,42,0.8); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; margin-bottom: 8px;">
+                <div style="font-weight: 700; font-size: 14px; color: #fff;">${g.name}</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+                  <code style="font-size: 11px; color: #60a5fa; word-break: break-all;">${g.id}</code>
+                  <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 12px; margin-left: 8px; white-space: nowrap;" onclick="copyJid('${g.id}')">📋 Kopyala</button>
+                </div>
+              </div>
+            `;
+          });
+          html += `</div>`;
+          list.innerHTML = html;
+        } else {
+          list.innerHTML = '<p style="color:var(--danger); font-size:13px;">Gruplar alınamadı: ' + (data.error || 'Oturum açık olmalıdır.') + '</p>';
+        }
+      } catch (err) {
+        list.innerHTML = '<p style="color:var(--danger); font-size:13px;">İletişim hatası oluştu.</p>';
+      }
+    }
+
+    function copyJid(jid) {
+      navigator.clipboard.writeText(jid).then(() => {
+        showToast('📋 JID kopyalandı: ' + jid, 'success');
+      }).catch(() => {
+        showToast('❌ Kopyalama başarısız', 'error');
+      });
+    }
+
+    function closeGroupsModal() {
+      document.getElementById('groupsModal').style.display = 'none';
     }
 
     // Her 3 saniyede bir durumu güncelle

@@ -43,6 +43,7 @@ let makeWASocket = null;
 let useMultiFileAuthState = null;
 let DisconnectReason = null;
 let fetchLatestWaWebVersion = null;
+let Browsers = null;
 
 async function loadBaileys() {
   if (!makeWASocket) {
@@ -51,6 +52,7 @@ async function loadBaileys() {
     useMultiFileAuthState = baileys.useMultiFileAuthState;
     DisconnectReason = baileys.DisconnectReason;
     fetchLatestWaWebVersion = baileys.fetchLatestWaWebVersion;
+    Browsers = baileys.Browsers;
   }
 }
 
@@ -104,7 +106,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
       auth: authState,
       logger: pino({ level: 'silent' }),
       printQRInTerminal: false,
-      browser: ['Oto Bot', 'Chrome', '1.0.0']
+      browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04']
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -127,23 +129,39 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
         console.warn(`⚠️ WhatsApp bağlantısı kapandı (Kod: ${statusCode}). Yeniden bağlanılacak mı? ${shouldReconnect}`);
 
-        state.status = 'DISCONNECTED';
         state.qrDataUrl = null;
 
         if (shouldReconnect) {
+          state.status = 'DISCONNECTED';
           setTimeout(() => {
             initWhatsAppClient(false);
           }, 3000);
         } else {
-          state.status = 'ERROR';
-          state.lastError = 'Oturum sonlandırıldı. Lütfen QR kodu tekrar okutun.';
+          console.log('ℹ️ WhatsApp oturumu kapatıldı/sonlandırıldı. Eski oturum verileri temizlenip yeni QR kod üretiliyor...');
+          if (fs.existsSync(AUTH_FILE)) {
+            try { fs.unlinkSync(AUTH_FILE); } catch (e) { }
+          }
+          if (fs.existsSync(BAILEYS_AUTH_PATH)) {
+            try { fs.rmSync(BAILEYS_AUTH_PATH, { recursive: true, force: true }); } catch (e) { }
+          }
+          if (sock) {
+            try { sock.end(new Error('Logged out')); } catch (e) { }
+            sock = null;
+          }
+          state.status = 'INITIALIZING';
+          state.userInfo = null;
+          state.lastError = null;
+
+          setTimeout(() => {
+            initWhatsAppClient(false);
+          }, 1500);
         }
       } else if (connection === 'open') {
         state.status = 'READY';
         state.qrDataUrl = null;
         state.userInfo = {
           id: sock.user?.id || 'Bağlı',
-          pushname: sock.user?.name || sock.user?.notify || 'Oto Bot'
+          pushname: sock.user?.name || sock.user?.notify || 'Ubuntu'
         };
         console.log('✅ WhatsApp Baileys İstemcisi Hazır! Bağlı Kullanıcı:', state.userInfo.pushname);
         try {
@@ -170,13 +188,20 @@ async function requestPairingCode(phoneNumber) {
   }
   if (!sock) throw new Error('İstemci başlatılamadı.');
 
-  const cleanedNumber = phoneNumber.replace(/\D/g, '');
+  let cleanedNumber = phoneNumber.replace(/\D/g, '');
+  if (cleanedNumber.startsWith('0') && cleanedNumber.length === 11) {
+    cleanedNumber = '90' + cleanedNumber.substring(1);
+  } else if (cleanedNumber.length === 10 && cleanedNumber.startsWith('5')) {
+    cleanedNumber = '90' + cleanedNumber;
+  }
+
   if (!cleanedNumber || cleanedNumber.length < 10) {
-    throw new Error('Geçerli bir telefon numarası girin (örn: 905xxxxxxxxx).');
+    throw new Error('Geçerli bir telefon numarası girin (örn: 5551234567).');
   }
 
   console.log(`📲 Telefon Numarası ile Eşleşme Kodu isteniyor (${cleanedNumber})...`);
-  const code = await sock.requestPairingCode(cleanedNumber);
+  const rawCode = await sock.requestPairingCode(cleanedNumber);
+  const code = rawCode?.match(/.{1,4}/g)?.join('-') || rawCode;
   return code;
 }
 
@@ -279,7 +304,7 @@ function scheduleWhatsAppPollJob() {
 }
 
 function getWhatsAppStatus(autoStartIfDisconnected = false) {
-  if (autoStartIfDisconnected && state.status === 'DISCONNECTED' && !sock) {
+  if (autoStartIfDisconnected && (state.status === 'DISCONNECTED' || state.status === 'ERROR') && !sock) {
     initWhatsAppClient(false);
   }
 
@@ -345,8 +370,15 @@ function schedulePing() {
   console.log("Ping scheduler started.");
 
   process.on('SIGINT', async () => {
-    console.log('Ping service shutting down...');
-    pingJob.cancel();
+    console.log('Uygulama kapatılıyor...');
+    try { pingJob.cancel(); } catch (e) { }
+    process.exit(0);
+  });
+
+  process.on('SIGTERM', async () => {
+    console.log('Uygulama kapatılıyor...');
+    try { pingJob.cancel(); } catch (e) { }
+    process.exit(0);
   });
 
   return pingJob;
@@ -405,7 +437,7 @@ app.post('/api/pairing-code', async (req, res) => {
   try {
     const { phoneNumber } = req.body;
     if (!phoneNumber) {
-      return res.status(400).json({ success: false, message: 'Telefon numarası gereklidir (Örn: 905xxxxxxxxx)' });
+      return res.status(400).json({ success: false, message: 'Telefon numarası gereklidir (Örn: 5551234567)' });
     }
     const code = await requestPairingCode(phoneNumber);
     res.json({ success: true, code });

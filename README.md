@@ -7,30 +7,56 @@ Bu depo, WhatsApp gruplarında **anket gönderme**, **otomatik mesaj gönderme**
 ## 1. Anket Gönderme (2 Yöntem)
 
 ### Yöntem 1: Node.js Baileys Botu (Otomatik & Web Panelli)
-- **Açıklama**: Browser (Chrome/Puppeteer) gerektirmeyen, ultra hafif (~25MB RAM) Node.js altyapısıdır. Belirlenen saatte (varsayılan: her gün 09:00 TSİ) WhatsApp grubunuza otomatik anket gönderir.
-- **`.env` Yapılandırması**: Proje dizininde `.env` dosyası oluşturup aşağıdaki bilgileri tanımlayın:
-  ```env
-  WHATSAPP_GROUP_ID=123456789012345678@g.us
-  PING_URL=https://your-site.onrender.com/api/health
-  PORT=3000
-  ```
-- **Kurulum & Çalıştırma**:
-  ```bash
-  npm install
-  npm start
-  ```
-- **Web Paneli & Giriş**: `http://localhost:3000/` adresinden QR kod taratarak veya telefon numaranızla **8 haneli eşleşme kodu** alarak giriş yapabilirsiniz.
-- **Manuel Anket Gönderimi**: Web arayüzündeki butonla veya `http://localhost:3000/api/send-poll` URL'sine istek atarak anketi anında tetikleyebilirsiniz.
-- **API Endpoint'leri**:
-  | Endpoint | Metod | Açıklama |
-  | :--- | :--- | :--- |
-  | `/` | `GET` | Web QR ve Yönetim Paneli Arayüzü |
-  | `/api/send-poll` | `GET / POST` | WhatsApp grubuna manuel anket gönderir |
-  | `/api/status` | `GET` | Oturum ve bağlantı durumunu gösterir |
-  | `/api/groups` | `GET` | Botun katıldığı grupları listeler |
-  | `/api/pairing-code` | `POST` | Telefon numarası ile 8 haneli eşleşme kodu üretir |
-  | `/api/restart` | `POST` | Oturumu sıfırlayıp yeniden başlatır |
-  | `/api/health` | `GET` | Sunucu sağlık kontrolü / ping yanıtı |
+
+**Açıklama**: Browser (Chrome/Puppeteer) gerektirmeyen, ultra hafif (~25MB RAM) Node.js altyapısıdır. Belirlenen saatte (varsayılan: her gün 09:00 TSİ) WhatsApp grubunuza otomatik anket gönderir.
+
+#### Yerel (Local) Kurulum Adımları
+1. **Proje Bağımlılıklarını Yükleyin**:
+   ```bash
+   npm install
+   ```
+2. **`.env` Dosyası Oluşturun**:
+   Proje dizininde `.env` dosyası oluşturup aşağıdaki bilgileri tanımlayın:
+   ```env
+   WHATSAPP_GROUP_ID=123456789012345678@g.us
+   PING_URL=http://localhost:3000/api/health *(Ücretsiz Render sunucunuzu aktif tutmak için)*
+   ```
+3. **Uygulamayı Başlatın**:
+   ```bash
+   npm start
+   ```
+4. **Giriş Yapın & Kullanın**:
+   - Tarayıcınızda `http://localhost:3000/` adresini açın.
+   - Ekrandaki QR kodu okutarak veya telefon numaranızla **8 haneli eşleşme kodu** alarak giriş yapabilirsiniz.
+   - Giriş yaptıktan sonra **"Grupları & JID Listesini Göster"** butonuyla istediğiniz grubun JID bilgisini kopyalayıp `.env` dosyanıza kaydedebilirsiniz.
+   - Alternatif olarak terminalde `node list-groups.js` komutunu çalıştırarak da üye olduğunuz tüm grupları ve JID kodlarını listeleyebilirsiniz.
+
+#### Render.com Üzerinde 7/24 Ücretsiz Canlıya Alma (Cloud Deployment)
+Bilgisayarınızı sürekli açık tutmaya gerek kalmadan botu Render.com üzerinde 7/24 ücretsiz çalıştırmak için aşağıdaki adımları izleyebilirsiniz:
+
+1. **Fork Alma**: Kendi GitHub hesabınıza bu depoyu forklayın ([AliKacarr/whatsapp-automation-bots](https://github.com/AliKacarr/whatsapp-automation-bots)).
+2. **Render Web Service Oluşturma**: [Render.com](https://render.com/) üzerinde forkladığınız repo ile yeni bir **Web Service** oluşturun.
+3. **WhatsApp Oturumu Açma**: Render'ın sağladığı canlı web sitesi adresini açın (`https://your-site.onrender.com`). Ekrandaki QR kodu okutarak veya eşleşme kodu ile WhatsApp hesabınızı bağlayın.
+4. **Grup JID Bilgisini Alma**: Web panelindeki **"Grupları & JID Listesini Göster"** butonuna basarak anket göndermek istediğiniz grubun JID bilgisini kopyalayın.
+5. **Ortam Değişkenlerini (Environment Variables) Tanımlama**: Render panelindeki **Environment** sayfasına bilgilerinizi tanımlayın:
+   - `WHATSAPP_GROUP_ID` = `123456789012345678@g.us`
+   - `PING_URL` = `https://your-site.onrender.com/api/health` *(Ücretsiz Render sunucunuzu aktif tutmak için)*
+
+🥳 **Her şey tamam!** Artık `https://your-site.onrender.com/api/send-poll` ile de manuel deneyebilir veya otomatik zamanlayıcının her gün saat 09:00'da anketi göndermesini bekleyebilirsiniz.
+
+> **Not & Özelleştirme:**  
+> Anket gönderimi varsayılan olarak saat **09:00 (TSİ)**'da çalışmaktadır. Anket başlığı olarak bugünün tarihi yazmakta; seçenekler olarak ise *5 dakika, 10 dakika...* yazmaktadır. Bu bilgileri projedeki [server.js](file:///c:/Users/Lenovo/Desktop/whatsapp-automation-bots/server.js#L15-L35) dosyası üzerinden güncelleyebilirsiniz.
+
+#### API Endpoint'leri
+| Endpoint | Metod | Açıklama |
+| :--- | :--- | :--- |
+| `/` | `GET` | Web QR ve Yönetim Paneli Arayüzü |
+| `/api/send-poll` | `GET / POST` | WhatsApp grubuna manuel anket gönderir |
+| `/api/status` | `GET` | Oturum ve bağlantı durumunu gösterir |
+| `/api/groups` | `GET` | Botun katıldığı grupları listeler |
+| `/api/pairing-code` | `POST` | Telefon numarası ile 8 haneli eşleşme kodu üretir |
+| `/api/restart` | `POST` | Oturumu sıfırlayıp yeniden başlatır |
+| `/api/health` | `GET` | Sunucu sağlık kontrolü / ping yanıtı |
 
 ### Yöntem 2: Python Selenium Scripti (`wp-bot-anket-olusturucu.py`)
 - **Açıklama**: Selenium ve Chrome tarayıcısı kullanarak WhatsApp Web üzerinden otomatik anket oluşturup gönderir.
