@@ -324,7 +324,13 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   const pollMsgId = creationMsgKey?.id;
   if (!pollMsgId) return;
 
-  const rawVoterJid = pollUpdateMsg.key?.participant || pollUpdateMsg.key?.remoteJid;
+  const isFromMe = pollUpdateMsg.key?.fromMe;
+  const selfJid = sock?.user?.id;
+  const selfLid = sock?.user?.lid;
+
+  const rawVoterJid = isFromMe
+    ? (selfJid || selfLid || pollUpdateMsg.key?.participant || pollUpdateMsg.key?.remoteJid)
+    : (pollUpdateMsg.key?.participant || pollUpdateMsg.key?.remoteJid || pollUpdateMsg.participant);
   const voterJid = jidNormalizedUser ? jidNormalizedUser(rawVoterJid) : rawVoterJid;
 
   //console.log(`🗳️ [Oy Bildirimi] Anket: ${pollMsgId}, Oy Veren: ${voterJid}`);
@@ -397,10 +403,13 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   // Voter & Creator JID Adayları
   const uniqueVoterJids = buildJidCandidates([
     rawVoterJid,
+    isFromMe ? [selfJid, selfLid] : [],
     pollUpdateMsg.key?.participant,
     pollUpdateMsg.key?.remoteJid,
     pollUpdateMsg.participant,
-    pollUpdateMsg.user
+    pollUpdateMsg.user,
+    sock?.user?.id,
+    sock?.user?.lid
   ]);
 
   const uniqueCreatorJids = buildJidCandidates([
@@ -423,6 +432,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
 
   let decryptedVote = null;
   let decryptError = null;
+  let successfulVoterJid = null;
 
   if (typeof decryptPollVote === 'function') {
     for (const keyBuf of uniqueEncKeys) {
@@ -439,6 +449,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
               }
             );
             if (decryptedVote) {
+              successfulVoterJid = vJid;
               // console.log(`🔑 Deşifre Başarılı! [Creator: "${cJid}", Voter: "${vJid}"]`);
               break;
             }
@@ -473,11 +484,12 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   }
 
   // 5) Telefon numarasını çöz ve veritabanına kaydet / güncelle / sil
-  const voterPhone = await getPhoneNumberFromJid(voterJid, pollMsg.key?.remoteJid || DEFAULT_GROUP_ID);
-  const rawLid = (rawVoterJid || '').split('@')[0].split(':')[0];
-  const pushName = pollUpdateMsg.pushName || pollUpdateMsg.verifiedBizName || null;
+  const activeVoterJid = successfulVoterJid || voterJid;
+  const voterPhone = await getPhoneNumberFromJid(activeVoterJid, pollMsg.key?.remoteJid || DEFAULT_GROUP_ID);
+  const rawLid = (activeVoterJid || '').split('@')[0].split(':')[0];
+  const pushName = pollUpdateMsg.pushName || pollUpdateMsg.verifiedBizName || (isFromMe ? (sock?.user?.name || 'Kendi Oyunuz') : null);
 
-  // console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone} (JID: ${voterJid}) → Seçimler:`, selectedOptionNames);
+  // console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone} (JID: ${activeVoterJid}) → Seçimler:`, selectedOptionNames);
 
   if (selectedOptionNames.length > 0) {
     await saveVote({
