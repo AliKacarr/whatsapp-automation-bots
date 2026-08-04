@@ -249,6 +249,57 @@ async function getPhoneNumberFromJid(jid, groupId = DEFAULT_GROUP_ID) {
 }
 
 /**
+ * Verilen JID/ID girdileri için (LID, PN JID, bare ID, :0 cihaz uzantısı vb.) tüm olası JID varyasyonlarını türetir.
+ */
+function buildJidCandidates(inputs) {
+  const candidates = new Set();
+
+  function addVariants(val) {
+    if (!val) return;
+    const str = String(val).trim();
+    if (!str) return;
+
+    candidates.add(str);
+
+    const norm = jidNormalizedUser ? jidNormalizedUser(str) : str;
+    candidates.add(norm);
+
+    const bare = norm.split('@')[0].split(':')[0];
+    candidates.add(bare);
+
+    if (str.includes('@s.whatsapp.net') || /^\d{7,15}$/.test(bare)) {
+      candidates.add(bare + '@s.whatsapp.net');
+      candidates.add(bare + ':0@s.whatsapp.net');
+    }
+    if (str.includes('@lid') || /^\d{12,20}$/.test(bare)) {
+      candidates.add(bare + '@lid');
+      candidates.add(bare + ':0@lid');
+    }
+
+    // lidToPhoneMap çift yönlü kontrol
+    if (lidToPhoneMap.has(str)) {
+      const mapped = lidToPhoneMap.get(str);
+      if (mapped && mapped !== str) addVariants(mapped);
+    }
+    if (lidToPhoneMap.has(norm)) {
+      const mapped = lidToPhoneMap.get(norm);
+      if (mapped && mapped !== norm) addVariants(mapped);
+    }
+    if (lidToPhoneMap.has(bare)) {
+      const mapped = lidToPhoneMap.get(bare);
+      if (mapped && mapped !== bare) addVariants(mapped);
+    }
+  }
+
+  for (const item of (Array.isArray(inputs) ? inputs : [inputs])) {
+    addVariants(item);
+  }
+
+  candidates.add('');
+  return Array.from(candidates);
+}
+
+/**
  * Gelen oy güncelleme mesajını (pollUpdateMessage) Baileys decryptPollVote ile şifresini çözer
  * ve seçilen seçenekleri MongoDB'ye kaydeder.
  */
@@ -329,41 +380,26 @@ async function processPollVoteUpdate(pollUpdateMsg) {
     return;
   }
 
-  // Voter JID Adayları (LID, PN JID, Bare ID)
-  const myJid = sock?.user?.id ? (jidNormalizedUser ? jidNormalizedUser(sock.user.id) : sock.user.id) : null;
-  const myLid = sock?.user?.lid ? (jidNormalizedUser ? jidNormalizedUser(sock.user.lid) : sock.user.lid) : null;
-  const myBareJid = myJid ? myJid.split('@')[0].split(':')[0] : null;
+  // Katılımcı haritasını yenile
+  await updateLidPhoneMapFromGroups();
 
-  const normalizedVoterJid = jidNormalizedUser ? jidNormalizedUser(rawVoterJid) : rawVoterJid;
-  const voterBare = (rawVoterJid || '').split('@')[0].split(':')[0];
-
-  const voterJidCandidates = [
-    normalizedVoterJid,
+  // Voter & Creator JID Adayları
+  const uniqueVoterJids = buildJidCandidates([
     rawVoterJid,
-    voterBare ? voterBare + '@s.whatsapp.net' : null,
-    voterBare ? voterBare + '@lid' : null,
-    voterBare,
-    ''
-  ].filter(v => v !== null && v !== undefined);
+    pollUpdateMsg.key?.participant,
+    pollUpdateMsg.key?.remoteJid,
+    pollUpdateMsg.participant,
+    pollUpdateMsg.user
+  ]);
 
-  const uniqueVoterJids = [...new Set(voterJidCandidates)];
-
-  // Creator JID Adayları
-  const creatorJidCandidates = [
-    myJid,
-    myLid,
-    myBareJid ? myBareJid + '@s.whatsapp.net' : null,
-    myBareJid ? myBareJid + '@lid' : null,
-    myBareJid,
-    pollMsg.key?.participant ? (jidNormalizedUser ? jidNormalizedUser(pollMsg.key.participant) : pollMsg.key.participant) : null,
-    pollMsg.key?.remoteJid ? (jidNormalizedUser ? jidNormalizedUser(pollMsg.key.remoteJid) : pollMsg.key.remoteJid) : null,
-    creationMsgKey?.participant ? (jidNormalizedUser ? jidNormalizedUser(creationMsgKey.participant) : creationMsgKey.participant) : null,
-    creationMsgKey?.remoteJid ? (jidNormalizedUser ? jidNormalizedUser(creationMsgKey.remoteJid) : creationMsgKey.remoteJid) : null,
+  const uniqueCreatorJids = buildJidCandidates([
+    sock?.user?.id,
+    sock?.user?.lid,
+    pollMsg.key?.participant,
     pollMsg.key?.remoteJid,
-    ''
-  ].filter(v => v !== null && v !== undefined);
-
-  const uniqueCreatorJids = [...new Set(creatorJidCandidates)];
+    creationMsgKey?.participant,
+    creationMsgKey?.remoteJid
+  ]);
 
   // EncKey Adayları (messageContextInfo vs pollCreation)
   const encKeyCandidates = [
@@ -373,8 +409,6 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   ].filter(Boolean).map(safeToBuffer).filter(b => b && b.length === 32);
 
   const uniqueEncKeys = [...new Set(encKeyCandidates.map(b => b.toString('hex')))].map(h => Buffer.from(h, 'hex'));
-
-
 
   let decryptedVote = null;
   let decryptError = null;
@@ -394,7 +428,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
               }
             );
             if (decryptedVote) {
-              //console.log(`🔑 Deşifre Başarılı! [Creator: "${cJid}", Voter: "${vJid}"]`);
+              // console.log(`🔑 Deşifre Başarılı! [Creator: "${cJid}", Voter: "${vJid}"]`);
               break;
             }
           } catch (err) {
