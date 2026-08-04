@@ -134,15 +134,18 @@ async function saveVote(voteData) {
       } catch (cleanErr) { }
     }
 
+    const setFields = {
+      voterPhone: voterPhone,
+      selectedOptions: voteData.selectedOptions,
+      updatedAt: getTRDateString(voteData.updatedAt)
+    };
+    if (voteData.pushName) {
+      setFields.pushName = voteData.pushName;
+    }
+
     const result = await db.collection('poll_votes').updateOne(
       { pollId: voteData.pollId, voterJid: voterPhone },
-      {
-        $set: {
-          voterPhone: voterPhone,
-          selectedOptions: voteData.selectedOptions,
-          updatedAt: getTRDateString(voteData.updatedAt)
-        }
-      },
+      { $set: setFields },
       { upsert: true }
     );
     const action = result.upsertedCount > 0 ? 'Yeni oy' : 'Oy güncelleme';
@@ -248,6 +251,43 @@ async function savePollConfig(configData) {
   }
 }
 
+/**
+ * LID -> Telefon Numarası eşleşmesini MongoDB'deki lid_mappings koleksiyonuna kalıcı kaydeder.
+ */
+async function saveLidMapping(lid, phone) {
+  if (!dbEnabled || !db || !lid || !phone) return;
+  const bareLid = String(lid).split('@')[0].split(':')[0];
+  const barePhone = String(phone).split('@')[0].split(':')[0];
+  if (bareLid === barePhone || !/^\d{7,15}$/.test(barePhone)) return;
+
+  try {
+    await db.collection('lid_mappings').updateOne(
+      { _id: bareLid },
+      { $set: { phone: barePhone, updatedAt: getTRDateString() } },
+      { upsert: true }
+    );
+  } catch (e) { }
+}
+
+/**
+ * MongoDB'de saklanan tüm kalıcı LID -> Telefon Numarası haritasını getirir.
+ */
+async function getAllLidMappings() {
+  if (!dbEnabled || !db) return {};
+  try {
+    const list = await db.collection('lid_mappings').find({}).toArray();
+    const map = {};
+    for (const item of list) {
+      if (item._id && item.phone) {
+        map[item._id] = item.phone;
+      }
+    }
+    return map;
+  } catch (e) {
+    return {};
+  }
+}
+
 module.exports = {
   connectDB,
   isDBEnabled,
@@ -257,5 +297,7 @@ module.exports = {
   removeVote,
   getTRDateString,
   getPollConfig,
-  savePollConfig
+  savePollConfig,
+  saveLidMapping,
+  getAllLidMappings
 };

@@ -1219,7 +1219,7 @@
               <tbody>
                 ${votes.map(v => `
                   <tr>
-                    <td style="font-weight:600; color:#38bdf8;">📱 ${escapeHtml(v.voterPhone || v.voterJid)}</td>
+                    <td style="font-weight:600; color:#38bdf8;">📱 ${escapeHtml(v.pushName ? `${v.pushName} (${v.voterPhone || v.voterJid})` : (v.voterPhone || v.voterJid))}</td>
                     <td>${(v.selectedOptions || []).map(opt => `<span class="option-tag" style="color:#fff; background:rgba(16,185,129,0.2); border-color:rgba(16,185,129,0.4);">${escapeHtml(opt)}</span>`).join(' ')}</td>
                     <td style="text-align:right; color:var(--text-sub); font-size:11px;">${escapeHtml(v.updatedAt || '-')}</td>
                   </tr>

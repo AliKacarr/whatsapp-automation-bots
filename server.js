@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings } = require('./db');
 
 // ============================================================================
 // LOG FİLTRESİ (Libsignal / Bad MAC Gürültüsünü Engelleme)
@@ -147,10 +147,11 @@ function registerJidLidMapping(phoneCandidate, lidCandidate) {
   const barePhone = normPhone.split('@')[0].split(':')[0];
   const bareLid = normLid.split('@')[0].split(':')[0];
 
-  // barePhone telefon numarası formatında olmalı (ör: 905361234567)
-  if (/^\d{7,15}$/.test(barePhone)) {
+  // barePhone ile bareLid aynı olamaz (LID'nin kendisine haritalanmasını engelle)
+  if (barePhone !== bareLid && /^\d{7,15}$/.test(barePhone)) {
     lidToPhoneMap.set(normLid, barePhone);
     lidToPhoneMap.set(bareLid, barePhone);
+    saveLidMapping(bareLid, barePhone);
   }
 }
 
@@ -192,6 +193,16 @@ function processParticipantOrContact(item) {
  * Baileys istemcisinin dahil olduğu tüm gruplardaki katılımcıları tarayarak LID -> Phone haritasını günceller.
  */
 async function updateLidPhoneMapFromGroups() {
+  // Önce MongoDB'de önceden kalıcı kaydedilmiş tüm haritaları belleğe yükle
+  try {
+    const dbMap = await getAllLidMappings();
+    for (const lid in dbMap) {
+      const phone = dbMap[lid];
+      lidToPhoneMap.set(lid, phone);
+      lidToPhoneMap.set(lid + '@lid', phone);
+    }
+  } catch (e) { }
+
   if (!sock || state.status !== 'READY') return;
   try {
     const groupsMap = await sock.groupFetchAllParticipating();
@@ -464,6 +475,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   // 5) Telefon numarasını çöz ve veritabanına kaydet / güncelle / sil
   const voterPhone = await getPhoneNumberFromJid(voterJid, pollMsg.key?.remoteJid || DEFAULT_GROUP_ID);
   const rawLid = (rawVoterJid || '').split('@')[0].split(':')[0];
+  const pushName = pollUpdateMsg.pushName || pollUpdateMsg.verifiedBizName || null;
 
   // console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone} (JID: ${voterJid}) → Seçimler:`, selectedOptionNames);
 
@@ -473,6 +485,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
       voterJid: voterPhone,
       voterPhone: voterPhone,
       rawLid: rawLid,
+      pushName: pushName,
       selectedOptions: selectedOptionNames,
       updatedAt: getTRDateString()
     });
