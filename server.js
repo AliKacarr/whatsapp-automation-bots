@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig } = require('./db');
 
 // ============================================================================
 // LOG FİLTRESİ (Libsignal / Bad MAC Gürültüsünü Engelleme)
@@ -49,14 +49,20 @@ const MONTH_NAMES_TR = [
 ];
 
 /**
- * Günlük dinamik anket başlığını üretir (Örn: "1 Ağustos")
+ * Günlük dinamik anket başlığını üretir (Örn: "4 Ağustos" veya "4 Ağustos Okuma Anketi")
+ * customTitle içinde {{date}} şablonu varsa günün tarihi ile değiştirir.
  */
 function getDailyPollTitle(customTitle = null) {
-  if (customTitle) return customTitle;
   const today = new Date();
   const day = today.getDate();
   const month = MONTH_NAMES_TR[today.getMonth()];
-  return `${day} ${month}`;
+  const dateStr = `${day} ${month}`;
+
+  if (!customTitle) return dateStr;
+  if (customTitle.includes('{{date}}')) {
+    return customTitle.replace(/\{\{date\}\}/g, dateStr);
+  }
+  return customTitle;
 }
 
 // ============================================================================
@@ -124,66 +130,122 @@ function deserializePollMessage(base64) {
 const lidToPhoneMap = new Map();
 
 /**
+ * Güvenli bir şekilde LID ve Telefon Numarası JID'lerini eşleştiren yardımcı fonksiyon.
+ */
+function registerJidLidMapping(phoneCandidate, lidCandidate) {
+  if (!phoneCandidate || !lidCandidate) return;
+
+  const phoneStr = String(phoneCandidate);
+  const lidStr = String(lidCandidate);
+
+  // Phone candidate asla LID olmamalı
+  if (phoneStr.includes('@lid')) return;
+
+  const normPhone = jidNormalizedUser ? jidNormalizedUser(phoneStr) : phoneStr;
+  const normLid = jidNormalizedUser ? jidNormalizedUser(lidStr) : lidStr;
+
+  const barePhone = normPhone.split('@')[0].split(':')[0];
+  const bareLid = normLid.split('@')[0].split(':')[0];
+
+  // barePhone telefon numarası formatında olmalı (ör: 905361234567)
+  if (/^\d{7,15}$/.test(barePhone)) {
+    lidToPhoneMap.set(normLid, barePhone);
+    lidToPhoneMap.set(bareLid, barePhone);
+  }
+}
+
+/**
+ * Herhangi bir katılımcı veya kişi objesinden LID ve Telefon Numarasını çıkarıp eşleştirir.
+ */
+function processParticipantOrContact(item) {
+  if (!item) return;
+
+  let phoneJid = null;
+  let lidJid = null;
+
+  const candidates = [item.id, item.jid, item.phoneNumber, item.pn, item.user].filter(Boolean);
+
+  for (const cand of candidates) {
+    const str = String(cand);
+    if (str.includes('@s.whatsapp.net')) {
+      phoneJid = str;
+    } else if (str.includes('@lid')) {
+      lidJid = str;
+    } else if (/^\d{10,15}$/.test(str)) {
+      phoneJid = str + '@s.whatsapp.net';
+    }
+  }
+
+  if (item.lid) {
+    const strLid = String(item.lid);
+    if (strLid.includes('@lid') || /^\d{12,20}$/.test(strLid)) {
+      lidJid = strLid.includes('@lid') ? strLid : strLid + '@lid';
+    }
+  }
+
+  if (phoneJid && lidJid) {
+    registerJidLidMapping(phoneJid, lidJid);
+  }
+}
+
+/**
+ * Baileys istemcisinin dahil olduğu tüm gruplardaki katılımcıları tarayarak LID -> Phone haritasını günceller.
+ */
+async function updateLidPhoneMapFromGroups() {
+  if (!sock || state.status !== 'READY') return;
+  try {
+    const groupsMap = await sock.groupFetchAllParticipating();
+    for (const gId in groupsMap) {
+      const group = groupsMap[gId];
+      if (group?.participants) {
+        for (const p of group.participants) {
+          processParticipantOrContact(p);
+        }
+      }
+    }
+  } catch (e) { }
+}
+
+/**
  * JID adresini (LID veya s.whatsapp.net) temiz telefon numarasına dönüştürür.
- * (Örn: "905351234567@s.whatsapp.net" -> "905351234567", "68517730721932@lid" -> "905351234567")
+ * (Örn: "905351234567@s.whatsapp.net" -> "905351234567", "114345098911975@lid" -> "905361234567")
  */
 async function getPhoneNumberFromJid(jid, groupId = DEFAULT_GROUP_ID) {
   if (!jid) return null;
 
   const normalized = jidNormalizedUser ? jidNormalizedUser(jid) : jid;
+  const bare = normalized.split('@')[0].split(':')[0];
 
-  // 0) Bağlı olan kullanıcının kendi JID & LID haritasını kontrol et
+  // 0) Zaten telefon numarası JID'si ise veya bare numara ise (ör: 905361234567)
+  if (normalized.includes('@s.whatsapp.net') || (/^\d{10,12}$/.test(bare) && (bare.startsWith('90') || bare.startsWith('5')))) {
+    return bare;
+  }
+
+  // 1) Bağlı olan kullanıcının kendi JID & LID haritasını kontrol et
   if (sock?.user?.id && sock?.user?.lid) {
-    const myPhoneJid = jidNormalizedUser ? jidNormalizedUser(sock.user.id) : sock.user.id;
-    const myLidJid = jidNormalizedUser ? jidNormalizedUser(sock.user.lid) : sock.user.lid;
-    const myBareLid = myLidJid.split('@')[0].split(':')[0];
-    lidToPhoneMap.set(myLidJid, myPhoneJid);
-    lidToPhoneMap.set(myBareLid, myPhoneJid);
+    processParticipantOrContact({ id: sock.user.id, lid: sock.user.lid });
   }
-
-  // 1) Zaten telefon numarası JID'si ise (905351234567@s.whatsapp.net)
-  if (normalized.includes('@s.whatsapp.net')) {
-    return normalized.split('@')[0];
-  }
-
-  const bareLid = normalized.split('@')[0].split(':')[0];
 
   // 2) LID ise önbellekte ara
   if (lidToPhoneMap.has(normalized)) {
-    return lidToPhoneMap.get(normalized).split('@')[0];
+    return lidToPhoneMap.get(normalized);
   }
-  if (lidToPhoneMap.has(bareLid)) {
-    return lidToPhoneMap.get(bareLid).split('@')[0];
-  }
-
-  // 3) Önbellekte yoksa grup katılımcı listesini çekip haritalandır
-  if (sock && state.status === 'READY' && groupId) {
-    try {
-      const meta = await sock.groupMetadata(groupId);
-      if (meta?.participants) {
-        for (const p of meta.participants) {
-          if (p.id && p.lid) {
-            const pPhoneJid = jidNormalizedUser ? jidNormalizedUser(p.id) : p.id;
-            const pLidJid = jidNormalizedUser ? jidNormalizedUser(p.lid) : p.lid;
-            const pBareLid = pLidJid.split('@')[0].split(':')[0];
-
-            lidToPhoneMap.set(pLidJid, pPhoneJid);
-            lidToPhoneMap.set(pBareLid, pPhoneJid);
-          }
-        }
-      }
-    } catch (e) { }
-
-    if (lidToPhoneMap.has(normalized)) {
-      return lidToPhoneMap.get(normalized).split('@')[0];
-    }
-    if (lidToPhoneMap.has(bareLid)) {
-      return lidToPhoneMap.get(bareLid).split('@')[0];
-    }
+  if (lidToPhoneMap.has(bare)) {
+    return lidToPhoneMap.get(bare);
   }
 
-  // Çözülemezse en azından bare numarayı/ID'yi dön
-  return bareLid;
+  // 3) Önbellekte yoksa katıldığımız gruplardaki üye listelerini çekip haritalandır
+  await updateLidPhoneMapFromGroups();
+
+  if (lidToPhoneMap.has(normalized)) {
+    return lidToPhoneMap.get(normalized);
+  }
+  if (lidToPhoneMap.has(bare)) {
+    return lidToPhoneMap.get(bare);
+  }
+
+  // Çözülemezse bare ID'yi dön
+  return bare;
 }
 
 /**
@@ -203,7 +265,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   const rawVoterJid = pollUpdateMsg.key?.participant || pollUpdateMsg.key?.remoteJid;
   const voterJid = jidNormalizedUser ? jidNormalizedUser(rawVoterJid) : rawVoterJid;
 
-  console.log(`🗳️ [Oy Bildirimi] Anket: ${pollMsgId}, Oy Veren: ${voterJid}`);
+  //console.log(`🗳️ [Oy Bildirimi] Anket: ${pollMsgId}, Oy Veren: ${voterJid}`);
 
   // 1) Orijinal anket mesajını bul (memory veya MongoDB)
   let pollMsg = messageStore.get(pollMsgId);
@@ -215,7 +277,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
         if (decoded) {
           pollMsg = { message: decoded, key: { id: pollMsgId, remoteJid: pollDoc.groupId, fromMe: true } };
           messageStore.set(pollMsgId, pollMsg);
-          console.log(`📦 Orijinal anket mesajı MongoDB'den yüklendi: ${pollMsgId}`);
+          //console.log(`📦 Orijinal anket mesajı MongoDB'den yüklendi: ${pollMsgId}`);
         }
       }
     } catch (e) {
@@ -332,7 +394,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
               }
             );
             if (decryptedVote) {
-              console.log(`🔑 Deşifre Başarılı! [Creator: "${cJid}", Voter: "${vJid}"]`);
+              //console.log(`🔑 Deşifre Başarılı! [Creator: "${cJid}", Voter: "${vJid}"]`);
               break;
             }
           } catch (err) {
@@ -367,18 +429,20 @@ async function processPollVoteUpdate(pollUpdateMsg) {
 
   // 5) Telefon numarasını çöz ve veritabanına kaydet / güncelle / sil
   const voterPhone = await getPhoneNumberFromJid(voterJid, pollMsg.key?.remoteJid || DEFAULT_GROUP_ID);
+  const rawLid = (rawVoterJid || '').split('@')[0].split(':')[0];
 
-  console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone} (JID: ${voterJid}) → Seçimler:`, selectedOptionNames);
+  // console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone} (JID: ${voterJid}) → Seçimler:`, selectedOptionNames);
 
   if (selectedOptionNames.length > 0) {
     await saveVote({
       pollId: pollMsgId,
       voterJid: voterPhone,
       voterPhone: voterPhone,
+      rawLid: rawLid,
       selectedOptions: selectedOptionNames,
-      updatedAt: new Date()
+      updatedAt: getTRDateString()
     });
-    console.log(`💾 Oy DB'ye kaydedildi! (${voterPhone} -> ${selectedOptionNames.join(', ')})`);
+    // console.log(`💾 Oy DB'ye kaydedildi! (${voterPhone} -> ${selectedOptionNames.join(', ')})`);
   } else {
     await removeVote(pollMsgId, voterPhone);
   }
@@ -463,14 +527,14 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
               const decoded = deserializePollMessage(poll.messageData);
               if (decoded) {
                 messageStore.set(key.id, { message: decoded });
-                console.log(`📦 getMessage: Mesaj MongoDB'den yüklendi ve cache'lendi (${key.id})`);
+                // console.log(`📦 getMessage: Mesaj MongoDB'den yüklendi ve cache'lendi (${key.id})`);
                 return decoded;
               }
             }
           } catch (e) { }
         }
 
-        console.log(`⚠️ getMessage: Mesaj bulunamadı (${key.id}) – Store: ${messageStore.size}`);
+        // console.log(`⚠️ getMessage: Mesaj bulunamadı (${key.id}) – Store: ${messageStore.size}`);
         return undefined;
       }
     });
@@ -541,6 +605,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
         }
 
         fetchTargetGroupInfo();
+        updateLidPhoneMapFromGroups();
         try {
           fs.writeFileSync(AUTH_FILE, JSON.stringify(state.userInfo, null, 2), 'utf-8');
         } catch (e) { }
@@ -549,13 +614,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
 
     sock.ev.on('contacts.upsert', (contacts) => {
       for (const c of contacts) {
-        if (c.id && c.lid) {
-          const pPhoneJid = jidNormalizedUser ? jidNormalizedUser(c.id) : c.id;
-          const pLidJid = jidNormalizedUser ? jidNormalizedUser(c.lid) : c.lid;
-          const pBareLid = pLidJid.split('@')[0].split(':')[0];
-          lidToPhoneMap.set(pLidJid, pPhoneJid);
-          lidToPhoneMap.set(pBareLid, pPhoneJid);
-        }
+        processParticipantOrContact(c);
       }
     });
 
@@ -568,7 +627,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
         const pollCreation = msg.message?.pollCreationMessage || msg.message?.pollCreationMessageV3;
         if (pollCreation && msg.key?.id) {
           messageStore.set(msg.key.id, msg);
-          console.log(`📋 Anket mesajı store'a kaydedildi: ${msg.key.id}`);
+          // console.log(`📋 Anket mesajı store'a kaydedildi: ${msg.key.id}`);
 
           // Mesajı MongoDB'ye kalıcı kaydet (bot yeniden başlatıldığında kaybolmaması için)
           if (isDBEnabled() && getDB()) {
@@ -604,7 +663,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
 
         if (!pollUpdates || pollUpdates.length === 0) continue;
 
-        console.log(`🗳️ [update] Poll güncelleme geldi → Anket: ${key.id}, ${pollUpdates.length} güncelleme`);
+        // console.log(`🗳️ [update] Poll güncelleme geldi → Anket: ${key.id}, ${pollUpdates.length} güncelleme`);
 
         try {
           const pollMsg = messageStore.get(key.id);
@@ -627,12 +686,16 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
             const voters = optionResult.voters || [];
 
             for (const voterJid of voters) {
-              allCurrentVoters.add(voterJid);
+              const voterPhone = await getPhoneNumberFromJid(voterJid, key.id);
+              const rawLid = (voterJid || '').split('@')[0].split(':')[0];
+              allCurrentVoters.add(voterPhone);
               await saveVote({
                 pollId: key.id,
-                voterJid: voterJid,
+                voterJid: voterPhone,
+                voterPhone: voterPhone,
+                rawLid: rawLid,
                 selectedOptions: [optionName],
-                updatedAt: new Date()
+                updatedAt: getTRDateString()
               });
             }
           }
@@ -648,7 +711,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
               }
             }
           }
-          console.log(`✅ [update] Oy işlendi → ${allCurrentVoters.size} aktif oy veren`);
+          // console.log(`✅ [update] Oy işlendi → ${allCurrentVoters.size} aktif oy veren`);
         } catch (err) {
           console.error('❌ [update] Anket oy işleme hatası:', err.message);
         }
@@ -732,20 +795,26 @@ async function sendWhatsAppPoll(options = {}) {
     };
   }
 
-  const pollTitle = getDailyPollTitle(pollTitleCustom);
+  // DB'den dinamik anket şablonunu ve seçeneklerini yükle
+  const config = await getPollConfig();
+  const rawTitle = pollTitleCustom || config.titleTemplate || '{{date}}';
+  const pollTitle = getDailyPollTitle(rawTitle);
+  const pollOptions = (config.options && Array.isArray(config.options) && config.options.length > 0)
+    ? config.options
+    : DEFAULT_POLL_OPTIONS;
 
   try {
     const sent = await sock.sendMessage(targetGroupId, {
       poll: {
         name: pollTitle,
-        values: DEFAULT_POLL_OPTIONS,
+        values: pollOptions,
         selectableCount: 1
       }
     });
 
     const messageId = sent?.key?.id || 'GÖNDERİLDİ';
-    state.lastPollSentAt = new Date().toISOString();
-    console.log(`🗳️ Baileys WhatsApp Anketi gönderildi (${pollTitle}) [Grup: ${groupId}] -> MsgId: ${messageId}`);
+    state.lastPollSentAt = getTRDateString();
+    // console.log(`🗳️ Baileys WhatsApp Anketi gönderildi (${pollTitle}) [Grup: ${targetGroupId}] -> MsgId: ${messageId}`);
 
     // Anket mesajını store'a kaydet (oy şifre çözümü için)
     if (sent) {
@@ -756,11 +825,11 @@ async function sendWhatsAppPoll(options = {}) {
     if (isDBEnabled()) {
       await savePoll({
         pollId: messageId,
-        groupId: groupId,
+        groupId: targetGroupId,
         title: pollTitle,
-        options: DEFAULT_POLL_OPTIONS,
+        options: pollOptions,
         messageData: serializePollMessage(sent?.message),
-        createdAt: new Date()
+        createdAt: getTRDateString()
       });
     }
 
@@ -768,7 +837,7 @@ async function sendWhatsAppPoll(options = {}) {
       success: true,
       messageId,
       pollTitle,
-      groupId,
+      groupId: targetGroupId,
       sentAt: state.lastPollSentAt
     };
   } catch (err) {
@@ -973,6 +1042,35 @@ app.post('/api/pairing-code', async (req, res) => {
 });
 
 // ============================================================================
+// ANKET ŞABLONU & AYARLARI API ENDPOINT'LERİ
+// ============================================================================
+
+// Anket şablon ayarlarını getir
+app.get('/api/poll-config', async (req, res) => {
+  try {
+    const config = await getPollConfig();
+    res.json({ success: true, config, dbEnabled: isDBEnabled() });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Anket şablon ayarlarını kaydet / güncelle
+app.post('/api/poll-config', async (req, res) => {
+  try {
+    const { titleTemplate, options } = req.body;
+    const result = await savePollConfig({ titleTemplate, options });
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
 // ANKET VERİTABANI API ENDPOINT'LERİ
 // ============================================================================
 
@@ -987,7 +1085,13 @@ app.get('/api/polls', async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(50)
       .toArray();
-    res.json({ success: true, count: polls.length, polls });
+
+    const formattedPolls = polls.map(p => ({
+      ...p,
+      createdAt: p.createdAt ? getTRDateString(p.createdAt) : p.createdAt
+    }));
+
+    res.json({ success: true, count: formattedPolls.length, polls: formattedPolls });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1007,12 +1111,20 @@ app.get('/api/poll-votes/:pollId', async (req, res) => {
 
     // İlgili anketi de getir
     const poll = await getDB().collection('polls').findOne({ pollId });
+    if (poll && poll.createdAt) {
+      poll.createdAt = getTRDateString(poll.createdAt);
+    }
+
+    const formattedVotes = votes.map(v => ({
+      ...v,
+      updatedAt: v.updatedAt ? getTRDateString(v.updatedAt) : v.updatedAt
+    }));
 
     res.json({
       success: true,
       poll: poll || null,
-      voteCount: votes.length,
-      votes
+      voteCount: formattedVotes.length,
+      votes: formattedVotes
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

@@ -69,25 +69,6 @@
       margin-bottom: 24px;
     }
 
-    .header-logo {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 8px;
-    }
-
-    .header-logo-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 14px;
-      background: linear-gradient(135deg, var(--accent-emerald), var(--accent-cyan));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      box-shadow: 0 8px 24px var(--accent-emerald-glow);
-    }
-
     .header-title {
       font-size: 26px;
       font-weight: 800;
@@ -289,11 +270,11 @@
       width: 100%;
       padding: 14px 20px;
       border-radius: 14px;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
       font-family: 'Inter', sans-serif;
       cursor: pointer;
-      border: none;
+      border: 1px solid transparent;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -303,35 +284,202 @@
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--accent-emerald), #059669);
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
       color: #ffffff;
-      box-shadow: 0 4px 20px var(--accent-emerald-glow);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.22);
     }
 
     .btn-primary:hover:not(:disabled) {
+      background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
       transform: translateY(-2px);
-      box-shadow: 0 8px 28px rgba(16, 185, 129, 0.4);
     }
 
     .btn-secondary {
       background: rgba(255, 255, 255, 0.06);
-      color: var(--text-main);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.12);
     }
 
     .btn-secondary:hover:not(:disabled) {
-      background: rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.25);
       transform: translateY(-2px);
     }
 
     .btn-info {
-      background: linear-gradient(135deg, var(--accent-cyan), #0284c7);
+      background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
       color: #ffffff;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      box-shadow: 0 4px 14px rgba(14, 165, 233, 0.22);
     }
 
     .btn-info:hover:not(:disabled) {
+      background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+      box-shadow: 0 6px 18px rgba(14, 165, 233, 0.35);
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(6, 182, 212, 0.35);
+    }
+
+    .btn-purple {
+      background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+      color: #ffffff;
+      border: 1px solid rgba(192, 132, 252, 0.3);
+      box-shadow: 0 4px 14px rgba(139, 92, 246, 0.22);
+    }
+
+    .btn-purple:hover:not(:disabled) {
+      background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+      box-shadow: 0 6px 18px rgba(139, 92, 246, 0.35);
+      transform: translateY(-2px);
+    }
+
+    .modal-card-large {
+      max-width: 600px;
+    }
+
+    .config-card-box {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      text-align: left;
+    }
+
+    .option-edit-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .option-edit-input {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 6px 10px;
+      color: #fff;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .option-edit-input:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .btn-icon-danger {
+      background: rgba(244, 63, 94, 0.15);
+      color: #fb7185;
+      border: 1px solid rgba(251, 113, 133, 0.3);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      transition: all 0.2s ease;
+    }
+
+    .btn-icon-danger:hover {
+      background: rgba(244, 63, 94, 0.3);
+    }
+
+    .poll-item-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-align: left;
+    }
+
+    .poll-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .poll-item-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .poll-item-date {
+      font-size: 11px;
+      color: var(--text-sub);
+    }
+
+    .poll-options-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .option-tag {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .select-input {
+      width: 100%;
+      background: rgba(17, 24, 39, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+      margin-bottom: 16px;
+      cursor: pointer;
+    }
+
+    .select-input option {
+      background: #111827;
+      color: #fff;
+    }
+
+    .vote-summary-card {
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      text-align: left;
+    }
+
+    .vote-list-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      text-align: left;
+    }
+
+    .vote-list-table th,
+    .vote-list-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .vote-list-table th {
+      color: var(--text-sub);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 10px;
     }
 
     .btn:disabled {
@@ -469,10 +617,6 @@
   <div class="container">
     <!-- Header -->
     <div class="header">
-      <div class="header-logo">
-        <div class="header-logo-icon">📊</div>
-        <h1 class="header-title">WhatsApp Analytics & Bot</h1>
-      </div>
       <p class="header-subtitle">Otomatik Günlük Anket & Anlık Oy Takip Paneli</p>
     </div>
 
@@ -504,6 +648,14 @@
           Anketi Şimdi Gönder
         </button>
         <div class="btn-row">
+          <button class="btn btn-info" id="showPollsBtn" onclick="showPolls()">
+            Anketler
+          </button>
+          <button class="btn btn-purple" id="showVotesBtn" onclick="showVotes()">
+            Anket Oyları
+          </button>
+        </div>
+        <div class="btn-row">
           <button class="btn btn-secondary" id="showGroupsBtn" onclick="showGroups()" disabled>
             Gruplar & JID
           </button>
@@ -530,6 +682,88 @@
       </p>
       <div id="groupsListArea" style="max-height: 280px; overflow-y: auto; padding-right: 4px;"></div>
       <button class="btn btn-secondary" style="margin-top: 16px;" onclick="closeGroupsModal()">Kapat</button>
+    </div>
+  </div>
+
+  <!-- Polls List & Settings Modal -->
+  <div class="modal-overlay" id="pollsModal">
+    <div class="modal-card modal-card-large">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 18px; color: #fff;">Anket Yönetimi & Şablon Ayarları</h3>
+        <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;"
+          onclick="closePollsModal()">✕ Kapat</button>
+      </div>
+
+      <!-- Config Form Box -->
+      <div class="config-card-box">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+          <h4 style="font-size: 13px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+            Anket Başlığı & Seçenek Ayarları
+          </h4>
+          <span style="font-size: 10px; color: var(--text-sub);" id="configLastUpdate"></span>
+        </div>
+
+        <!-- Title Template Input -->
+        <div style="margin-bottom: 12px; text-align: left;">
+          <label
+            style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">
+            Anket Başlığı Şablonu:
+          </label>
+          <input type="text" id="cfgTitleTemplate" class="phone-input" style="width: 100%; font-size: 13px;"
+            placeholder="Örn: {{date}} Okuma Takibi" />
+          <div style="font-size: 10px; color: var(--text-sub); margin-top: 4px;">
+            💡 <code>{{date}}</code> yazarsanız günün tarihi (örn: <b>4 Ağustos</b>) otomatik yerleşir. Sabit başlık
+            için düz metin yazabilirsiniz.
+          </div>
+        </div>
+
+        <!-- Options Dynamic List -->
+        <div style="margin-bottom: 12px; text-align: left;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted);">
+              Anket Seçenekleri:
+            </label>
+            <button class="copy-btn" style="padding: 3px 8px; font-size: 10px;" onclick="addOptionInput()">➕ Seçenek
+              Ekle</button>
+          </div>
+          <div id="cfgOptionsList"
+            style="display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; padding-right: 4px;">
+          </div>
+        </div>
+
+        <!-- Save / Reset Actions -->
+        <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;">
+          <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 11px;"
+            onclick="resetPollConfigUI()">Varsayılana Sıfırla</button>
+          <button class="btn btn-primary" style="width: auto; padding: 6px 16px; font-size: 11px;"
+            onclick="savePollConfigUI()">Şablonu Kaydet</button>
+        </div>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 14px 0;" />
+
+      <!-- Sent Polls History -->
+      <h4 style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-align: left; margin-bottom: 10px;">
+        Geçmiş Gönderilen Anketler:
+      </h4>
+      <div id="pollsListArea" style="max-height: 220px; overflow-y: auto; padding-right: 4px;"></div>
+    </div>
+  </div>
+
+  <!-- Poll Votes Modal -->
+  <div class="modal-overlay" id="votesModal">
+    <div class="modal-card modal-card-large">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="font-size: 18px; color: #fff;">🗳️ Anket Oyları (poll_votes)</h3>
+        <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;"
+          onclick="closeVotesModal()">✕ Kapat</button>
+      </div>
+
+      <select id="pollSelectDropdown" class="select-input" onchange="loadSelectedPollVotes(this.value)">
+        <option value="">Anketler Yükleniyor...</option>
+      </select>
+
+      <div id="votesContentArea" style="max-height: 340px; overflow-y: auto; padding-right: 4px;"></div>
     </div>
   </div>
 
@@ -703,7 +937,7 @@
         showToast('❌ Sunucu hatası oluştu');
       } finally {
         sendBtn.disabled = false;
-        sendBtn.innerText = '🗳️ Anketi Şimdi Gönder';
+        sendBtn.innerText = 'Anketi Şimdi Gönder';
         checkStatus();
       }
     }
@@ -738,6 +972,272 @@
 
     function closeGroupsModal() {
       document.getElementById('groupsModal').style.display = 'none';
+    }
+
+    // ----------------------------------------------------
+    // ANKET ŞABLONU & DİNAMİK SEÇENEK YÖNETİMİ
+    // ----------------------------------------------------
+    let currentConfigOptions = [];
+
+    async function loadPollConfigUI() {
+      try {
+        const res = await fetch('/api/poll-config');
+        const data = await res.json();
+        if (data.success && data.config) {
+          const titleInput = document.getElementById('cfgTitleTemplate');
+          if (titleInput) titleInput.value = data.config.titleTemplate || '{{date}}';
+
+          currentConfigOptions = Array.isArray(data.config.options) ? [...data.config.options] : [];
+
+          const lastUpd = document.getElementById('configLastUpdate');
+          if (lastUpd) {
+            lastUpd.innerText = data.config.updatedAt ? 'Güncelleme: ' + data.config.updatedAt : '';
+          }
+          renderOptionInputs();
+        }
+      } catch (e) {
+        console.error('Config fetch error:', e);
+      }
+    }
+
+    function renderOptionInputs() {
+      const container = document.getElementById('cfgOptionsList');
+      if (!container) return;
+
+      if (currentConfigOptions.length === 0) {
+        container.innerHTML = '<p style="font-size:11px; color:var(--text-sub);">Henüz seçenek eklenmedi.</p>';
+        return;
+      }
+
+      container.innerHTML = currentConfigOptions.map((opt, idx) => `
+        <div class="option-edit-row">
+          <input type="text" class="option-edit-input" value="${escapeHtml(opt)}" onchange="updateOptionValue(${idx}, this.value)" placeholder="Seçenek ${idx + 1}" />
+          <button class="btn-icon-danger" title="Sil" onclick="removeOptionInput(${idx})">🗑️</button>
+        </div>
+      `).join('');
+    }
+
+    function updateOptionValue(index, val) {
+      currentConfigOptions[index] = val;
+    }
+
+    function addOptionInput() {
+      currentConfigOptions.push('');
+      renderOptionInputs();
+      const container = document.getElementById('cfgOptionsList');
+      const inputs = container?.querySelectorAll('.option-edit-input');
+      if (inputs && inputs.length > 0) {
+        inputs[inputs.length - 1].focus();
+      }
+    }
+
+    function removeOptionInput(index) {
+      currentConfigOptions.splice(index, 1);
+      renderOptionInputs();
+    }
+
+    async function savePollConfigUI() {
+      const titleTemplate = document.getElementById('cfgTitleTemplate')?.value?.trim() || '{{date}}';
+      const container = document.getElementById('cfgOptionsList');
+      const inputs = container?.querySelectorAll('.option-edit-input') || [];
+      const options = [];
+      inputs.forEach(inp => {
+        const val = inp.value.trim();
+        if (val) options.push(val);
+      });
+
+      if (options.length === 0) {
+        showToast('⚠️ En az 1 geçerli anket seçeneği girmelisiniz!');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/poll-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titleTemplate, options })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ Anket şablonu ve seçenekler kaydedildi!');
+          currentConfigOptions = options;
+          loadPollConfigUI();
+        } else {
+          showToast('❌ Hata: ' + (data.message || 'Kaydedilemedi'));
+        }
+      } catch (err) {
+        showToast('❌ Sunucu hatası oluştu');
+      }
+    }
+
+    function resetPollConfigUI() {
+      const titleInput = document.getElementById('cfgTitleTemplate');
+      if (titleInput) titleInput.value = '{{date}}';
+      currentConfigOptions = [
+        '5 dakika', '10 dakika', '15 dakika', '20 dakika', '30 dakika',
+        '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika',
+        '150 dakika', '180 dakika'
+      ];
+      renderOptionInputs();
+      showToast('🔄 Varsayılan dakikalar yüklendi. Kaydet butonuna basarak onaylayabilirsiniz.');
+    }
+
+    // ----------------------------------------------------
+    // ANKETLER MODALI (polls)
+    // ----------------------------------------------------
+    async function showPolls() {
+      const modal = document.getElementById('pollsModal');
+      const listArea = document.getElementById('pollsListArea');
+      listArea.innerHTML = '<div class="spinner"></div><p style="font-size:12px; color:var(--text-muted); text-align:center;">Anketler yükleniyor...</p>';
+      modal.style.display = 'flex';
+
+      // Anket şablon ayarlarını yükle
+      loadPollConfigUI();
+
+      try {
+        const res = await fetch('/api/polls');
+        const data = await res.json();
+
+        if (!data.success) {
+          listArea.innerHTML = `<p style="font-size:13px; color:var(--accent-rose); text-align:center; padding:20px 0;">${escapeHtml(data.message || 'Hata oluştu')}</p>`;
+          return;
+        }
+
+        if (!data.polls || data.polls.length === 0) {
+          listArea.innerHTML = '<p style="font-size:13px; color:var(--text-muted); text-align:center; padding:20px 0;">Henüz kayıtlı anket bulunmuyor.</p>';
+          return;
+        }
+
+        listArea.innerHTML = data.polls.map(p => `
+          <div class="poll-item-card">
+            <div class="poll-header-row">
+              <div class="poll-item-title">${escapeHtml(p.title || 'Başlıksız Anket')}</div>
+              <div class="poll-item-date">📅 ${escapeHtml(p.createdAt || '-')}</div>
+            </div>
+            <div style="font-size:11px; color:var(--text-sub); font-family:monospace;">ID: ${escapeHtml(p.pollId)}</div>
+            <div class="poll-options-tags">
+              ${(p.options || []).map(opt => `<span class="option-tag">${escapeHtml(opt)}</span>`).join('')}
+            </div>
+            <div style="margin-top: 6px; text-align: right;">
+              <button class="btn btn-purple" style="width:auto; padding:6px 14px; font-size:11px;" onclick="closePollsModal(); showVotes('${escapeHtml(p.pollId)}');">
+                🗳️ Oyları Gör
+              </button>
+            </div>
+          </div>
+        `).join('');
+
+      } catch (err) {
+        listArea.innerHTML = '<p style="font-size:13px; color:var(--accent-rose); text-align:center; padding:20px 0;">Anketler yüklenirken hata oluştu.</p>';
+      }
+    }
+
+    function closePollsModal() {
+      document.getElementById('pollsModal').style.display = 'none';
+    }
+
+    // ----------------------------------------------------
+    // ANKET OYLARI MODALI (poll_votes)
+    // ----------------------------------------------------
+    async function showVotes(targetPollId = null) {
+      const modal = document.getElementById('votesModal');
+      const dropdown = document.getElementById('pollSelectDropdown');
+      const contentArea = document.getElementById('votesContentArea');
+      modal.style.display = 'flex';
+      contentArea.innerHTML = '<div class="spinner"></div><p style="font-size:12px; color:var(--text-muted); text-align:center;">Oylar yükleniyor...</p>';
+
+      try {
+        const res = await fetch('/api/polls');
+        const data = await res.json();
+
+        if (!data.success || !data.polls || data.polls.length === 0) {
+          dropdown.innerHTML = '<option value="">(Kayıtlı anket bulunamadı)</option>';
+          contentArea.innerHTML = `<p style="font-size:13px; color:var(--text-muted); text-align:center; padding:20px 0;">${escapeHtml(data.message || 'Kayıtlı anket yok.')}</p>`;
+          return;
+        }
+
+        dropdown.innerHTML = data.polls.map(p => `
+          <option value="${escapeHtml(p.pollId)}" ${targetPollId === p.pollId ? 'selected' : ''}>
+            ${escapeHtml(p.title)} (${escapeHtml(p.createdAt || '-')}) - [ID: ${escapeHtml(p.pollId)}]
+          </option>
+        `).join('');
+
+        const activePollId = targetPollId || data.polls[0].pollId;
+        dropdown.value = activePollId;
+        await loadSelectedPollVotes(activePollId);
+
+      } catch (err) {
+        contentArea.innerHTML = '<p style="font-size:13px; color:var(--accent-rose); text-align:center; padding:20px 0;">Oylar alınırken hata oluştu.</p>';
+      }
+    }
+
+    async function loadSelectedPollVotes(pollId) {
+      const contentArea = document.getElementById('votesContentArea');
+      if (!pollId) {
+        contentArea.innerHTML = '<p style="font-size:12px; color:var(--text-muted); text-align:center;">Lütfen bir anket seçin.</p>';
+        return;
+      }
+
+      contentArea.innerHTML = '<div class="spinner"></div>';
+
+      try {
+        const res = await fetch(`/api/poll-votes/${encodeURIComponent(pollId)}`);
+        const data = await res.json();
+
+        if (!data.success) {
+          contentArea.innerHTML = `<p style="font-size:13px; color:var(--accent-rose); text-align:center;">${escapeHtml(data.message || 'Hata oluştu')}</p>`;
+          return;
+        }
+
+        const votes = data.votes || [];
+        const poll = data.poll || {};
+
+        let html = `
+          <div class="vote-summary-card">
+            <div>
+              <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(poll.title || 'Anket Oyları')}</div>
+              <div style="font-size:11px; color:var(--text-sub);">Oluşturulma: ${escapeHtml(poll.createdAt || '-')}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:20px; font-weight:800; color:var(--accent-emerald);">${data.voteCount || 0}</div>
+              <div style="font-size:10px; color:var(--text-sub);">Toplam Oy</div>
+            </div>
+          </div>
+        `;
+
+        if (votes.length === 0) {
+          html += '<p style="font-size:13px; color:var(--text-muted); text-align:center; padding:20px 0;">Bu ankete henüz oy verilmemiş.</p>';
+        } else {
+          html += `
+            <table class="vote-list-table">
+              <thead>
+                <tr>
+                  <th>Telefon / JID</th>
+                  <th>Seçim(ler)</th>
+                  <th style="text-align:right;">Zaman (TSİ)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${votes.map(v => `
+                  <tr>
+                    <td style="font-weight:600; color:#38bdf8;">📱 ${escapeHtml(v.voterPhone || v.voterJid)}</td>
+                    <td>${(v.selectedOptions || []).map(opt => `<span class="option-tag" style="color:#fff; background:rgba(16,185,129,0.2); border-color:rgba(16,185,129,0.4);">${escapeHtml(opt)}</span>`).join(' ')}</td>
+                    <td style="text-align:right; color:var(--text-sub); font-size:11px;">${escapeHtml(v.updatedAt || '-')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        }
+
+        contentArea.innerHTML = html;
+
+      } catch (err) {
+        contentArea.innerHTML = '<p style="font-size:13px; color:var(--accent-rose); text-align:center;">Oy verileri alınırken hata oluştu.</p>';
+      }
+    }
+
+    function closeVotesModal() {
+      document.getElementById('votesModal').style.display = 'none';
     }
 
     async function getPairingCode() {

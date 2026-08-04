@@ -14,10 +14,17 @@ Bu depo, WhatsApp gruplarında **otomatik anket gönderme**, **mesaj gönderme**
 ## Öne Çıkan Özellikler
 
 - **Otomatik Anket Gönderme ve Takip:** Belirlenen saatlerde (varsayılan: her gün 09:00 TSİ) WhatsApp gruplarına otomatik anket gönderir, katılım ve oy değişikliklerini anlık olarak veritabanına kaydeder.
+- **Dinamik Başlık ve Seçenek Şablonları:** MongoDB üzerinden `{{date}}` etiketli dinamik tarihli ya da sabit başlıklar belirleyebilir, seçenek sayılarını ve metinlerini arayüzden yönetebilirsiniz.
 - **Otomatik Mesaj Gönderimi:** Gruplara veya kişilere zamanlanmış ya da anlık duyuru, hatırlatma ve bilgi mesajları iletir.
-- **Veri Saklama ve İstatistik (MongoDB):** Kullanıcı tercihlerini, anket sonuçlarını ve grup etkileşim verilerini MongoDB veritabanında düzenli olarak saklar ve istatistik takibi sağlar.
-- **Canlı Web Yönetim Paneli:** QR kod okutma, 8 haneli oturum kodu alma, grupların JID adreslerini listeleme ve tek tıkla anket tetikleme paneli.
+- **Veri Saklama ve İstatistik (MongoDB):** Kullanıcı tercihlerini, anket sonuçlarını ve oy detaylarını MongoDB veritabanında düzenli saklar ve istatistik takibi sağlar.
+- **Canlı Web Yönetim Paneli:** QR kod okutma, 8 haneli oturum kodu alma, grupların JID adreslerini listeleme, canlı anketler & oyları görüntüleme ve tek tıkla anket tetikleme paneli.
 - **7/24 Bulut Entegrasyonu:** Render.com veya sunucu ortamlarında bilgisayara ihtiyaç duymadan 7/24 kesintisiz çalışma desteği.
+
+---
+
+## Yönetim Paneli
+
+![Ana Sayfa Yönetim Paneli](screenshots/Ana%20Sayfa.png)
 
 ---
 
@@ -38,8 +45,8 @@ Proje kök dizininde `.env` dosyası oluşturun:
 WHATSAPP_GROUP_ID=123456789012345678@g.us
 
 # MongoDB Bağlantı Bilgileri
-MONGO_URI=mongodb+srv://kullanici:sifre@cluster.mongodb.net/
-DB_NAME=readingTracker
+MONGO_URI=your_mongodb_uri
+DB_NAME=yourdatabase
 
 # Render / Cloud Uyanık Tutma Servisi (Opsiyonel)
 PING_URL=https://your-site.onrender.com/api/health
@@ -72,6 +79,9 @@ Tarayıcınızda `http://localhost:3000/` adresini açarak yönetim paneline eri
 | `/` | `GET` | Yönetim Paneli Arayüzü |
 | `/api/status` | `GET` | İstemci ve veritabanı bağlantı durumu |
 | `/api/send-poll` | `POST` | Hedef gruba anlık anket gönderir |
+| `/api/polls` | `GET` | Gönderilmiş olan anketleri listeler |
+| `/api/poll-votes/:pollId` | `GET` | Seçilen ankete ait detaylı oy kayıtlarını getirir |
+| `/api/poll-config` | `GET` / `POST` | Anket başlığı şablonu ve dinamik seçenek ayarlarını okur/günceller |
 | `/api/groups` | `GET` | Katılınan WhatsApp gruplarını listeler |
 | `/api/request-pairing-code` | `POST` | Telefon numarası ile 8 haneli oturum kodu üretir |
 | `/api/restart` | `POST` | Oturumu ve istemciyi yeniden başlatır |
@@ -81,6 +91,16 @@ Tarayıcınızda `http://localhost:3000/` adresini açarak yönetim paneline eri
 
 ## Veritabanı Şeması (MongoDB)
 
+### `poll_config` Koleksiyonu (Anket Şablon ve Seçenek Ayarları)
+```json
+{
+  "_id": "default",
+  "titleTemplate": "{{date}} Okuma Takibi",
+  "options": [ "5 dakika", "10 dakika", "15 dakika", "20 dakika" ],
+  "updatedAt": "2026-08-04 10:45:00"
+}
+```
+
 ### `polls` Koleksiyonu (Anketler)
 ```json
 {
@@ -88,7 +108,7 @@ Tarayıcınızda `http://localhost:3000/` adresini açarak yönetim paneline eri
   "groupId": "123456789012345678@g.us",
   "title": "4 Ağustos",
   "options": [ "5 dakika", "10 dakika", "15 dakika", "20 dakika" ],
-  "createdAt": "2026-08-04T01:00:00.000Z"
+  "createdAt": "2026-08-04 10:00:00"
 }
 ```
 
@@ -99,7 +119,7 @@ Tarayıcınızda `http://localhost:3000/` adresini açarak yönetim paneline eri
   "voterJid": "905351234567",
   "voterPhone": "905351234567",
   "selectedOptions": [ "15 dakika" ],
-  "updatedAt": "2026-08-04T01:02:02.909Z"
+  "updatedAt": "2026-08-04 10:02:02"
 }
 ```
 
