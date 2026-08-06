@@ -486,19 +486,20 @@ async function processPollVoteUpdate(pollUpdateMsg) {
 
   console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone} (JID: ${activeVoterJid}) → Seçimler:`, selectedOptionNames);
 
+  await saveVote({
+    pollId: pollMsgId,
+    voterJid: voterPhone,
+    voterPhone: voterPhone,
+    rawLid: rawLid,
+    pushName: pushName,
+    selectedOptions: selectedOptionNames,
+    updatedAt: getTRDateString()
+  });
+
   if (selectedOptionNames.length > 0) {
-    await saveVote({
-      pollId: pollMsgId,
-      voterJid: voterPhone,
-      voterPhone: voterPhone,
-      rawLid: rawLid,
-      pushName: pushName,
-      selectedOptions: selectedOptionNames,
-      updatedAt: getTRDateString()
-    });
     console.log(`💾 Oy DB'ye kaydedildi! (${voterPhone} -> ${selectedOptionNames.join(', ')})`);
   } else {
-    await removeVote(pollMsgId, voterPhone);
+    console.log(`🗑️ Oy geri çekildi, DB güncellendi (boş dizi)! (${voterPhone} -> [])`);
   }
 }
 
@@ -754,14 +755,21 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
             }
           }
 
-          // Oy çekme tespiti
+          // Oy çekme tespiti (dokümanı silmek yerine selectedOptions: [] olarak güncelle)
           const db = getDB();
           if (db) {
             const existingVotes = await db.collection('poll_votes')
               .find({ pollId: key.id }).toArray();
             for (const existingVote of existingVotes) {
-              if (!allCurrentVoters.has(existingVote.voterJid)) {
-                await removeVote(key.id, existingVote.voterJid);
+              if (!allCurrentVoters.has(existingVote.voterJid) && existingVote.selectedOptions?.length > 0) {
+                await saveVote({
+                  pollId: key.id,
+                  voterJid: existingVote.voterJid,
+                  voterPhone: existingVote.voterPhone || existingVote.voterJid,
+                  pushName: existingVote.pushName,
+                  selectedOptions: [],
+                  updatedAt: getTRDateString()
+                });
               }
             }
           }

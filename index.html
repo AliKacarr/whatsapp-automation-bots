@@ -1220,7 +1220,9 @@
                 ${votes.map(v => `
                   <tr>
                     <td style="font-weight:600; color:#38bdf8;">📱 ${escapeHtml(v.pushName ? `${v.pushName} (${v.voterPhone || v.voterJid})` : (v.voterPhone || v.voterJid))}</td>
-                    <td>${(v.selectedOptions || []).map(opt => `<span class="option-tag" style="color:#fff; background:rgba(16,185,129,0.2); border-color:rgba(16,185,129,0.4);">${escapeHtml(opt)}</span>`).join(' ')}</td>
+                    <td>${(v.selectedOptions && v.selectedOptions.length > 0) 
+                      ? v.selectedOptions.map(opt => `<span class="option-tag" style="color:#fff; background:rgba(16,185,129,0.2); border-color:rgba(16,185,129,0.4);">${escapeHtml(opt)}</span>`).join(' ') 
+                      : `<span class="option-tag" style="color:#f87171; background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3);">⚠️ Oy Çekildi</span>`}</td>
                     <td style="text-align:right; color:var(--text-sub); font-size:11px;">${escapeHtml(v.updatedAt || '-')}</td>
                   </tr>
                 `).join('')}
