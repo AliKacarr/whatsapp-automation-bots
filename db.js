@@ -56,6 +56,9 @@ async function connectDB() {
 
     dbEnabled = true;
     console.log('✅ MongoDB bağlantısı başarılı. Veritabanı:', dbName);
+    
+    // Anket ayarları yoksa varsayılan şablonu veritabanına ekle
+    await getPollConfig();
     return db;
   } catch (err) {
     console.error('❌ MongoDB bağlantı hatası:', err.message);
@@ -202,7 +205,21 @@ async function getPollConfig() {
 
   try {
     const doc = await db.collection('poll_config').findOne({ _id: 'default' });
-    if (!doc) return defaultConfig;
+    if (!doc) {
+      const initialDoc = {
+        _id: 'default',
+        titleTemplate: defaultConfig.titleTemplate,
+        options: defaultConfig.options,
+        updatedAt: getTRDateString()
+      };
+      await db.collection('poll_config').updateOne(
+        { _id: 'default' },
+        { $setOnInsert: initialDoc },
+        { upsert: true }
+      );
+      console.log('📌 poll_config dokümanı bulunamadı. Varsayılan anket ayarları veritabanına kaydedildi.');
+      return initialDoc;
+    }
 
     return {
       titleTemplate: doc.titleTemplate || defaultConfig.titleTemplate,

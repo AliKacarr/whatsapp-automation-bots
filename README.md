@@ -1,6 +1,6 @@
 # WhatsApp Otomasyon Botları
 
-Bu depo, WhatsApp gruplarında **otomatik anket gönderme**, **mesaj gönderme** ve **veri toplama** işlemlerini gerçekleştirmek için geliştirilmiş otomasyon araçlarını içerir.
+Bu proje, WhatsApp gruplarında **otomatik anket gönderme**, **mesaj gönderme** ve **veri toplama** işlemlerini gerçekleştirmek için geliştirilmiş otomasyon araçlarını içerir.
 
 [![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express.js-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
@@ -13,12 +13,95 @@ Bu depo, WhatsApp gruplarında **otomatik anket gönderme**, **mesaj gönderme**
 
 ## Öne Çıkan Özellikler
 
-- **Otomatik Anket Gönderme ve Takip:** Belirlenen saatlerde (varsayılan: her gün 09:00 TSİ) WhatsApp gruplarına otomatik anket gönderir, katılım ve oy değişikliklerini anlık olarak veritabanına kaydeder.
-- **Dinamik Başlık ve Seçenek Şablonları:** MongoDB üzerinden `{{date}}` etiketli dinamik tarihli ya da sabit başlıklar belirleyebilir, seçenek sayılarını ve metinlerini arayüzden yönetebilirsiniz.
-- **Otomatik Mesaj Gönderimi:** Gruplara veya kişilere zamanlanmış ya da anlık duyuru, hatırlatma ve bilgi mesajları iletir.
-- **Veri Saklama ve İstatistik (MongoDB):** Kullanıcı tercihlerini, anket sonuçlarını ve oy detaylarını MongoDB veritabanında düzenli saklar ve istatistik takibi sağlar.
-- **Canlı Web Yönetim Paneli:** QR kod okutma, 8 haneli oturum kodu alma, grupların JID adreslerini listeleme, canlı anketler & oyları görüntüleme ve tek tıkla anket tetikleme paneli.
-- **7/24 Bulut Entegrasyonu:** Render.com veya sunucu ortamlarında bilgisayara ihtiyaç duymadan 7/24 kesintisiz çalışma desteği.
+- **Anket ve Mesaj Gönderimi:** WhatsApp gruplarınıza her gün otomatik anket ve mesaj gönderebilirsiniz.
+- **Veri Saklama:** Kullanıcıların **anlık anket oylamaları** ve **grup mesajları** MongoDB veri tabanında kalıcı olarak saklanır.
+- **Canlı Web Yönetim Paneli:** Arayüzden anket sonuçlarını görüntüleyebilir ve anket gönderimini tetikleyebilirsiniz.
+
+---
+
+## Kurulum Rehberi
+
+Uygulamayı ihtiyacınıza göre **Render.com üzerinde sunucu ortamında** veya **kendi bilgisayarınızda (yerel)** çalıştırabilirsiniz.
+
+### 1. Render.com ile Sunucuda Kurulum
+
+Botunuzu Render.com üzerinde 7/24 kesintisiz çalışır hale getirmek için aşağıdaki adımları sırasıyla uygulayabilirsiniz:
+
+#### 1. Adım: Projeyi Render'da Yayına Alma ve İlk Bağlantı (QR Kod)
+1. Bu projeyi kendi GitHub hesabınıza **Fork** edin.
+2. [Render.com](https://render.com/) adresine ücretsiz üye olun ve **New +** > **Web Service** seçeneğini seçin.
+3. Forkladığınız GitHub reponuzu bağlayın ve yayına alın.
+4. Render size özel bir web site adresi verecektir (Örn: `https://okuma-takip-botu.onrender.com`).
+5. Bu adrese tarayıcınızdan girin. Karşınıza gelen **QR Kodu** WhatsApp uygulamanızdan *(Bağlı Cihazlar > Cihaz Bağla)* okutarak botunuzu bağlayın.
+
+#### 2. Adım: Grup ID (JID) Bilgisini Kopyalama
+1. QR kodu okutup giriş yaptıktan sonra yönetim panelinin üst menüsünde yer alan **"Gruplar & JID"** butonuna tıklayın.
+2. Botun üye olduğu WhatsApp grupları listelenecektir. Anket göndermek istediğiniz grubun yanındaki **JID** kodunu kopyalayın (Örn: `123456789012345678@g.us`).
+
+#### 3. Adım: Render Ayarlarını Yapılandırma (Environment Variables)
+1. [Render.com](https://render.com/) paneline dönün ve oluşturduğunuz servis içerisinden **Environment** bölümüne gelin.
+2. Aşağıdaki değişkenleri **Add Environment Variable** butonunu kullanarak ekleyin:
+
+| Değişken Adı | Değer / Açıklama |
+| :--- | :--- |
+| **`WHATSAPP_GROUP_ID`** | 2. adımda kopyalamış olduğunuz grup JID bilgisi. |
+| **`PING_URL`** | Web sitenizin adresinin sonuna `/api/health` ekleyerek yazın.<br>*(Örn: `https://okuma-takip-botu.onrender.com/api/health`)* |
+| **`MONGO_URI`** | Anket sonuçları ve oy verilerini kaydetmek için MongoDB bağlantı adresiniz. |
+| **`DB_NAME`** | Veritabanı adınız. |
+
+3. Değişiklikleri kaydedin. Render uygulamanızı otomatik olarak yeniden başlatacak ve botunuz belirlenen saatlerde grubunuza otomatik anket göndermeye başlayacaktır!
+
+---
+
+### 2. Yerel Kurulum
+
+Projeyi kendi bilgisayarınızda geliştirme veya test amacıyla çalıştırmak isterseniz:
+
+1. **Bağımlılıkları Yükleyin:**
+   ```bash
+   npm install
+   ```
+
+2. **Ortam Değişkenlerini Oluşturun:**
+   Kök dizinde `.env` dosyası oluşturup değişkenlerinizi tanımlayın:
+   ```env
+   WHATSAPP_GROUP_ID=123456789012345678@g.us
+   MONGO_URI=your_mongodb_uri
+   DB_NAME=yourdatabase
+   ```
+
+3. **Uygulamayı Başlatın:**
+   ```bash
+   npm start
+   ```
+   Tarayıcınızda `http://localhost:3000/` adresine girerek yönetim paneline erişebilir ve QR kod taratarak oturum açabilirsiniz.
+
+---
+
+### Anketleri Özelleştirme
+
+Anketlerin gönderim zamanını, başlığını ve seçeneklerini iki farklı şekilde güncelleyebilirsiniz:
+
+- **Dosya Üzerinden (`server.js`):** `scheduleWhatsAppPollJob` fonksiyonundaki cron saat zamanlamasını (varsayılan: `0 9 * * *` - her gün 09:00 TSİ) ile `DEFAULT_POLL_OPTIONS` ve `getDailyPollTitle` fonksiyonlarını doğrudan kod içerisinden değiştirebilirsiniz.
+- **Veritabanı Üzerinden (`poll_config` koleksiyonu):** MongoDB veritabanınız bağlıysa, arayüzdeki anket ayarları panelinden veya MongoDB veritabanınızdaki `poll_config` koleksiyonundan `titleTemplate` ve `options` verilerini dinamik olarak güncelleyebilirsiniz.
+
+---
+
+## Python Botları ve Analiz Araçları
+
+Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak isteyenler için repoda Python araçları yer almaktadır:
+
+- **Gerekli Kütüphaneler:**
+  ```bash
+  pip install selenium clipboard
+  ```
+- **Araçlar:**
+  - `wp-bot-anket-olusturucu.py`: WhatsApp Web üzerinden otomatik anket oluşturur.
+  - `wp-bot-oto-mesaj.py`: Belirli zamanlarda otomatik grup mesajı gönderir.
+  - `wp-bot-web-istatistikleri.py`: Grup sohbet mesajlarını kelime ve tarih aralığına göre analiz eder.
+  - `wp-bot-anket-istatistikleri.py`: Anket oylarını ve katılımcı dağılımını analiz eder.
+  - `wp-bot-desktop.py`: Masaüstü WhatsApp verilerini işler.
+  - `logout_whatsapp.py`: Oturumu güvenli şekilde sonlandırır.
 
 ---
 
@@ -28,70 +111,26 @@ Bu depo, WhatsApp gruplarında **otomatik anket gönderme**, **mesaj gönderme**
 
 ---
 
-## Kurulum ve Yapılandırma
-
-### 1. Bağımlılıkları Yükleyin
-
-```bash
-npm install
-```
-
-### 2. Ortam Değişkenlerini Tanımlayın (`.env`)
-
-Proje kök dizininde `.env` dosyası oluşturun:
-
-```env
-# Hedef WhatsApp Grup JID Adresi
-WHATSAPP_GROUP_ID=123456789012345678@g.us
-
-# MongoDB Bağlantı Bilgileri
-MONGO_URI=your_mongodb_uri
-DB_NAME=yourdatabase
-
-# Render / Cloud Uyanık Tutma Servisi (Opsiyonel)
-PING_URL=https://your-site.onrender.com/api/health
-```
-
-### 3. Grup JID Bilgisini Öğrenme
-
-Grup JID kodunu iki farklı yöntemle öğrenebilirsiniz:
-
-- **Web Paneli Üzerinden:** WhatsApp oturumu açtıktan sonra panodaki **"Gruplar & JID"** butonuna tıklayarak gruplarınızı listeleyebilir ve ilgili JID kodunu kopyalayabilirsiniz.
-- **Terminal Üzerinden:** Terminalde aşağıdaki komutu çalıştırarak üye olduğunuz tüm grupları ve JID kodlarını listeleyebilirsiniz:
-  ```bash
-  node list-groups.js
-  ```
-
-### 4. Uygulamayı Başlatın
-
-```bash
-npm start
-```
-
-Tarayıcınızda `http://localhost:3000/` adresini açarak yönetim paneline erişebilir ve QR kod ile oturum açabilirsiniz.
-
----
-
 ## API Referansı
 
 | Endpoint | Metod | Açıklama |
 | :--- | :--- | :--- |
-| `/` | `GET` | Yönetim Paneli Arayüzü |
-| `/api/status` | `GET` | İstemci ve veritabanı bağlantı durumu |
+| `/` | `GET` | Web Yönetim Paneli Arayüzü |
+| `/api/status` | `GET` | Bot ve veritabanı bağlantı durumu |
 | `/api/send-poll` | `POST` | Hedef gruba anlık anket gönderir |
-| `/api/polls` | `GET` | Gönderilmiş olan anketleri listeler |
+| `/api/polls` | `GET` | Gönderilmiş anketleri listeler |
 | `/api/poll-votes/:pollId` | `GET` | Seçilen ankete ait detaylı oy kayıtlarını getirir |
-| `/api/poll-config` | `GET` / `POST` | Anket başlığı şablonu ve dinamik seçenek ayarlarını okur/günceller |
-| `/api/groups` | `GET` | Katılınan WhatsApp gruplarını listeler |
+| `/api/poll-config` | `GET` / `POST` | Anket başlığı ve seçenek ayarlarını okur/günceller |
+| `/api/groups` | `GET` | Katılınan WhatsApp gruplarını ve JID adreslerini listeler |
 | `/api/request-pairing-code` | `POST` | Telefon numarası ile 8 haneli oturum kodu üretir |
 | `/api/restart` | `POST` | Oturumu ve istemciyi yeniden başlatır |
-| `/api/health` | `GET` | Sunucu sağlık kontrolü endpoint'i |
+| `/api/health` | `GET` | Sunucu canlılık (health check) endpoint'i |
 
 ---
 
 ## Veritabanı Şeması (MongoDB)
 
-### `poll_config` Koleksiyonu (Anket Şablon ve Seçenek Ayarları)
+#### `poll_config` Koleksiyonu (Anket Şablon Ayarları)
 ```json
 {
   "_id": "default",
@@ -101,7 +140,7 @@ Tarayıcınızda `http://localhost:3000/` adresini açarak yönetim paneline eri
 }
 ```
 
-### `polls` Koleksiyonu (Anketler)
+#### `polls` Koleksiyonu (Anket Kayıtları)
 ```json
 {
   "pollId": "3EB0FF9D45F3A12550DEDA",
@@ -112,7 +151,7 @@ Tarayıcınızda `http://localhost:3000/` adresini açarak yönetim paneline eri
 }
 ```
 
-### `poll_votes` Koleksiyonu (Oy Kayıtları)
+#### `poll_votes` Koleksiyonu (Anket Oy Kullanımları)
 ```json
 {
   "pollId": "3EB0FF9D45F3A12550DEDA",
@@ -123,33 +162,14 @@ Tarayıcınızda `http://localhost:3000/` adresini açarak yönetim paneline eri
 }
 ```
 
----
-
-## Cloud Deployment (Render.com)
-
-1. Projeyi GitHub hesabınıza forklayın.
-2. [Render.com](https://render.com/) üzerinde yeni bir **Web Service** oluşturun.
-3. **Environment Variables** bölümüne `.env` değişkenlerinizi ekleyin (`WHATSAPP_GROUP_ID`, `MONGO_URI`, `DB_NAME`, `PING_URL`).
-4. Servisi yayınlayıp verilen URL üzerinden yönetim paneline erişerek QR kodunuzu taratın.
-
----
-
-## Python Botları ve Araçları
-
-Grup iletişimi ve veri analizi için aşağıdaki Python scriptleri kullanılabilir:
-
-### Kurulum ve Gereksinimler
-```bash
-pip install selenium clipboard
+#### `lid_mappings` Koleksiyonu (LID - Telefon Numarası Eşleşmeleri)
+```json
+{
+  "_id": "114345098911975",
+  "phone": "905351234567",
+  "updatedAt": "2026-08-04 10:00:00"
+}
 ```
-
-### Scriptler ve Açıklamaları
-- **`wp-bot-anket-olusturucu.py`**: Selenium tabanlı WhatsApp Web üzerinden otomatik anket oluşturup gönderir.
-- **`wp-bot-oto-mesaj.py`**: Belirtilen WhatsApp grubuna Selenium ile otomatik mesaj iletir.
-- **`wp-bot-web-istatistikleri.py`**: WhatsApp Web üzerinde gruptaki mesajları tarih aralığı ve kelimelere göre sınıflandırarak analiz eder.
-- **`wp-bot-anket-istatistikleri.py`**: Gruptaki anketleri tarayarak oy veren kullanıcıları ve seçenek dağılımını analiz eder.
-- **`wp-bot-desktop.py`**: Masaüstü uygulamasından kopyalanan sohbet verilerini analiz eder.
-- **`logout_whatsapp.py`**: WhatsApp Web oturumunu güvenli şekilde kapatır.
 
 ---
 
