@@ -56,7 +56,7 @@ async function connectDB() {
 
     dbEnabled = true;
     console.log('✅ MongoDB bağlantısı başarılı. Veritabanı:', dbName);
-    
+
     // Anket ayarları yoksa varsayılan şablonu veritabanına ekle
     await getPollConfig();
     return db;
@@ -305,6 +305,62 @@ async function getAllLidMappings() {
   }
 }
 
+// ============================================================================
+// RASTGELE CÜMLE GÖNDERİM FONKSİYONU (Ayetler, Dualar, Hadisler, Hatırlatmalar, Vecizeler)
+// ============================================================================
+
+// Koleksiyonlar ve ağırlıklı seçim yüzdeleri (toplam: %100)
+const SENTENCE_COLLECTIONS = [
+  { name: 'ayetler', label: '*Bir Ayet*', weight: 15 },  // %15
+  { name: 'hadisler', label: '*Bir Hadis*', weight: 15 },  // %15
+  { name: 'dualar', label: '*Bir Dua*', weight: 15 },  // %15
+  { name: 'hatırlatmalar', label: '*Bir Hatırlatma*', weight: 15 },  // %15
+  { name: 'vecizeler', label: '*Bir Vecize*', weight: 40 },  // %40
+];
+
+/**
+ * Ağırlıklı rastgele koleksiyon seçimi.
+ * Her koleksiyonun weight değeri seçilme yüzdesini belirler.
+ */
+function pickWeightedCollection() {
+  const totalWeight = SENTENCE_COLLECTIONS.reduce((sum, c) => sum + c.weight, 0);
+  let random = Math.random() * totalWeight;
+
+  for (const col of SENTENCE_COLLECTIONS) {
+    random -= col.weight;
+    if (random <= 0) return col;
+  }
+  return SENTENCE_COLLECTIONS[0]; // fallback
+}
+
+async function getRandomSentence() {
+  if (!dbEnabled || !db) return null;
+
+  try {
+    // Ağırlıklı rastgele koleksiyon seç
+    const selected = pickWeightedCollection();
+    const randomCollection = selected.name;
+
+    // MongoDB $sample ile koleksiyondan rastgele bir doküman çek
+    const docs = await db.collection(randomCollection).aggregate([{ $sample: { size: 1 } }]).toArray();
+
+    if (!docs || docs.length === 0) {
+      console.warn(`⚠️ "${randomCollection}" koleksiyonunda doküman bulunamadı.`);
+      return null;
+    }
+
+    const doc = docs[0];
+    return {
+      sentence: doc.sentence,
+      collection: randomCollection,
+      label: selected.label
+    };
+  } catch (err) {
+    console.error('❌ Rastgele cümle çekme hatası:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   connectDB,
   isDBEnabled,
@@ -316,5 +372,6 @@ module.exports = {
   getPollConfig,
   savePollConfig,
   saveLidMapping,
-  getAllLidMappings
+  getAllLidMappings,
+  getRandomSentence
 };

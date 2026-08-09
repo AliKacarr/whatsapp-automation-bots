@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getRandomSentence } = require('./db');
 
 // ============================================================================
 // LOG FİLTRESİ (Libsignal / Bad MAC Gürültüsünü Engelleme)
@@ -911,6 +911,70 @@ async function sendWhatsAppPoll(options = {}) {
   }
 }
 
+// ============================================================================
+// RASTGELE CÜMLE GÖNDERİMİ (Ayetler, Dualar, Hadisler, Hatırlatmalar, Vecizeler)
+// ============================================================================
+
+async function sendWhatsAppSentence(options = {}) {
+  const targetGroupId = options.groupId || DEFAULT_GROUP_ID;
+
+  if (!hasValidGroupId() && !options.groupId) {
+    return {
+      success: false,
+      status: state.status,
+      message: '.env dosyasında WHATSAPP_GROUP_ID tanımlanmamış!'
+    };
+  }
+
+  if (!sock || state.status !== 'READY') {
+    return {
+      success: false,
+      status: state.status,
+      message: 'WhatsApp istemcisi bağlı veya hazır değil!'
+    };
+  }
+
+  if (!isDBEnabled()) {
+    return {
+      success: false,
+      message: 'Veritabanı bağlantısı aktif değil. Cümle gönderilemedi.'
+    };
+  }
+
+  try {
+    const result = await getRandomSentence();
+    if (!result || !result.sentence) {
+      return {
+        success: false,
+        message: 'Veritabanından rastgele cümle çekilemedi.'
+      };
+    }
+
+    // Mesajı formatla
+    const messageText = `${result.label}\n\n${result.sentence}`;
+
+    await sock.sendMessage(targetGroupId, { text: messageText });
+
+    const sentAt = getTRDateString();
+    console.log(`✅ [Cümle Gönderildi] ${result.label} → "${result.sentence.substring(0, 60)}..." [Grup: ${targetGroupId}]`);
+
+    return {
+      success: true,
+      sentAt,
+      collection: result.collection,
+      label: result.label,
+      sentence: result.sentence,
+      groupId: targetGroupId
+    };
+  } catch (err) {
+    console.error('❌ WhatsApp Cümle Gönderme Hatası:', err);
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
 async function getWhatsAppGroups() {
   if (!sock || state.status !== 'READY') {
     return [];
@@ -940,6 +1004,25 @@ function scheduleWhatsAppPollJob() {
     }
   });
   console.log("✅ WhatsApp Anket Zamanlayıcısı Kuruldu: Her gün saat 09:00 (TSİ)");
+  return job;
+}
+
+/**
+ * Her Salı ve Perşembe saat 22:30 TSİ'de rastgele cümle gönderir.
+ * Cron: dakika=30, saat=22, gün=*, ay=*, haftanın günü=2,4 (Salı, Perşembe)
+ */
+function scheduleSentenceJob() {
+  const job = schedule.scheduleJob({ rule: '30 22 * * 2,4', tz: 'Europe/Istanbul' }, async () => {
+    const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
+    console.log(`\n[ZAMANLAYICI - ${zaman}] Rastgele cümle gönderimi başlatılıyor...`);
+    try {
+      const res = await sendWhatsAppSentence();
+      console.log(`[ZAMANLAYICI] Cümle Gönderim Sonucu:`, res);
+    } catch (error) {
+      console.error(`[ZAMANLAYICI] Cümle Gönderim Hatası:`, error);
+    }
+  });
+  console.log("✅ Cümle Zamanlayıcısı Kuruldu: Her Salı ve Perşembe saat 22:30 (TSİ)");
   return job;
 }
 
@@ -1046,6 +1129,7 @@ const pingJob = schedulePing();
   try {
     initWhatsAppClient(true);
     scheduleWhatsAppPollJob();
+    scheduleSentenceJob();
   } catch (wpInitErr) {
     console.error("⚠️ WhatsApp servisi başlatılırken hata:", wpInitErr.message);
   }
@@ -1075,6 +1159,18 @@ app.all(['/api/send-poll', '/api/run-poll'], async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error("WhatsApp manuel anket hatası:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Manuel Cümle Gönderme Endpoint'i (Test amaçlı)
+app.all(['/api/send-sentence', '/api/run-sentence'], async (req, res) => {
+  try {
+    const groupId = req.query.groupId || req.body?.groupId;
+    const result = await sendWhatsAppSentence({ groupId });
+    res.json(result);
+  } catch (error) {
+    console.error('WhatsApp manuel cümle gönderim hatası:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
