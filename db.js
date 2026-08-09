@@ -311,11 +311,11 @@ async function getAllLidMappings() {
 
 // Koleksiyonlar ve ağırlıklı seçim yüzdeleri (toplam: %100)
 const SENTENCE_COLLECTIONS = [
-  { name: 'ayetler', label: '*Bir Ayet*', weight: 15 },  // %15
-  { name: 'hadisler', label: '*Bir Hadis*', weight: 15 },  // %15
-  { name: 'dualar', label: '*Bir Dua*', weight: 15 },  // %15
-  { name: 'hatırlatmalar', label: '*Bir Hatırlatma*', weight: 15 },  // %15
-  { name: 'vecizeler', label: '*Bir Vecize*', weight: 40 },  // %40
+  { name: 'ayetler', weight: 15 },  // %15
+  { name: 'hadisler', weight: 15 },  // %15
+  { name: 'dualar', weight: 15 },  // %15
+  { name: 'hatırlatmalar', weight: 15 },  // %15
+  { name: 'vecizeler', weight: 40 },  // %40
 ];
 
 /**
@@ -352,8 +352,7 @@ async function getRandomSentence() {
     const doc = docs[0];
     return {
       sentence: doc.sentence,
-      collection: randomCollection,
-      label: selected.label
+      collection: randomCollection
     };
   } catch (err) {
     console.error('❌ Rastgele cümle çekme hatası:', err.message);

@@ -357,8 +357,8 @@ async function processPollVoteUpdate(pollUpdateMsg) {
 
   // 2) Anket detaylarını ve şifreleme anahtarını (messageSecret) al
   const pollCreation = pollMsg.message.pollCreationMessage ||
-                       pollMsg.message.pollCreationMessageV2 ||
-                       pollMsg.message.pollCreationMessageV3;
+    pollMsg.message.pollCreationMessageV2 ||
+    pollMsg.message.pollCreationMessageV3;
 
   const pollEncKey = pollMsg.message.messageContextInfo?.messageSecret || pollCreation?.messageSecret;
   if (!pollEncKey) {
@@ -649,7 +649,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
           pushname: sock.user?.name || sock.user?.notify || 'Ubuntu'
         };
         console.log('✅ WhatsApp Baileys İstemcisi Hazır! Bağlı Kullanıcı:', state.userInfo.pushname);
-        
+
         // Botun kendi LID -> Telefon numarası eşleşmesini önbelleğe kaydet
         if (sock.user?.id && sock.user?.lid) {
           const myPhoneJid = jidNormalizedUser ? jidNormalizedUser(sock.user.id) : sock.user.id;
@@ -950,19 +950,17 @@ async function sendWhatsAppSentence(options = {}) {
       };
     }
 
-    // Mesajı formatla
-    const messageText = `${result.label}\n\n${result.sentence}`;
+    const messageText = result.sentence;
 
     await sock.sendMessage(targetGroupId, { text: messageText });
 
     const sentAt = getTRDateString();
-    console.log(`✅ [Cümle Gönderildi] ${result.label} → "${result.sentence.substring(0, 60)}..." [Grup: ${targetGroupId}]`);
+    console.log(`✅ [Cümle Gönderildi] (${result.collection}) → "${result.sentence.substring(0, 60)}..." [Grup: ${targetGroupId}]`);
 
     return {
       success: true,
       sentAt,
       collection: result.collection,
-      label: result.label,
       sentence: result.sentence,
       groupId: targetGroupId
     };
