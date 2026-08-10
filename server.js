@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getRandomSentence } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getRandomSentence, calculateReadingStreaks } = require('./db');
 
 // ============================================================================
 // LOG FİLTRESİ (Libsignal / Bad MAC Gürültüsünü Engelleme)
@@ -47,6 +47,57 @@ const MONTH_NAMES_TR = [
   'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
   'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
 ];
+
+    const reminderAlternatives = [
+      "Okumalarımıza düzenli devam edebilmek dileğiyle 🌿",
+      "Okuma alışkanlığımızı birlikte güçlendirelim inşaAllah 📖",
+      "Küçük adımlar, büyük alışkanlıklar oluşturur. Takipteyiz! 📘",
+      "Bu hatırlatma bir vesile olsun, kaldığımız yerden devam edelim 🔄",
+      "Düzenli okumalarla bereketli bir sürece birlikte yürüyelim 🌱",
+      "İstikrar güzeldir; eksiklerimizi birlikte tamamlayalım 🤝",
+      "Okuyanlara tebrikler, henüz okumayanlara nazik bir davet 😊",
+      "İstikrarın güzelliğini hep birlikte yaşayalım 🌟",
+      "Daha okumasını tamamlamayanlar için nazik bir hatırlatma 📖",
+      "Okumalarımıza birlikte devam edebilmek duasıyla 🤲",
+      "Birlikte ilerlemek, devam etmenin en güzel hali 👣",
+      "Okumalarımıza sadakatle devam edelim inşaAllah 🕊️",
+      "Her gün bir satır da olsa, devam edelim ✍️",
+      "İstikrarla yürüdüğümüz bu yolda hep birlikteyiz 🛤️",
+      "Bu küçük hatırlatma, güzel bir başlangıç olsun 🌸",
+      "Unutmak kolay, alışkanlık ise emek ister. Devam edelim 💪",
+      "Güzel alışkanlıklar birlikte inşa edilir 🍃",
+      "Okuma yolculuğumuza birlikte güç katalım 🚀",
+      "Birlikte tamamlanan okumalarda bereket vardır 🧡",
+      "Düzenli okumalarla kalplerimizi diri tutalım ❤️🔥",
+      "Hatırlatmak bizden, gayret sizden 🙏",
+      "Okumaları unutmayalım 🔔",
+      "İstikrarlı adımlar en kalıcı olanlardır ⏳",
+      "Okuma halkamızın bir parçası olmaya ne dersiniz? 💫",
+      "Birlikte okumak, yalnız okumaktan daha değerlidir 🤝",
+      "Okudukça zihin açılır, gönül ferahlar ☀️",
+      "İstikrarlı olan kazanır; bugünü de boş geçmeyelim ⏰",
+      "Birlikte okumak, birlikte güçlenmektir 💪",
+      "Bugün okumaya vakit ayırmak, kendine bir iyiliktir 💝",
+      "Okuma halkamızda siz de yerinizi alın 🤗",
+      "Bir satır da bugün için, alışkanlık zincirini kırma 🔗",
+      "Okumak, gönlü besleyen en güzel alışkanlıktır 🌾",
+      "Okuma yolculuğumuzda mola değil, devam zamanı 🔄",
+      "Zinciri kırmayalım, okumaya devam 🔗",
+      "Az da olsa devamlı okuyalım 💧",
+      "Kaldığımız yerden aynı şevkle devam! 🚀",
+      "Birkaç satır da olsa okuyalım 📖",
+      "Birlikte okuyor, birlikte güzelleşiyoruz 🌱",
+      "Ruhumuza kısa bir okuma molası ☕",
+      "Günün yoğunluğuna kısa bir okuma arası ☕",
+      "Günün bereketini okumayla yakalayalım ☀️",
+      "Okuma saatimiz geldi, sizleri de aramızda görmek isteriz ⏰",
+      "Günü kapatmadan okumalarımızı tamamlayalım ⌛",
+      "Küçük bir gayret, büyük bereket 🌾",
+      "Kitaplar bizi bekler, hadi okumaya 📚",
+      "Gönlümüze iyi gelecek satırlara dönelim 🕊️",
+      "Okuma kervanımız yola devam ediyor 🛤️",
+      "Okumalarımızı tamamlayıp güne huzur katalım 🍂"
+    ];
 
 /**
  * Günlük dinamik anket başlığını üretir (Örn: "4 Ağustos" veya "4 Ağustos Okuma Anketi")
@@ -1024,6 +1075,102 @@ function scheduleSentenceJob() {
   return job;
 }
 
+// ============================================================================
+// HAFTALIK OKUMA SERİSİ RAPORU (Her Cumartesi 22:30 TSİ)
+// ============================================================================
+
+async function sendWeeklyReadingReport(options = {}) {
+  const targetGroupId = options.groupId || DEFAULT_GROUP_ID;
+
+  if (!hasValidGroupId() && !options.groupId) {
+    return {
+      success: false,
+      status: state.status,
+      message: '.env dosyasında WHATSAPP_GROUP_ID tanımlanmamış!'
+    };
+  }
+
+  if (!sock || state.status !== 'READY') {
+    return {
+      success: false,
+      status: state.status,
+      message: 'WhatsApp istemcisi bağlı veya hazır değil!'
+    };
+  }
+
+  if (!isDBEnabled()) {
+    return {
+      success: false,
+      message: 'Veritabanı bağlantısı aktif değil. Rapor gönderilemedi.'
+    };
+  }
+
+  try {
+    const { readers, nonReaders } = await calculateReadingStreaks();
+
+    // Mesaj 1: Okuma serisi yapanlar
+    let msg1 = '*Okuma serisi yapanlar:*\n';
+    if (readers.length > 0) {
+      msg1 += readers.map(r => `${r.name} (${r.streak} gün)`).join(',\n');
+    } else {
+      msg1 += 'Henüz aktif okuma serisi olan kullanıcı yok.';
+    }
+
+    // Mesaj 2: Art arda okumayanlar + rastgele hatırlatma
+    const randomReminder = reminderAlternatives[Math.floor(Math.random() * reminderAlternatives.length)];
+    let msg2 = '*Art arda okumayanlar:*\n';
+    if (nonReaders.length > 0) {
+      msg2 += nonReaders.map(r => `${r.name} (${r.streak} gün)`).join(',\n');
+    } else {
+      msg2 += 'Art arda okumayan kullanıcı yok, tebrikler! 🎉';
+    }
+    msg2 += '\n\n' + randomReminder;
+
+    // İki mesajı gruba gönder
+    await sock.sendMessage(targetGroupId, { text: msg1 });
+    // İkinci mesajı kısa bir gecikmeyle gönder
+    await new Promise(r => setTimeout(r, 1500));
+    await sock.sendMessage(targetGroupId, { text: msg2 });
+
+    const sentAt = getTRDateString();
+    console.log(`✅ [Haftalık Rapor] Okuma serisi raporu gönderildi! Okuyanlar: ${readers.length}, Okumayanlar: ${nonReaders.length} [Grup: ${targetGroupId}]`);
+
+    return {
+      success: true,
+      sentAt,
+      readersCount: readers.length,
+      nonReadersCount: nonReaders.length,
+      reminder: randomReminder,
+      groupId: targetGroupId
+    };
+  } catch (err) {
+    console.error('❌ Haftalık okuma raporu gönderme hatası:', err);
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Her Cumartesi saat 22:30 TSİ'de haftalık okuma serisi raporunu gönderir.
+ * Cron: dakika=30, saat=22, gün=*, ay=*, haftanın günü=6 (Cumartesi)
+ */
+function scheduleWeeklyReadingReportJob() {
+  const job = schedule.scheduleJob({ rule: '30 22 * * 6', tz: 'Europe/Istanbul' }, async () => {
+    const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
+    console.log(`\n[ZAMANLAYICI - ${zaman}] Haftalık okuma serisi raporu gönderimi başlatılıyor...`);
+    try {
+      const res = await sendWeeklyReadingReport();
+      console.log(`[ZAMANLAYICI] Haftalık Rapor Gönderim Sonucu:`, res);
+    } catch (error) {
+      console.error(`[ZAMANLAYICI] Haftalık Rapor Gönderim Hatası:`, error);
+    }
+  });
+  console.log("✅ Haftalık Okuma Raporu Zamanlayıcısı Kuruldu: Her Cumartesi saat 22:30 (TSİ)");
+  return job;
+}
+
 function getWhatsAppStatus(autoStartIfDisconnected = false) {
   if (autoStartIfDisconnected && (state.status === 'DISCONNECTED' || state.status === 'ERROR') && !sock) {
     initWhatsAppClient(false);
@@ -1128,6 +1275,7 @@ const pingJob = schedulePing();
     initWhatsAppClient(true);
     scheduleWhatsAppPollJob();
     scheduleSentenceJob();
+    scheduleWeeklyReadingReportJob();
   } catch (wpInitErr) {
     console.error("⚠️ WhatsApp servisi başlatılırken hata:", wpInitErr.message);
   }
@@ -1169,6 +1317,18 @@ app.all(['/api/send-sentence', '/api/run-sentence'], async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('WhatsApp manuel cümle gönderim hatası:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Manuel Haftalık Okuma Raporu Gönderme Endpoint'i (Test amaçlı)
+app.all(['/api/send-reading-report', '/api/run-reading-report'], async (req, res) => {
+  try {
+    const groupId = req.query.groupId || req.body?.groupId;
+    const result = await sendWeeklyReadingReport({ groupId });
+    res.json(result);
+  } catch (error) {
+    console.error('WhatsApp haftalık rapor gönderim hatası:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -360,6 +360,156 @@ async function getRandomSentence() {
   }
 }
 
+// ============================================================================
+// OKUMA SERİSİ HESAPLAMA (Haftalık Rapor İçin)
+// ============================================================================
+
+/**
+ * Türkiye saatine göre bugünün tarihini 'YYYY-MM-DD' formatında döner.
+ */
+function getTRTodayDate() {
+  const now = new Date();
+  const trNow = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+  return trNow.toISOString().slice(0, 10);
+}
+
+/**
+ * Verilen tarihin bir gün öncesini 'YYYY-MM-DD' formatında döner.
+ */
+function getPreviousDay(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * users_catikati23 ve readingstatuses_catikati23 koleksiyonlarını kullanarak
+ * her kullanıcı için okuma serisi ve okumama serisini hesaplar.
+ *
+ * Dönüş: { readers: [{name, streak}], nonReaders: [{name, streak}] }
+ *   - readers:    Ardışık okuyan kullanıcılar (streak >= 1), azalan sıralı
+ *   - nonReaders: Ardışık okumayan kullanıcılar (streak > 1), azalan sıralı
+ */
+async function calculateReadingStreaks() {
+  if (!dbEnabled || !db) return { readers: [], nonReaders: [] };
+
+  try {
+    // 1) Tüm kullanıcıları çek
+    const users = await db.collection('users_catikati23').find({}).toArray();
+    if (!users || users.length === 0) return { readers: [], nonReaders: [] };
+
+    const today = getTRTodayDate();
+    const readers = [];
+    const nonReaders = [];
+
+    for (const user of users) {
+      const userId = user._id.toString();
+      const userName = user.name || user.username || 'Bilinmeyen';
+
+      // Kullanıcının tüm okuma dokümanlarını tarihe göre azalan sıralı çek
+      const statuses = await db.collection('readingstatuses_catikati23')
+        .find({ userId: userId })
+        .sort({ date: -1 })
+        .toArray();
+
+      const userStatMap = {};
+      const userDates = [];
+
+      if (statuses && statuses.length > 0) {
+        for (const s of statuses) {
+          userStatMap[s.date] = s.status;
+          if (s.date) userDates.push(s.date);
+        }
+      }
+
+      // Kullanıcının sistemde hiç verisi/dokümanı yoksa geç
+      if (userDates.length === 0) continue;
+
+      // Kullanıcının kendi en eski kayıt tarihi (Sınır noktası)
+      userDates.sort();
+      const userEarliestDate = userDates[0];
+
+      const todayStatus = userStatMap[today];
+
+      // --- 1. Pozitif Okuma Serisi (Active Reading Streak / Zinciri Kırma) ---
+      let positiveStreak = 0;
+      if (todayStatus === 'okudum') {
+        let currentDate = today;
+        while (currentDate) {
+          if (userStatMap[currentDate] === 'okudum') {
+            positiveStreak++;
+            currentDate = getPreviousDay(currentDate);
+          } else {
+            break;
+          }
+        }
+      } else if (todayStatus === 'okumadım') {
+        positiveStreak = 0;
+      } else {
+        // Bugün henüz işaretlenmediyse (Boş/İşaretlenmemiş), dünden başla
+        let currentDate = getPreviousDay(today);
+        while (currentDate) {
+          if (userStatMap[currentDate] === 'okudum') {
+            positiveStreak++;
+            currentDate = getPreviousDay(currentDate);
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (positiveStreak >= 1) {
+        readers.push({ name: userName, streak: positiveStreak });
+      }
+
+      // --- 2. Negatif Okumama Serisi (Consecutive Missed Streak / Art Arda Okumayanlar) ---
+      let negativeStreak = 0;
+      if (todayStatus === 'okudum') {
+        negativeStreak = 0; // Bugün okuduysa okumama serisi yoktur
+      } else {
+        let currentDate;
+        if (todayStatus === 'okumadım') {
+          currentDate = today; // Bugün işaretli okumadı, bugünden başla
+        } else {
+          // Bugün henüz işaretlenmediyse (Boş/İşaretlenmemiş), dünden başla
+          currentDate = getPreviousDay(today);
+        }
+
+        let count = 0;
+        while (currentDate) {
+          if (userStatMap[currentDate] === 'okudum') {
+            break;
+          }
+
+          count++;
+
+          // Kullanıcının kendi en eski kayıt tarihine ulaşıldıysa daha geriye gitme
+          if (userEarliestDate && currentDate <= userEarliestDate) {
+            break;
+          }
+
+          currentDate = getPreviousDay(currentDate);
+        }
+        negativeStreak = count;
+      }
+
+      // Art arda en az 2 gün okumadıysa listeye ekle
+      if (negativeStreak > 1) {
+        nonReaders.push({ name: userName, streak: negativeStreak });
+      }
+    }
+
+    // Azalan sırala
+    readers.sort((a, b) => b.streak - a.streak);
+    nonReaders.sort((a, b) => b.streak - a.streak);
+
+    return { readers, nonReaders };
+  } catch (err) {
+    console.error('❌ Okuma serisi hesaplama hatası:', err.message);
+    return { readers: [], nonReaders: [] };
+  }
+}
+
 module.exports = {
   connectDB,
   isDBEnabled,
@@ -372,5 +522,6 @@ module.exports = {
   savePollConfig,
   saveLidMapping,
   getAllLidMappings,
-  getRandomSentence
+  getRandomSentence,
+  calculateReadingStreaks
 };
