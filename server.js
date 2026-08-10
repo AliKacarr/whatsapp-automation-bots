@@ -7,6 +7,7 @@ const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
 const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getRandomSentence, calculateReadingStreaks } = require('./db');
+const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 
 // ============================================================================
 // LOG FİLTRESİ (Libsignal / Bad MAC Gürültüsünü Engelleme)
@@ -1171,6 +1172,91 @@ function scheduleWeeklyReadingReportJob() {
   return job;
 }
 
+// ============================================================================
+// HAFTALIK OKUMA TABLOSU GÖRSELİ (Her Pazartesi 22:30 TSİ)
+// ============================================================================
+
+async function sendWeeklyTableImage(options = {}) {
+  const targetGroupId = options.groupId || DEFAULT_GROUP_ID;
+
+  if (!hasValidGroupId() && !options.groupId) {
+    return {
+      success: false,
+      status: state.status,
+      message: '.env dosyasında WHATSAPP_GROUP_ID tanımlanmamış!'
+    };
+  }
+
+  if (!sock || state.status !== 'READY') {
+    return {
+      success: false,
+      status: state.status,
+      message: 'WhatsApp istemcisi bağlı veya hazır değil!'
+    };
+  }
+
+  if (!isDBEnabled() || !getDB()) {
+    return {
+      success: false,
+      message: 'Veritabanı bağlantısı aktif değil. Tablo resmi gönderilemedi.'
+    };
+  }
+
+  try {
+    const tableResult = await generateWeeklyTableCanvas(getDB(), targetGroupId);
+    const imageBuffer = tableResult.buffer || tableResult;
+    const captionText = tableResult.captionText || 'Haftalık okuma tablosu';
+
+    await sock.sendMessage(targetGroupId, {
+      image: imageBuffer,
+      caption: captionText
+    });
+
+    const sentAt = getTRDateString();
+    console.log(`✅ [Haftalık Tablo Resmi] Görsel başarıyla gönderildi! [Grup: ${targetGroupId}]`);
+
+    const weekSuccessPct = tableResult.weekSuccessPct !== undefined ? tableResult.weekSuccessPct : 0;
+    const summaryMessage = `Geçen haftaki okuma oranımız %${weekSuccessPct}`;
+
+    await new Promise(res => setTimeout(res, 1500));
+    await sock.sendMessage(targetGroupId, { text: summaryMessage });
+    console.log(`✅ [Haftalık Okuma Oranı Mesajı] Mesaj başarıyla gönderildi: "${summaryMessage}" [Grup: ${targetGroupId}]`);
+
+    return {
+      success: true,
+      sentAt,
+      groupId: targetGroupId,
+      weekSuccessPct,
+      summaryMessage
+    };
+  } catch (err) {
+    console.error('❌ Haftalık tablo resmi gönderme hatası:', err);
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Her Pazartesi saat 22:30 TSİ'de haftalık okuma tablosu görselini gönderir.
+ * Cron: dakika=30, saat=22, gün=*, ay=*, haftanın günü=1 (Pazartesi)
+ */
+function scheduleWeeklyTableImageJob() {
+  const job = schedule.scheduleJob({ rule: '30 22 * * 1', tz: 'Europe/Istanbul' }, async () => {
+    const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
+    console.log(`\n[ZAMANLAYICI - ${zaman}] Haftalık okuma tablosu görseli gönderimi başlatılıyor...`);
+    try {
+      const res = await sendWeeklyTableImage();
+      console.log(`[ZAMANLAYICI] Haftalık Tablo Görseli Gönderim Sonucu:`, res);
+    } catch (error) {
+      console.error(`[ZAMANLAYICI] Haftalık Tablo Görseli Gönderim Hatası:`, error);
+    }
+  });
+  console.log("✅ Haftalık Tablo Görseli Zamanlayıcısı Kuruldu: Her Pazartesi saat 22:30 (TSİ)");
+  return job;
+}
+
 function getWhatsAppStatus(autoStartIfDisconnected = false) {
   if (autoStartIfDisconnected && (state.status === 'DISCONNECTED' || state.status === 'ERROR') && !sock) {
     initWhatsAppClient(false);
@@ -1276,6 +1362,7 @@ const pingJob = schedulePing();
     scheduleWhatsAppPollJob();
     scheduleSentenceJob();
     scheduleWeeklyReadingReportJob();
+    scheduleWeeklyTableImageJob();
   } catch (wpInitErr) {
     console.error("⚠️ WhatsApp servisi başlatılırken hata:", wpInitErr.message);
   }
@@ -1329,6 +1416,18 @@ app.all(['/api/send-reading-report', '/api/run-reading-report'], async (req, res
     res.json(result);
   } catch (error) {
     console.error('WhatsApp haftalık rapor gönderim hatası:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Manuel Haftalık Okuma Tablosu Görseli Gönderme Endpoint'i (Test amaçlı)
+app.all(['/api/send-table-image', '/api/run-table-image'], async (req, res) => {
+  try {
+    const groupId = req.query.groupId || req.body?.groupId;
+    const result = await sendWeeklyTableImage({ groupId });
+    res.json(result);
+  } catch (error) {
+    console.error('WhatsApp haftalık tablo resmi gönderim hatası:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
