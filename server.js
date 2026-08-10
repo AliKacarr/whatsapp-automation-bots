@@ -34,8 +34,21 @@ process.stderr.write = function (chunk, encoding, callback) {
 
 const DEFAULT_GROUP_ID = process.env.WHATSAPP_GROUP_ID;
 
-function hasValidGroupId() {
-  return !!(DEFAULT_GROUP_ID && DEFAULT_GROUP_ID.trim() !== '' && !DEFAULT_GROUP_ID.includes('1234567890'));
+async function getTargetGroupId() {
+  if (isDBEnabled() && getDB()) {
+    try {
+      const config = await getPollConfig();
+      if (config && config.groupId && typeof config.groupId === 'string' && config.groupId.trim() !== '') {
+        return config.groupId.trim();
+      }
+    } catch (e) { }
+  }
+  return DEFAULT_GROUP_ID || null;
+}
+
+async function hasValidGroupId() {
+  const targetId = await getTargetGroupId();
+  return !!(targetId && targetId.trim() !== '' && !targetId.includes('1234567890'));
 }
 
 const DEFAULT_POLL_OPTIONS = [
@@ -124,6 +137,8 @@ function getDailyPollTitle(customTitle = null) {
 // Baileys modülü dinamik yükleme (ESM Uyumlu)
 let makeWASocket = null;
 let useMultiFileAuthState = null;
+let initAuthCreds = null;
+let BufferJSON = null;
 let DisconnectReason = null;
 let fetchLatestWaWebVersion = null;
 let Browsers = null;
@@ -137,6 +152,8 @@ async function loadBaileys() {
     const baileys = await import('@whiskeysockets/baileys');
     makeWASocket = baileys.default || baileys.makeWASocket;
     useMultiFileAuthState = baileys.useMultiFileAuthState;
+    initAuthCreds = baileys.initAuthCreds;
+    BufferJSON = baileys.BufferJSON;
     DisconnectReason = baileys.DisconnectReason;
     fetchLatestWaWebVersion = baileys.fetchLatestWaWebVersion;
     Browsers = baileys.Browsers;
@@ -580,18 +597,149 @@ const state = {
 };
 
 async function fetchTargetGroupInfo() {
-  if (!sock || state.status !== 'READY' || !DEFAULT_GROUP_ID) return;
+  const targetId = await getTargetGroupId();
+  if (!sock || state.status !== 'READY' || !targetId) return;
   try {
-    const meta = await sock.groupMetadata(DEFAULT_GROUP_ID);
+    state.targetGroup.id = targetId;
+    const meta = await sock.groupMetadata(targetId);
     if (meta && meta.subject) {
       state.targetGroup.name = meta.subject;
-      console.log(`🎯 Hedef Grup Bilgisi Alındı: "${meta.subject}" (${DEFAULT_GROUP_ID})`);
+      console.log(`🎯 Hedef Grup Bilgisi Alındı: "${meta.subject}" (${targetId})`);
     }
   } catch (e) { }
 }
 
-function hasExistingSession() {
-  return fs.existsSync(AUTH_FILE);
+/**
+ * MongoDB tabanlı Baileys Auth State
+ * (Render vb. uçucu/ephemeral sunucularda oturum dosyalarının ve E2EE şifreleme anahtarlarının kaybolmasını önler)
+ */
+async function useMongoDBAuthState(db, collectionName = 'baileys_auth') {
+  const collection = db.collection(collectionName);
+
+  const writeData = async (data, id) => {
+    try {
+      const serialized = JSON.stringify(data, BufferJSON ? BufferJSON.replacer : undefined);
+      await collection.updateOne(
+        { _id: id },
+        { $set: { value: serialized, updatedAt: new Date() } },
+        { upsert: true }
+      );
+    } catch (err) {
+      console.error(`⚠️ MongoDB Auth verisi yazılamadı (${id}):`, err.message);
+    }
+  };
+
+  const readData = async (id) => {
+    try {
+      const doc = await collection.findOne({ _id: id });
+      if (doc && doc.value) {
+        return JSON.parse(doc.value, BufferJSON ? BufferJSON.reviver : undefined);
+      }
+    } catch (err) {
+      console.error(`⚠️ MongoDB Auth verisi okunamadı (${id}):`, err.message);
+    }
+    return null;
+  };
+
+  const removeData = async (id) => {
+    try {
+      await collection.deleteOne({ _id: id });
+    } catch (err) {
+      console.error(`⚠️ MongoDB Auth verisi silinemedi (${id}):`, err.message);
+    }
+  };
+
+  let creds = await readData('creds');
+
+  // Mongo'da creds bulunamadıysa ama yerel diskte oturum dosyaları varsa, otomatik Mongo'ya taşı
+  if (!creds && fs.existsSync(BAILEYS_AUTH_PATH)) {
+    try {
+      const files = fs.readdirSync(BAILEYS_AUTH_PATH);
+      const jsonFiles = files.filter(f => f.endsWith('.json'));
+      if (jsonFiles.length > 0) {
+        console.log(`📦 ${jsonFiles.length} adet yerel oturum dosyası MongoDB veritabanına taşınıyor...`);
+        for (const file of jsonFiles) {
+          const filePath = path.join(BAILEYS_AUTH_PATH, file);
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const parsed = JSON.parse(content, BufferJSON ? BufferJSON.reviver : undefined);
+          const id = file === 'creds.json' ? 'creds' : file.replace('.json', '');
+          await writeData(parsed, id);
+        }
+        creds = await readData('creds');
+        console.log('✅ Yerel oturum dosyaları başarıyla MongoDB\'ye aktarıldı!');
+      }
+    } catch (e) {
+      console.warn('⚠️ Yerel oturum aktarımı uyarısı:', e.message);
+    }
+  }
+
+  if (!creds && initAuthCreds) {
+    creds = initAuthCreds();
+  }
+
+  return {
+    state: {
+      creds,
+      keys: {
+        get: async (type, ids) => {
+          const data = {};
+          await Promise.all(
+            ids.map(async (id) => {
+              let value = await readData(`${type}-${id}`);
+              if (type === 'app-state-sync-key' && value && proto) {
+                value = proto.Message.AppStateSyncKeyData.fromObject(value);
+              }
+              data[id] = value;
+            })
+          );
+          return data;
+        },
+        set: async (data) => {
+          const tasks = [];
+          for (const category in data) {
+            for (const id in data[category]) {
+              const value = data[category][id];
+              const key = `${category}-${id}`;
+              if (value) {
+                tasks.push(writeData(value, key));
+              } else {
+                tasks.push(removeData(key));
+              }
+            }
+          }
+          await Promise.all(tasks);
+        }
+      }
+    },
+    saveCreds: async () => {
+      await writeData(creds, 'creds');
+    }
+  };
+}
+
+function getAuthCollectionName() {
+  if (process.env.AUTH_COLLECTION) return process.env.AUTH_COLLECTION;
+  return (process.env.RENDER === 'true' || process.env.NODE_ENV === 'production') ? 'baileys_auth' : 'baileys_auth_dev';
+}
+
+function shouldUseMongoAuth() {
+  if (!isDBEnabled() || !getDB()) return false;
+  if (process.env.RENDER === 'true' || process.env.NODE_ENV === 'production' || process.env.USE_MONGO_AUTH === 'true') {
+    return true;
+  }
+  return false;
+}
+
+async function hasExistingSession() {
+  if (fs.existsSync(AUTH_FILE)) return true;
+  if (shouldUseMongoAuth()) {
+    try {
+      const collName = getAuthCollectionName();
+      const doc = await getDB().collection(collName).findOne({ _id: 'creds' });
+      if (doc && doc.value) return true;
+    } catch (e) { }
+  }
+  return false;
 }
 
 async function initWhatsAppClient(onlyIfSessionExists = false) {
@@ -599,7 +747,8 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
     return sock;
   }
 
-  if (onlyIfSessionExists && !hasExistingSession()) {
+  const existing = await hasExistingSession();
+  if (onlyIfSessionExists && !existing) {
     console.log('ℹ️ WhatsApp oturumu bulunamadı. QR kod web adresi açıldığında üretilecek.');
     state.status = 'DISCONNECTED';
     return null;
@@ -612,7 +761,20 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
   try {
     await loadBaileys();
 
-    const { state: authState, saveCreds } = await useMultiFileAuthState(BAILEYS_AUTH_PATH);
+    let authState, saveCreds;
+    if (shouldUseMongoAuth()) {
+      const collectionName = getAuthCollectionName();
+      console.log(`💾 MongoDB tabanlı WhatsApp oturum deposu aktif (Koleksiyon: ${collectionName})...`);
+      const mongoAuth = await useMongoDBAuthState(getDB(), collectionName);
+      authState = mongoAuth.state;
+      saveCreds = mongoAuth.saveCreds;
+    } else {
+      console.log('📁 Yerel dosya tabanlı WhatsApp oturum deposu aktif.');
+      const fileAuth = await useMultiFileAuthState(BAILEYS_AUTH_PATH);
+      authState = fileAuth.state;
+      saveCreds = fileAuth.saveCreds;
+    }
+
     const { version } = await fetchLatestWaWebVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
     sock = makeWASocket({
@@ -680,6 +842,9 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
           }
           if (fs.existsSync(BAILEYS_AUTH_PATH)) {
             try { fs.rmSync(BAILEYS_AUTH_PATH, { recursive: true, force: true }); } catch (e) { }
+          }
+          if (isDBEnabled() && getDB()) {
+            try { await getDB().collection(getAuthCollectionName()).deleteMany({}); } catch (e) { }
           }
           if (sock) {
             try { sock.end(new Error('Logged out')); } catch (e) { }
@@ -875,6 +1040,9 @@ async function restartWhatsAppClient() {
   if (fs.existsSync(BAILEYS_AUTH_PATH)) {
     try { fs.rmSync(BAILEYS_AUTH_PATH, { recursive: true, force: true }); } catch (e) { }
   }
+  if (isDBEnabled() && getDB()) {
+    try { await getDB().collection(getAuthCollectionName()).deleteMany({}); } catch (e) { }
+  }
   if (sock) {
     try {
       sock.end(new Error('Manual Restart'));
@@ -890,14 +1058,14 @@ async function restartWhatsAppClient() {
 }
 
 async function sendWhatsAppPoll(options = {}) {
-  const targetGroupId = options.groupId || DEFAULT_GROUP_ID;
+  const targetGroupId = options.groupId || await getTargetGroupId();
   const pollTitleCustom = options.pollTitleCustom || null;
 
-  if (!hasValidGroupId() && !options.groupId) {
+  if (!(await hasValidGroupId()) && !options.groupId) {
     return {
       success: false,
       status: state.status,
-      message: '.env dosyasında WHATSAPP_GROUP_ID tanımlanmamış! Lütfen önce paneldeki "Gruplar & JID Listesini Göster" butonuna tıklayıp grup JID kodunu kopyalayın ve .env dosyanıza kaydedin.'
+      message: 'WhatsApp Grup JID (WHATSAPP_GROUP_ID) tanımlanmamış! Lütfen paneldeki ayarlar kısmından veya .env dosyasından grup JID adresini girin.'
     };
   }
 
@@ -1081,13 +1249,13 @@ function scheduleSentenceJob() {
 // ============================================================================
 
 async function sendWeeklyReadingReport(options = {}) {
-  const targetGroupId = options.groupId || DEFAULT_GROUP_ID;
+  const targetGroupId = options.groupId || await getTargetGroupId();
 
-  if (!hasValidGroupId() && !options.groupId) {
+  if (!(await hasValidGroupId()) && !options.groupId) {
     return {
       success: false,
       status: state.status,
-      message: '.env dosyasında WHATSAPP_GROUP_ID tanımlanmamış!'
+      message: 'WhatsApp Grup JID (WHATSAPP_GROUP_ID) tanımlanmamış!'
     };
   }
 
@@ -1177,13 +1345,13 @@ function scheduleWeeklyReadingReportJob() {
 // ============================================================================
 
 async function sendWeeklyTableImage(options = {}) {
-  const targetGroupId = options.groupId || DEFAULT_GROUP_ID;
+  const targetGroupId = options.groupId || await getTargetGroupId();
 
-  if (!hasValidGroupId() && !options.groupId) {
+  if (!(await hasValidGroupId()) && !options.groupId) {
     return {
       success: false,
       status: state.status,
-      message: '.env dosyasında WHATSAPP_GROUP_ID tanımlanmamış!'
+      message: 'WhatsApp Grup JID (WHATSAPP_GROUP_ID) tanımlanmamış!'
     };
   }
 
@@ -1206,9 +1374,11 @@ async function sendWeeklyTableImage(options = {}) {
     const tableResult = await generateWeeklyTableCanvas(getDB(), targetGroupId);
     const imageBuffer = tableResult.buffer || tableResult;
     const captionText = tableResult.captionText || 'Haftalık okuma tablosu';
+    const mimetype = tableResult.mimetype || 'image/png';
 
     await sock.sendMessage(targetGroupId, {
       image: imageBuffer,
+      mimetype: mimetype,
       caption: captionText
     });
 
@@ -1257,12 +1427,13 @@ function scheduleWeeklyTableImageJob() {
   return job;
 }
 
-function getWhatsAppStatus(autoStartIfDisconnected = false) {
+async function getWhatsAppStatus(autoStartIfDisconnected = false) {
   if (autoStartIfDisconnected && (state.status === 'DISCONNECTED' || state.status === 'ERROR') && !sock) {
     initWhatsAppClient(false);
   }
 
-  if (sock && state.status === 'READY' && hasValidGroupId() && !state.targetGroup.name) {
+  const targetId = await getTargetGroupId();
+  if (sock && state.status === 'READY' && targetId && !state.targetGroup.name) {
     fetchTargetGroupInfo();
   }
 
@@ -1271,7 +1442,7 @@ function getWhatsAppStatus(autoStartIfDisconnected = false) {
     qrDataUrl: state.qrDataUrl,
     userInfo: state.userInfo,
     targetGroup: {
-      id: DEFAULT_GROUP_ID || null,
+      id: targetId || null,
       name: state.targetGroup.name || null
     },
     lastPollSentAt: state.lastPollSentAt,
@@ -1369,9 +1540,9 @@ const pingJob = schedulePing();
 })();
 
 // WhatsApp API Endpoint'leri
-app.get('/api/status', (req, res) => {
+app.get('/api/status', async (req, res) => {
   const autoStart = req.query.autoStart === 'true';
-  res.json(getWhatsAppStatus(autoStart));
+  res.json(await getWhatsAppStatus(autoStart));
 });
 
 app.get('/api/groups', async (req, res) => {
@@ -1473,9 +1644,12 @@ app.get('/api/poll-config', async (req, res) => {
 // Anket şablon ayarlarını kaydet / güncelle
 app.post('/api/poll-config', async (req, res) => {
   try {
-    const { titleTemplate, options } = req.body;
-    const result = await savePollConfig({ titleTemplate, options });
+    const { titleTemplate, options, groupId } = req.body;
+    const result = await savePollConfig({ titleTemplate, options, groupId });
     if (result.success) {
+      if (sock && state.status === 'READY') {
+        fetchTargetGroupInfo();
+      }
       res.json(result);
     } else {
       res.status(400).json(result);

@@ -336,15 +336,15 @@
     }
 
     .modal-card-large {
-      max-width: 600px;
+      max-width: 680px;
     }
 
     .config-card-box {
       background: rgba(0, 0, 0, 0.35);
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 16px;
-      padding: 14px 16px;
-      margin-bottom: 14px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
       text-align: left;
     }
 
@@ -517,10 +517,12 @@
     .modal-card {
       width: 100%;
       max-width: 480px;
+      max-height: 88vh;
+      overflow-y: auto;
       background: #111827;
       border: 1px solid var(--card-border);
       border-radius: 24px;
-      padding: 24px;
+      padding: 20px 24px;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
     }
 
@@ -688,65 +690,80 @@
   <!-- Polls List & Settings Modal -->
   <div class="modal-overlay" id="pollsModal">
     <div class="modal-card modal-card-large">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-        <h3 style="font-size: 18px; color: #fff;">Anket Yönetimi & Şablon Ayarları</h3>
-        <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;"
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h3 style="font-size: 16px; color: #fff;">Anket Yönetimi & Şablon Ayarları</h3>
+        <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
           onclick="closePollsModal()">✕ Kapat</button>
       </div>
 
       <!-- Config Form Box -->
       <div class="config-card-box">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-          <h4 style="font-size: 13px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <h4 style="font-size: 12px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
             Anket Başlığı & Seçenek Ayarları
           </h4>
           <span style="font-size: 10px; color: var(--text-sub);" id="configLastUpdate"></span>
         </div>
 
-        <!-- Title Template Input -->
-        <div style="margin-bottom: 12px; text-align: left;">
-          <label
-            style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">
-            Anket Başlığı Şablonu:
-          </label>
-          <input type="text" id="cfgTitleTemplate" class="phone-input" style="width: 100%; font-size: 13px;"
-            placeholder="Örn: {{date}} Okuma Takibi" />
-          <div style="font-size: 10px; color: var(--text-sub); margin-top: 4px;">
-            💡 <code>{{date}}</code> yazarsanız günün tarihi (örn: <b>4 Ağustos</b>) otomatik yerleşir. Sabit başlık
-            için düz metin yazabilirsiniz.
+        <!-- 2-Column Grid for Inputs -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-bottom: 8px;">
+          <!-- Group JID Input -->
+          <div style="text-align: left;">
+            <label
+              style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 3px;">
+              Hedef WhatsApp Grup JID (Kimliği):
+            </label>
+            <input type="text" id="cfgGroupId" class="phone-input" style="width: 100%; font-size: 12px; padding: 6px 10px;"
+              placeholder="Örn: 120363400157653719@g.us" />
+            <div style="font-size: 9px; color: var(--text-sub); margin-top: 2px;">
+              💡 Boşsa <code>.env</code> içindeki <code>WHATSAPP_GROUP_ID</code> kullanılır.
+            </div>
+          </div>
+
+          <!-- Title Template Input -->
+          <div style="text-align: left;">
+            <label
+              style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 3px;">
+              Anket Başlığı Şablonu:
+            </label>
+            <input type="text" id="cfgTitleTemplate" class="phone-input" style="width: 100%; font-size: 12px; padding: 6px 10px;"
+              placeholder="Örn: {{date}} Okuma Takibi" />
+            <div style="font-size: 9px; color: var(--text-sub); margin-top: 2px;">
+              💡 <code>{{date}}</code> = Günün tarihi.
+            </div>
           </div>
         </div>
 
         <!-- Options Dynamic List -->
-        <div style="margin-bottom: 12px; text-align: left;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted);">
+        <div style="margin-bottom: 8px; text-align: left;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+            <label style="font-size: 10px; font-weight: 600; color: var(--text-muted);">
               Anket Seçenekleri:
             </label>
-            <button class="copy-btn" style="padding: 3px 8px; font-size: 10px;" onclick="addOptionInput()">➕ Seçenek
+            <button class="copy-btn" style="padding: 2px 6px; font-size: 9px;" onclick="addOptionInput()">➕ Seçenek
               Ekle</button>
           </div>
           <div id="cfgOptionsList"
-            style="display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; padding-right: 4px;">
+            style="display: flex; flex-direction: column; gap: 4px; max-height: 110px; overflow-y: auto; padding-right: 4px;">
           </div>
         </div>
 
         <!-- Save / Reset Actions -->
-        <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;">
-          <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 11px;"
+        <div style="display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px;">
+          <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 10px;"
             onclick="resetPollConfigUI()">Varsayılana Sıfırla</button>
-          <button class="btn btn-primary" style="width: auto; padding: 6px 16px; font-size: 11px;"
+          <button class="btn btn-primary" style="width: auto; padding: 4px 14px; font-size: 10px;"
             onclick="savePollConfigUI()">Şablonu Kaydet</button>
         </div>
       </div>
 
-      <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 14px 0;" />
+      <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 8px 0;" />
 
       <!-- Sent Polls History -->
-      <h4 style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-align: left; margin-bottom: 10px;">
+      <h4 style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-align: left; margin-bottom: 6px;">
         Geçmiş Gönderilen Anketler:
       </h4>
-      <div id="pollsListArea" style="max-height: 220px; overflow-y: auto; padding-right: 4px;"></div>
+      <div id="pollsListArea" style="max-height: 140px; overflow-y: auto; padding-right: 4px;"></div>
     </div>
   </div>
 
@@ -987,6 +1004,9 @@
           const titleInput = document.getElementById('cfgTitleTemplate');
           if (titleInput) titleInput.value = data.config.titleTemplate || '{{date}}';
 
+          const groupIdInput = document.getElementById('cfgGroupId');
+          if (groupIdInput) groupIdInput.value = data.config.groupId || '';
+
           currentConfigOptions = Array.isArray(data.config.options) ? [...data.config.options] : [];
 
           const lastUpd = document.getElementById('configLastUpdate');
@@ -1038,6 +1058,7 @@
 
     async function savePollConfigUI() {
       const titleTemplate = document.getElementById('cfgTitleTemplate')?.value?.trim() || '{{date}}';
+      const groupId = document.getElementById('cfgGroupId')?.value?.trim() || '';
       const container = document.getElementById('cfgOptionsList');
       const inputs = container?.querySelectorAll('.option-edit-input') || [];
       const options = [];
@@ -1055,11 +1076,11 @@
         const res = await fetch('/api/poll-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titleTemplate, options })
+          body: JSON.stringify({ titleTemplate, options, groupId })
         });
         const data = await res.json();
         if (data.success) {
-          showToast('✅ Anket şablonu ve seçenekler kaydedildi!');
+          showToast('✅ Anket şablonu, grup JID ve seçenekler kaydedildi!');
           currentConfigOptions = options;
           loadPollConfigUI();
         } else {
@@ -1073,13 +1094,15 @@
     function resetPollConfigUI() {
       const titleInput = document.getElementById('cfgTitleTemplate');
       if (titleInput) titleInput.value = '{{date}}';
+      const groupIdInput = document.getElementById('cfgGroupId');
+      if (groupIdInput) groupIdInput.value = '';
       currentConfigOptions = [
         '5 dakika', '10 dakika', '15 dakika', '20 dakika', '30 dakika',
         '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika',
         '150 dakika', '180 dakika'
       ];
       renderOptionInputs();
-      showToast('🔄 Varsayılan dakikalar yüklendi. Kaydet butonuna basarak onaylayabilirsiniz.');
+      showToast('🔄 Varsayılan değerler yüklendi. Kaydet butonuna basarak onaylayabilirsiniz.');
     }
 
     // ----------------------------------------------------

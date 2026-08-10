@@ -558,6 +558,7 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
 
   return {
     buffer: canvas.toBuffer('image/png'),
+    mimetype: 'image/png',
     dateRangeText,
     captionText,
     weekSuccessPct

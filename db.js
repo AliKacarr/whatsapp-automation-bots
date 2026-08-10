@@ -198,7 +198,8 @@ const DEFAULT_POLL_OPTIONS = [
 async function getPollConfig() {
   const defaultConfig = {
     titleTemplate: '{{date}}',
-    options: DEFAULT_POLL_OPTIONS
+    options: DEFAULT_POLL_OPTIONS,
+    groupId: process.env.WHATSAPP_GROUP_ID || null
   };
 
   if (!dbEnabled || !db) return defaultConfig;
@@ -210,6 +211,7 @@ async function getPollConfig() {
         _id: 'default',
         titleTemplate: defaultConfig.titleTemplate,
         options: defaultConfig.options,
+        groupId: defaultConfig.groupId,
         updatedAt: getTRDateString()
       };
       await db.collection('poll_config').updateOne(
@@ -224,6 +226,7 @@ async function getPollConfig() {
     return {
       titleTemplate: doc.titleTemplate || defaultConfig.titleTemplate,
       options: (Array.isArray(doc.options) && doc.options.length > 0) ? doc.options : defaultConfig.options,
+      groupId: (doc.groupId !== undefined && doc.groupId !== null) ? doc.groupId : (process.env.WHATSAPP_GROUP_ID || null),
       updatedAt: doc.updatedAt || null
     };
   } catch (err) {
@@ -234,7 +237,7 @@ async function getPollConfig() {
 
 /**
  * Anket şablon ayarlarını MongoDB'ye kaydeder.
- * @param {Object} configData - { titleTemplate, options }
+ * @param {Object} configData - { titleTemplate, options, groupId }
  */
 async function savePollConfig(configData) {
   if (!dbEnabled || !db) return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
@@ -249,9 +252,14 @@ async function savePollConfig(configData) {
       return { success: false, message: 'En az 1 anket seçeneği eklemelisiniz.' };
     }
 
+    const groupId = (configData.groupId !== undefined && configData.groupId !== null)
+      ? String(configData.groupId).trim()
+      : null;
+
     const setFields = {
       titleTemplate,
       options,
+      groupId,
       updatedAt: getTRDateString()
     };
 
