@@ -14,7 +14,7 @@ if (fs.existsSync(fontRegularPath)) {
   }
 }
 
-if (fs.existsSync(fontSemiBoldPath)) {
+if (fs.existsSync(fontSemiBoldPath) && fontSemiBoldPath !== fontRegularPath) {
   try {
     GlobalFonts.registerFromPath(fontSemiBoldPath, 'Inter');
   } catch (e) {
@@ -38,7 +38,7 @@ const LEAGUES = [
 
 const MONTH_NAMES_TR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haz', 'Tem', 'Ağu', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 const DAY_NAMES_TR = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cts'];
-const FONT_FAMILY = '"Inter", "Segoe UI", Arial, "Segoe UI Symbol", "Helvetica Neue", sans-serif';
+const FONT_FAMILY = 'Inter, "Segoe UI", Arial, sans-serif';
 
 /**
  * YYYY-MM-DD tarihinden önceki günü hesaplar
@@ -134,6 +134,67 @@ function drawStar(ctx, cx, cy, spikes = 5, outerRadius = 8.5, innerRadius = 3.6)
 
   ctx.strokeStyle = '#d96c00';
   ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Vektörel Tik (Checkmark ✔) Çizer
+ */
+function drawCheckmark(ctx, cx, cy, size = 14, color = '#4b0082', strokeWidth = 2.4) {
+  ctx.save();
+  ctx.beginPath();
+  const leftX = cx - size * 0.38;
+  const leftY = cy + size * 0.05;
+  const midX = cx - size * 0.1;
+  const midY = cy + size * 0.32;
+  const rightX = cx + size * 0.38;
+  const rightY = cy - size * 0.32;
+
+  ctx.moveTo(leftX, leftY);
+  ctx.lineTo(midX, midY);
+  ctx.lineTo(rightX, rightY);
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = strokeWidth;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Vektörel Çarpı (Cross ✖) Çizer
+ */
+function drawCross(ctx, cx, cy, size = 12, color = '#8b0000', strokeWidth = 2.4) {
+  ctx.save();
+  ctx.beginPath();
+  const half = size * 0.32;
+  ctx.moveTo(cx - half, cy - half);
+  ctx.lineTo(cx + half, cy + half);
+  ctx.moveTo(cx + half, cy - half);
+  ctx.lineTo(cx - half, cy + half);
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = strokeWidth;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Vektörel Eksi (Minus ➖) Çizer
+ */
+function drawMinus(ctx, cx, cy, size = 12, color = '#5e49b2', strokeWidth = 2.5) {
+  ctx.save();
+  ctx.beginPath();
+  const half = size * 0.35;
+  ctx.moveTo(cx - half, cy);
+  ctx.lineTo(cx + half, cy);
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = strokeWidth;
+  ctx.lineCap = 'round';
   ctx.stroke();
   ctx.restore();
 }
@@ -297,29 +358,29 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
     // Gün & Ay (Sayı kısmı aya göre daha büyük)
     if (isToday) {
       ctx.fillStyle = '#505050';
-      ctx.font = `600 13px ${FONT_FAMILY}`;
+      ctx.font = `500 12.5px ${FONT_FAMILY}`;
       ctx.fillText('Bugün', x + dayColWidth / 2, headerY + 18);
     } else {
       const dayStr = `${dayNum}`;
       const monthStrText = ` ${monthStr}`;
 
-      ctx.font = `600 14px ${FONT_FAMILY}`;
+      ctx.font = `500 13px ${FONT_FAMILY}`;
       const dayW = ctx.measureText(dayStr).width;
-      ctx.font = `600 11px ${FONT_FAMILY}`;
+      ctx.font = `500 11px ${FONT_FAMILY}`;
       const monthW = ctx.measureText(monthStrText).width;
 
       const totalW = dayW + monthW;
       const startX = x + (dayColWidth - totalW) / 2;
 
       ctx.textAlign = 'left';
-      // Sayı kısmı (Daha büyük 14px)
+      // Sayı kısmı (13px)
       ctx.fillStyle = '#333333';
-      ctx.font = `600 14px ${FONT_FAMILY}`;
+      ctx.font = `500 13px ${FONT_FAMILY}`;
       ctx.fillText(dayStr, startX, headerY + 18);
 
-      // Ay kısmı (Daha küçük 11px)
+      // Ay kısmı (11px)
       ctx.fillStyle = '#666666';
-      ctx.font = `600 11px ${FONT_FAMILY}`;
+      ctx.font = `500 11px ${FONT_FAMILY}`;
       ctx.fillText(monthStrText, startX + dayW, headerY + 18);
 
       ctx.textAlign = 'center';
@@ -327,7 +388,7 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
 
     // Gün adı (Mavi Renk #5b9bd5)
     ctx.fillStyle = '#5b9bd5';
-    ctx.font = `600 15px ${FONT_FAMILY}`;
+    ctx.font = `600 14px ${FONT_FAMILY}`;
     ctx.fillText(dayName, x + dayColWidth / 2, headerY + 38);
   });
 
@@ -340,7 +401,7 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
   ctx.strokeRect(streakX, headerY, streakColWidth, headerHeight);
 
   ctx.fillStyle = '#ff1717';
-  ctx.font = `600 13px ${FONT_FAMILY}`;
+  ctx.font = `600 12px ${FONT_FAMILY}`;
   ctx.fillText('Okuma', streakX + streakColWidth / 2, headerY + 18);
   ctx.fillText('Serisi', streakX + streakColWidth / 2, headerY + 36);
 
@@ -353,7 +414,7 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
   ctx.strokeRect(margin, statsY, nameColWidth, statsRowHeight);
 
   ctx.fillStyle = '#333333';
-  ctx.font = `600 14px ${FONT_FAMILY}`;
+  ctx.font = `600 13px ${FONT_FAMILY}`;
   ctx.fillText(`${users.length} kişi`, margin + nameColWidth / 2, statsY + statsRowHeight / 2);
 
   // Günlük Okuyan Sayıları (Örn: "7✔")
@@ -368,9 +429,19 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
     ctx.lineWidth = isToday ? 2 : 1;
     ctx.strokeRect(x, statsY, dayColWidth, statsRowHeight);
 
+    const countStr = `${count}`;
+    ctx.font = `600 13px ${FONT_FAMILY}`;
+    const numW = ctx.measureText(countStr).width;
+    const checkSize = 10;
+    const gap = 3;
+    const totalW = numW + gap + checkSize;
+    const startX = x + (dayColWidth - totalW) / 2;
+
+    ctx.textAlign = 'left';
     ctx.fillStyle = '#2a9d49';
-    ctx.font = `600 14px ${FONT_FAMILY}`;
-    ctx.fillText(`${count}✔`, x + dayColWidth / 2, statsY + statsRowHeight / 2);
+    ctx.fillText(countStr, startX, statsY + statsRowHeight / 2);
+    drawCheckmark(ctx, startX + numW + gap + checkSize / 2, statsY + statsRowHeight / 2, checkSize, '#2a9d49', 1.8);
+    ctx.textAlign = 'center';
   });
 
   // Haftalık Başarı Oranı (Örn: "%57✔")
@@ -380,9 +451,19 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
   ctx.lineWidth = 1;
   ctx.strokeRect(streakX, statsY, streakColWidth, statsRowHeight);
 
+  const pctStr = `%${weekSuccessPct}`;
+  ctx.font = `600 13px ${FONT_FAMILY}`;
+  const numW = ctx.measureText(pctStr).width;
+  const checkSize = 11;
+  const gap = 3;
+  const totalW = numW + gap + checkSize;
+  const startX = streakX + (streakColWidth - totalW) / 2;
+
+  ctx.textAlign = 'left';
   ctx.fillStyle = '#208a3c';
-  ctx.font = `600 15px ${FONT_FAMILY}`;
-  ctx.fillText(`%${weekSuccessPct}✔`, streakX + streakColWidth / 2, statsY + statsRowHeight / 2);
+  ctx.fillText(pctStr, startX, statsY + statsRowHeight / 2);
+  drawCheckmark(ctx, startX + numW + gap + checkSize / 2, statsY + statsRowHeight / 2, checkSize, '#208a3c', 1.9);
+  ctx.textAlign = 'center';
 
   // --- 7. KULLANICI SATIRLARI ÇİZİMİ ---
   for (let i = 0; i < users.length; i++) {
@@ -415,16 +496,30 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
     const isDefaultImg = !imgSource || (typeof imgSource === 'string' && imgSource.includes('default.png'));
 
     if (!isDefaultImg && typeof imgSource === 'string') {
-      if (imgSource.startsWith('/userAvatars/') || imgSource.startsWith('userAvatars/') || imgSource.startsWith('/images/')) {
+      let targetSource = imgSource;
+
+      if (!imgSource.startsWith('http://') && !imgSource.startsWith('https://')) {
+        // Yerel veya bağıntılı dosya yolu (örn: /userAvatars/9334176.jpg, groupAvatars/0.jpg vb.)
         const cleanPath = imgSource.startsWith('/') ? imgSource.substring(1) : imgSource;
-        const localFilePath = path.join(__dirname, '..', 'public', cleanPath);
-        if (fs.existsSync(localFilePath)) {
-          imgSource = localFilePath;
+        const filename = path.basename(cleanPath);
+
+        const possiblePaths = [
+          path.join(__dirname, 'userAvatars', filename),
+          path.join(__dirname, 'userAvatars', cleanPath),
+          path.join(__dirname, cleanPath),
+          path.join(__dirname, 'public', cleanPath)
+        ];
+
+        for (const p of possiblePaths) {
+          if (fs.existsSync(p)) {
+            targetSource = p;
+            break;
+          }
         }
       }
 
       try {
-        const img = await loadImage(imgSource);
+        const img = await loadImage(targetSource);
         ctx.save();
         ctx.beginPath();
         ctx.arc(avatarX, avatarY, avatarRadius, 0, Math.PI * 2);
@@ -443,6 +538,7 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
 
         imgLoaded = true;
       } catch (err) {
+        console.warn(`⚠️ Profil resmi yüklenemedi (${user.name}):`, err.message);
         imgLoaded = false;
       }
     }
@@ -451,9 +547,9 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
       drawDefaultAvatar(ctx, avatarX, avatarY, avatarRadius);
     }
 
-    // Kullanıcı Adı (Yarı Kalın 600 14px)
+    // Kullanıcı Adı (500 13px)
     ctx.fillStyle = '#000000';
-    ctx.font = `600 14px ${FONT_FAMILY}`;
+    ctx.font = `500 14px ${FONT_FAMILY}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
@@ -467,7 +563,7 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
     }
     ctx.fillText(displayName, margin + 44, avatarY);
 
-    // Günlük Okuma Durumları (Birebir ✔ ve ✖ Karakter Kullanımı)
+    // Günlük Okuma Durumları (Vektörel İkonlar)
     const userStatsMap = statMap[uId] || {};
     ctx.textAlign = 'center';
 
@@ -483,10 +579,8 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
         ctx.lineWidth = isToday ? 2 : 1;
         ctx.strokeRect(cellX, rowY, dayColWidth, rowHeight);
 
-        // İndigo Renk ✔ Simgesi
-        ctx.fillStyle = '#4b0082';
-        ctx.font = `600 11px ${FONT_FAMILY}`;
-        ctx.fillText('✔', cellX + dayColWidth / 2, rowY + rowHeight / 2);
+        // İndigo Renk Vektörel Tik (Checkmark) Simgesi
+        drawCheckmark(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, 9, '#4b0082', 2.0);
       } else if (st === 'okumadım') {
         ctx.fillStyle = 'rgb(255, 100, 60)'; // Orijinal RoTaKip Canlı Kırmızı (#ff643c)
         ctx.fillRect(cellX, rowY, dayColWidth, rowHeight);
@@ -494,10 +588,8 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
         ctx.lineWidth = isToday ? 2 : 1;
         ctx.strokeRect(cellX, rowY, dayColWidth, rowHeight);
 
-        // Koyu Kırmızı ✖ Simgesi
-        ctx.fillStyle = '#8b0000';
-        ctx.font = `600 11px ${FONT_FAMILY}`;
-        ctx.fillText('✖', cellX + dayColWidth / 2, rowY + rowHeight / 2);
+        // Koyu Kırmızı Vektörel Çarpı (Cross) Simgesi
+        drawCross(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, 9, '#8b0000', 2.0);
       } else {
         // Boş / İşaretlenmemiş
         ctx.fillStyle = isToday ? '#ebf3fa' : '#f8f9fa';
@@ -506,9 +598,8 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
         ctx.lineWidth = isToday ? 2 : 1;
         ctx.strokeRect(cellX, rowY, dayColWidth, rowHeight);
 
-        ctx.fillStyle = '#5e49b2ff'; // İndigo Moru
-        ctx.font = `600 11px ${FONT_FAMILY}`;
-        ctx.fillText('➖', cellX + dayColWidth / 2, rowY + rowHeight / 2);
+        // İndigo Moru Vektörel Eksi (Minus) Simgesi
+        drawMinus(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, 9, '#5e49b2', 2.0);
       }
     });
 
@@ -522,12 +613,12 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
 
     if (streak > 0) {
       const streakStr = `${streak}`;
-      ctx.font = `600 17px ${FONT_FAMILY}`;
+      ctx.font = `600 15px ${FONT_FAMILY}`;
       const numWidth = ctx.measureText(streakStr).width;
 
-      const starRadius = 10;
+      const starRadius = 8.5;
       const starDiameter = starRadius * 2;
-      const gap = 6;
+      const gap = 5;
       const totalW = starDiameter + gap + numWidth;
       const startX = streakX + (streakColWidth - totalW) / 2;
 
@@ -537,13 +628,13 @@ async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
       drawStar(ctx, starCX, rowY + rowHeight / 2, 5, starRadius, starRadius * 0.42);
 
       ctx.fillStyle = '#ff1717';
-      ctx.font = `600 17px ${FONT_FAMILY}`;
+      ctx.font = `600 15px ${FONT_FAMILY}`;
       ctx.textAlign = 'left';
       ctx.fillText(streakStr, textX, rowY + rowHeight / 2);
       ctx.textAlign = 'center';
     } else {
       ctx.fillStyle = '#ff1717';
-      ctx.font = `600 17px ${FONT_FAMILY}`;
+      ctx.font = `600 15px ${FONT_FAMILY}`;
       ctx.fillText('-', streakX + streakColWidth / 2, rowY + rowHeight / 2);
     }
   }
