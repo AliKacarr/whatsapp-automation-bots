@@ -20,6 +20,7 @@ process.stderr.write = function (chunk, encoding, callback) {
     str.includes('SessionCipher') ||
     str.includes('Closing open session') ||
     str.includes('Closing session') ||
+    str.includes('SessionEntry') ||
     str.includes('verifyMAC') ||
     str.includes('doDecryptWhisperMessage') ||
     str.includes('Failed to decrypt message')
@@ -28,6 +29,34 @@ process.stderr.write = function (chunk, encoding, callback) {
   }
   return originalStderrWrite.apply(process.stderr, arguments);
 };
+
+const originalStdoutWrite = process.stdout.write;
+process.stdout.write = function (chunk, encoding, callback) {
+  const str = chunk.toString();
+  if (
+    str.includes('Closing open session') ||
+    str.includes('Closing session') ||
+    str.includes('SessionEntry') ||
+    str.includes('SessionCipher') ||
+    str.includes('MAC Error: Bad MAC')
+  ) {
+    return true; // Gürültülü libsignal dahili oturum kapatma loglarını konsoldan gizle
+  }
+  return originalStdoutWrite.apply(process.stdout, arguments);
+};
+
+/**
+ * Ephemeral (Süreli), ViewOnce veya Document ile sarmalanmış ham mesaj içeriğini çıkarır.
+ */
+function getRawMessage(msgObj) {
+  if (!msgObj) return null;
+  let m = msgObj.message || msgObj;
+  while (m?.ephemeralMessage?.message || m?.viewOnceMessage?.message || m?.viewOnceMessageV2?.message || m?.documentWithCaptionMessage?.message) {
+    m = m.ephemeralMessage?.message || m.viewOnceMessage?.message || m.viewOnceMessageV2?.message || m.documentWithCaptionMessage?.message;
+  }
+  return m;
+}
+
 
 // Baileys Noise/GCM şifre çözme hatalarının Node.js sürecini çökertmesini önleme
 process.on('uncaughtException', (err) => {
@@ -465,11 +494,14 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   }
 
   // 2) Anket detaylarını ve şifreleme anahtarını (messageSecret) al
-  const pollCreation = pollMsg.message.pollCreationMessage ||
-    pollMsg.message.pollCreationMessageV2 ||
-    pollMsg.message.pollCreationMessageV3;
+  const rawMsg = getRawMessage(pollMsg);
+  const pollCreation = rawMsg?.pollCreationMessage ||
+    rawMsg?.pollCreationMessageV2 ||
+    rawMsg?.pollCreationMessageV3;
 
-  const pollEncKey = pollMsg.message.messageContextInfo?.messageSecret || pollCreation?.messageSecret;
+  const pollEncKey = pollMsg.message?.messageContextInfo?.messageSecret || 
+    rawMsg?.messageContextInfo?.messageSecret || 
+    pollCreation?.messageSecret;
   if (!pollEncKey) {
     console.warn(`⚠️ Anket mesajında messageSecret bulunamadı (${pollMsgId}).`);
     return;
@@ -530,7 +562,8 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   const encKeyCandidates = [
     pollEncKey,
     pollCreation?.messageSecret,
-    pollMsg.message?.messageContextInfo?.messageSecret
+    pollMsg.message?.messageContextInfo?.messageSecret,
+    rawMsg?.messageContextInfo?.messageSecret
   ].filter(Boolean).map(safeToBuffer).filter(b => b && b.length === 32);
 
   const uniqueEncKeys = [...new Set(encKeyCandidates.map(b => b.toString('hex')))].map(h => Buffer.from(h, 'hex'));
@@ -949,7 +982,8 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
     sock.ev.on('messages.upsert', async ({ messages: msgs, type }) => {
       for (const msg of msgs) {
         // 1) Anket oluşturma mesajlarını store'a kaydet + DB'ye messageData yaz
-        const pollCreation = msg.message?.pollCreationMessage || msg.message?.pollCreationMessageV3;
+        const rawMsg = getRawMessage(msg);
+        const pollCreation = rawMsg?.pollCreationMessage || rawMsg?.pollCreationMessageV2 || rawMsg?.pollCreationMessageV3;
         if (pollCreation && msg.key?.id) {
           messageStore.set(msg.key.id, msg);
           // console.log(`📋 Anket mesajı store'a kaydedildi: ${msg.key.id}`);
@@ -961,8 +995,8 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
               try {
                 await getDB().collection('polls').updateOne(
                   { pollId: msg.key.id },
-                  { $set: { messageData: serialized } },
-                  { upsert: false }
+                  { $set: { messageData: serialized, pollId: msg.key.id, groupId: msg.key.remoteJid } },
+                  { upsert: true }
                 );
               } catch (e) { }
             }
