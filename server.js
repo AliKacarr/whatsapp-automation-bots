@@ -1516,6 +1516,7 @@ async function getWhatsAppStatus(autoStartIfDisconnected = false) {
         id: null,
         name: null
       },
+      targetReadingGroupId: null,
       lastPollSentAt: state.lastPollSentAt,
       lastError: `.env dosyanızda zorunlu değişkenler tanımlanmamış: ${missingEnvs.join(', ')}`,
       engine: 'Baileys Engine'
@@ -1527,6 +1528,7 @@ async function getWhatsAppStatus(autoStartIfDisconnected = false) {
   }
 
   const targetId = await getTargetGroupId();
+  const targetReadingId = await getTargetReadingGroupId();
   if (sock && state.status === 'READY' && targetId && !state.targetGroup.name) {
     fetchTargetGroupInfo();
   }
@@ -1539,6 +1541,7 @@ async function getWhatsAppStatus(autoStartIfDisconnected = false) {
       id: targetId || null,
       name: state.targetGroup.name || null
     },
+    targetReadingGroupId: targetReadingId || null,
     lastPollSentAt: state.lastPollSentAt,
     lastError: state.lastError,
     engine: 'Baileys Engine'
@@ -1758,14 +1761,23 @@ app.post('/api/poll-config', async (req, res) => {
 // ANKET VERİTABANI API ENDPOINT'LERİ
 // ============================================================================
 
-// Tüm anketleri listele
+// Tüm anketleri listele (poll_config'deki groupId'ye göre filtrele)
 app.get('/api/polls', async (req, res) => {
   if (!isDBEnabled() || !getDB()) {
     return res.json({ success: false, message: 'Veritabanı bağlantısı aktif değil.' });
   }
   try {
+    const targetGroupId = await getTargetGroupId();
+    if (!targetGroupId) {
+      return res.json({
+        success: false,
+        message: 'Hedef WhatsApp Grup JID henüz tanımlanmamış. Lütfen Ayarlar panelinden grup JID bilgisi girin.',
+        polls: []
+      });
+    }
+
     const polls = await getDB().collection('polls')
-      .find({})
+      .find({ groupId: targetGroupId })
       .sort({ createdAt: -1 })
       .limit(50)
       .toArray();
@@ -1775,7 +1787,7 @@ app.get('/api/polls', async (req, res) => {
       createdAt: p.createdAt ? getTRDateString(p.createdAt) : p.createdAt
     }));
 
-    res.json({ success: true, count: formattedPolls.length, polls: formattedPolls });
+    res.json({ success: true, count: formattedPolls.length, polls: formattedPolls, groupId: targetGroupId });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

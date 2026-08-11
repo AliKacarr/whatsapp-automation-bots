@@ -60,28 +60,7 @@
 
     .container {
       width: 100%;
-      max-width: 620px;
-    }
-
-    /* Glassmorphism App Header */
-    .header {
-      text-align: center;
-      margin-bottom: 24px;
-    }
-
-    .header-title {
-      font-size: 26px;
-      font-weight: 800;
-      letter-spacing: -0.5px;
-      background: linear-gradient(135deg, #ffffff 30%, var(--text-muted));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .header-subtitle {
-      font-size: 13px;
-      color: var(--text-muted);
-      font-weight: 400;
+      max-width: 650px;
     }
 
     /* Main Dashboard Card */
@@ -117,7 +96,22 @@
       align-items: center;
       justify-content: space-between;
       margin-bottom: 20px;
-      gap: 12px;
+      gap: 16px;
+    }
+
+    .group-banner-items {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: nowrap;
+      min-width: 0;
+    }
+
+    .group-info-divider {
+      width: 1px;
+      height: 28px;
+      background: rgba(255, 255, 255, 0.12);
+      flex-shrink: 0;
     }
 
     .group-info {
@@ -125,15 +119,29 @@
       align-items: center;
       gap: 10px;
       font-size: 13px;
+      min-width: 0;
+    }
+
+    .group-label {
+      font-size: 10px;
+      color: var(--text-sub);
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      white-space: nowrap;
     }
 
     .group-icon {
       font-size: 18px;
+      flex-shrink: 0;
     }
 
     .group-name {
       font-weight: 600;
       color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .badge {
@@ -332,6 +340,32 @@
     .btn-purple:hover:not(:disabled) {
       background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
       box-shadow: 0 6px 18px rgba(139, 92, 246, 0.35);
+      transform: translateY(-2px);
+    }
+
+    .btn-amber {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      color: #ffffff;
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      box-shadow: 0 4px 14px rgba(245, 158, 11, 0.22);
+    }
+
+    .btn-amber:hover:not(:disabled) {
+      background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+      box-shadow: 0 6px 18px rgba(245, 158, 11, 0.35);
+      transform: translateY(-2px);
+    }
+
+    .btn-rose {
+      background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+      color: #ffffff;
+      border: 1px solid rgba(251, 113, 133, 0.3);
+      box-shadow: 0 4px 14px rgba(244, 63, 94, 0.22);
+    }
+
+    .btn-rose:hover:not(:disabled) {
+      background: linear-gradient(135deg, #fb7185 0%, #f43f5e 100%);
+      box-shadow: 0 6px 18px rgba(244, 63, 94, 0.35);
       transform: translateY(-2px);
     }
 
@@ -617,22 +651,31 @@
 <body>
 
   <div class="container">
-    <!-- Header -->
-    <div class="header">
-      <p class="header-subtitle">Otomatik Günlük Anket & Anlık Oy Takip Paneli</p>
-    </div>
 
     <!-- Main Card -->
     <div class="main-card">
       <!-- Target Group Banner -->
       <div class="group-banner">
-        <div class="group-info">
-          <span class="group-icon">👥</span>
-          <div>
-            <div style="font-size: 11px; color: var(--text-sub); font-weight: 500;">HEDEF GRUP</div>
-            <div class="group-name" id="targetGroupName">Yükleniyor...</div>
+        <div class="group-banner-items">
+          <div class="group-info">
+            <span class="group-icon">💬</span>
+            <div>
+              <div class="group-label">HEDEF WHATSAPP GRUBU</div>
+              <div class="group-name" id="targetGroupName">Yükleniyor...</div>
+            </div>
+          </div>
+
+          <div class="group-info-divider"></div>
+
+          <div class="group-info">
+            <span class="group-icon">📚</span>
+            <div>
+              <div class="group-label">HEDEF OKUMA GRUBU</div>
+              <div class="group-name" id="targetReadingGroupName" style="color: #38bdf8;">Yükleniyor...</div>
+            </div>
           </div>
         </div>
+
         <div class="badge badge-initializing" id="statusBadge">
           🚀 Kontrol Ediliyor...
         </div>
@@ -647,24 +690,39 @@
       <!-- Action Buttons -->
       <div class="actions-grid">
         <button class="btn btn-primary" id="sendPollBtn" onclick="sendPoll()" disabled>
-          Anketi Şimdi Gönder
+          📊 Anketi Şimdi Gönder
         </button>
+
         <div class="btn-row">
-          <button class="btn btn-info" id="showPollsBtn" onclick="showPolls()">
-            Ayarlar
+          <button class="btn btn-amber" id="sendSentenceBtn" onclick="sendSentence()" disabled>
+            💬 Günün Sözünü Gönder
           </button>
-          <button class="btn btn-purple" id="showVotesBtn" onclick="showVotes()">
-            Anket Oyları
+          <button class="btn btn-info" id="sendTableImageBtn" onclick="sendTableImage()" disabled>
+            🖼️ Haftalık Tabloyu Gönder
           </button>
         </div>
+
         <div class="btn-row">
+          <button class="btn btn-rose" id="sendReadingReportBtn" onclick="sendReadingReport()" disabled>
+            🔥 Okuma Serisini Gönder
+          </button>
+          <button class="btn btn-purple" id="showVotesBtn" onclick="showVotes()" disabled>
+            📈 Anket Oylarını Görüntüle
+          </button>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="showPollsBtn" onclick="showPolls()">
+            ⚙️ Ayarlar
+          </button>
           <button class="btn btn-secondary" id="showGroupsBtn" onclick="showGroups()" disabled>
-            Gruplar & JID
-          </button>
-          <button class="btn btn-secondary" id="restartBtn" onclick="triggerRestart(true)">
-            Yeniden Bağlan / QR
+            👥 Grup JID Kopyala
           </button>
         </div>
+
+        <button class="btn btn-secondary" id="restartBtn" onclick="triggerRestart(true)" style="margin-top: 4px;">
+          🔄 Yeniden Bağlan
+        </button>
       </div>
 
       <!-- Last Sent Timestamp -->
@@ -785,13 +843,6 @@
         </div>
       </div>
 
-      <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 8px 0;" />
-
-      <!-- Sent Polls History -->
-      <h4 style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-align: left; margin-bottom: 6px;">
-        Geçmiş Gönderilen Anketler:
-      </h4>
-      <div id="pollsListArea" style="max-height: 140px; overflow-y: auto; padding-right: 4px;"></div>
     </div>
   </div>
 
@@ -832,20 +883,39 @@
     function renderState(data) {
       const badge = document.getElementById('statusBadge');
       const content = document.getElementById('contentArea');
-      const sendBtn = document.getElementById('sendPollBtn');
-      const showGroupsBtn = document.getElementById('showGroupsBtn');
       const lastSentRow = document.getElementById('lastSentRow');
       const lastSentTime = document.getElementById('lastSentTime');
       const targetGroupEl = document.getElementById('targetGroupName');
+      const targetReadingGroupEl = document.getElementById('targetReadingGroupName');
 
-      // Target Group Header
+      const actionButtons = [
+        document.getElementById('sendPollBtn'),
+        document.getElementById('sendSentenceBtn'),
+        document.getElementById('sendTableImageBtn'),
+        document.getElementById('sendReadingReportBtn'),
+        document.getElementById('showVotesBtn'),
+        document.getElementById('showGroupsBtn')
+      ];
+      const isReady = (data.status === 'READY');
+      actionButtons.forEach(btn => {
+        if (btn) btn.disabled = !isReady;
+      });
+
       if (targetGroupEl) {
         if (data.targetGroup?.name) {
-          targetGroupEl.innerHTML = `<b>${data.targetGroup.name}</b>`;
+          targetGroupEl.innerHTML = `<b>${escapeHtml(data.targetGroup.name)}</b>`;
         } else if (data.targetGroup?.id) {
-          targetGroupEl.innerHTML = `<span style="font-size:12px; opacity:0.8;">${data.targetGroup.id}</span>`;
+          targetGroupEl.innerHTML = `<span style="font-size:12px; opacity:0.8;">${escapeHtml(data.targetGroup.id)}</span>`;
         } else {
-          targetGroupEl.innerText = 'Hedef WhatsApp Grup JID Tanımlanmadı';
+          targetGroupEl.innerText = 'Tanımlanmadı';
+        }
+      }
+
+      if (targetReadingGroupEl) {
+        if (data.targetReadingGroupId) {
+          targetReadingGroupEl.innerHTML = `<b>${escapeHtml(data.targetReadingGroupId)}</b>`;
+        } else {
+          targetReadingGroupEl.innerText = 'Tanımlanmadı';
         }
       }
 
@@ -860,8 +930,6 @@
         const missingText = (data.missingEnvs && data.missingEnvs.length > 0) ? data.missingEnvs.join(', ') : 'CONFIG_KEY, MONGO_URI, DB_NAME';
         badge.className = 'badge badge-error';
         badge.innerHTML = `⚠️ Zorunlu .env Eksik`;
-        sendBtn.disabled = true;
-        if (showGroupsBtn) showGroupsBtn.disabled = true;
 
         if (lastRenderedStatus !== 'MISSING_ENV') {
           content.innerHTML = `
@@ -881,8 +949,6 @@
       else if (data.status === 'MISSING_GROUP_ID') {
         badge.className = 'badge badge-error';
         badge.innerHTML = '⚠️ Hedef Grup JID Eksik';
-        sendBtn.disabled = true;
-        if (showGroupsBtn) showGroupsBtn.disabled = true;
 
         if (lastRenderedStatus !== 'MISSING_GROUP_ID') {
           content.innerHTML = `
@@ -901,8 +967,6 @@
       else if (data.status === 'READY') {
         badge.className = 'badge badge-ready';
         badge.innerHTML = '✅ WhatsApp Bağlı';
-        sendBtn.disabled = false;
-        if (showGroupsBtn) showGroupsBtn.disabled = false;
 
         if (lastRenderedStatus !== 'READY') {
           content.innerHTML = `
@@ -921,8 +985,6 @@
       else if (data.status === 'WAITING_FOR_QR' && data.qrDataUrl) {
         badge.className = 'badge badge-waiting';
         badge.innerHTML = '📲 Giriş Bekleniyor';
-        sendBtn.disabled = true;
-        if (showGroupsBtn) showGroupsBtn.disabled = true;
 
         if (lastRenderedStatus !== 'WAITING_FOR_QR') {
           content.innerHTML = `
@@ -954,8 +1016,6 @@
       else if (data.status === 'INITIALIZING') {
         badge.className = 'badge badge-initializing';
         badge.innerHTML = '🚀 Başlatılıyor...';
-        sendBtn.disabled = true;
-        if (showGroupsBtn) showGroupsBtn.disabled = true;
 
         if (lastRenderedStatus !== 'INITIALIZING') {
           content.innerHTML = `
@@ -969,8 +1029,6 @@
       else {
         badge.className = 'badge badge-error';
         badge.innerHTML = '⚠️ Oturum Kapalı';
-        sendBtn.disabled = true;
-        if (showGroupsBtn) showGroupsBtn.disabled = true;
 
         const errorKey = 'ERROR_' + (data.lastError || '');
         if (lastRenderedStatus !== errorKey) {
@@ -1004,8 +1062,71 @@
         showToast('❌ Sunucu hatası oluştu');
       } finally {
         sendBtn.disabled = false;
-        sendBtn.innerText = 'Anketi Şimdi Gönder';
+        sendBtn.innerText = '📊 Anketi Şimdi Gönder';
         checkStatus();
+      }
+    }
+
+    async function sendSentence() {
+      const btn = document.getElementById('sendSentenceBtn');
+      btn.disabled = true;
+      btn.innerText = '⏳ Gönderiliyor...';
+
+      try {
+        const res = await fetch('/api/send-sentence', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ Günün sözü gruba başarıyla gönderildi!');
+        } else {
+          showToast('❌ Hata: ' + (data.message || data.error || 'Gönderilemedi'));
+        }
+      } catch (err) {
+        showToast('❌ Sunucu hatası oluştu');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '💬 Günün Sözünü Gönder';
+      }
+    }
+
+    async function sendTableImage() {
+      const btn = document.getElementById('sendTableImageBtn');
+      btn.disabled = true;
+      btn.innerText = '⏳ Gönderiliyor...';
+
+      try {
+        const res = await fetch('/api/send-table-image', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ Haftalık okuma tablosu görseli gruba gönderildi!');
+        } else {
+          showToast('❌ Hata: ' + (data.message || data.error || 'Gönderilemedi'));
+        }
+      } catch (err) {
+        showToast('❌ Sunucu hatası oluştu');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '🖼️ Haftalık Tabloyu Gönder';
+      }
+    }
+
+    async function sendReadingReport() {
+      const btn = document.getElementById('sendReadingReportBtn');
+      btn.disabled = true;
+      btn.innerText = '⏳ Gönderiliyor...';
+
+      try {
+        const res = await fetch('/api/send-reading-report', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ Okuma serisi raporu gruba başarıyla gönderildi!');
+        } else {
+          showToast('❌ Hata: ' + (data.message || data.error || 'Gönderilemedi'));
+        }
+      } catch (err) {
+        showToast('❌ Sunucu hatası oluştu');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '🔥 Okuma Serisini Gönder';
       }
     }
 
@@ -1172,50 +1293,12 @@
     // ----------------------------------------------------
     // ANKETLER MODALI (polls)
     // ----------------------------------------------------
-    async function showPolls() {
+    function showPolls() {
       const modal = document.getElementById('pollsModal');
-      const listArea = document.getElementById('pollsListArea');
-      listArea.innerHTML = '<div class="spinner"></div><p style="font-size:12px; color:var(--text-muted); text-align:center;">Anketler yükleniyor...</p>';
       modal.style.display = 'flex';
 
       // Anket şablon ayarlarını yükle
       loadPollConfigUI();
-
-      try {
-        const res = await fetch('/api/polls');
-        const data = await res.json();
-
-        if (!data.success) {
-          listArea.innerHTML = `<p style="font-size:13px; color:var(--accent-rose); text-align:center; padding:20px 0;">${escapeHtml(data.message || 'Hata oluştu')}</p>`;
-          return;
-        }
-
-        if (!data.polls || data.polls.length === 0) {
-          listArea.innerHTML = '<p style="font-size:13px; color:var(--text-muted); text-align:center; padding:20px 0;">Henüz kayıtlı anket bulunmuyor.</p>';
-          return;
-        }
-
-        listArea.innerHTML = data.polls.map(p => `
-          <div class="poll-item-card">
-            <div class="poll-header-row">
-              <div class="poll-item-title">${escapeHtml(p.title || 'Başlıksız Anket')}</div>
-              <div class="poll-item-date">📅 ${escapeHtml(p.createdAt || '-')}</div>
-            </div>
-            <div style="font-size:11px; color:var(--text-sub); font-family:monospace;">ID: ${escapeHtml(p.pollId)}</div>
-            <div class="poll-options-tags">
-              ${(p.options || []).map(opt => `<span class="option-tag">${escapeHtml(opt)}</span>`).join('')}
-            </div>
-            <div style="margin-top: 6px; text-align: right;">
-              <button class="btn btn-purple" style="width:auto; padding:6px 14px; font-size:11px;" onclick="closePollsModal(); showVotes('${escapeHtml(p.pollId)}');">
-                🗳️ Oyları Gör
-              </button>
-            </div>
-          </div>
-        `).join('');
-
-      } catch (err) {
-        listArea.innerHTML = '<p style="font-size:13px; color:var(--accent-rose); text-align:center; padding:20px 0;">Anketler yüklenirken hata oluştu.</p>';
-      }
     }
 
     function closePollsModal() {

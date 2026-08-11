@@ -56,7 +56,7 @@ Botunuzu Render.com üzerinde 7/24 kesintisiz çalışır hale getirmek için a�
 2. Karşınıza gelen **QR Kodu** WhatsApp uygulamanızdan *(Bağlı Cihazlar > Cihaz Bağla)* okutarak botunuzu bağlayın.
 
 #### 4. Adım: Hedef Grup ve Ayarlar
-1. QR kodu okutup giriş yaptıktan sonra yönetim panelindeki **"Gruplar & JID"** butonuna tıklayın.
+1. QR kodu okutup giriş yaptıktan sonra yönetim panelindeki **"Grup JID Kopyala"** butonuna tıklayın.
 2. Anket göndermek istediğiniz grubun yanındaki **JID** kodunu kopyalayın (Örn: `123456789012345678@g.us`).
 3. **Ayarlar** butonuna tıklayarak hedef WhatsApp grubu JID, okuma grubu ID ve anket şablonu gibi tüm ayarları arayüzden kolayca yapılandırabilirsiniz.
 
