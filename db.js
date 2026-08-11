@@ -35,7 +35,7 @@ async function connectDB() {
   const dbName = process.env.DB_NAME;
 
   if (!uri || !dbName) {
-    console.log('ℹ️ MONGO_URI veya DB_NAME tanımlanmamış. Veritabanı özellikleri devre dışı.');
+    console.warn('⚠️ MONGO_URI veya DB_NAME çevre değişkeni .env dosyasında tanımlanmamış. Veritabanı bağlantısı yapılamadı.');
     dbEnabled = false;
     return null;
   }
@@ -119,7 +119,7 @@ async function savePoll(pollData) {
 /**
  * Oy geldiğinde veritabanına kaydeder (upsert).
  * Aynı kullanıcı aynı ankete tekrar oy verirse günceller.
- * @param {Object} voteData - { pollId, voterJid, voterPhone, rawLid, selectedOptions, updatedAt }
+ * @param {Object} voteData - { pollId, voterJid, voterPhone, rawLid, selectedOptions, pushName, readingGroupId, updatedAt }
  */
 async function saveVote(voteData) {
   if (!dbEnabled || !db) return null;
@@ -137,9 +137,16 @@ async function saveVote(voteData) {
       } catch (cleanErr) { }
     }
 
+    let readingGroupId = voteData.readingGroupId;
+    if (!readingGroupId) {
+      const config = await getPollConfig();
+      readingGroupId = config?.readingGroupId || null;
+    }
+
     const setFields = {
       voterPhone: voterPhone,
       selectedOptions: voteData.selectedOptions,
+      readingGroupId: readingGroupId,
       updatedAt: getTRDateString(voteData.updatedAt)
     };
     if (voteData.pushName) {
@@ -152,7 +159,7 @@ async function saveVote(voteData) {
       { upsert: true }
     );
     const action = result.upsertedCount > 0 ? 'Yeni oy' : 'Oy güncelleme';
-    // console.log(`🗳️ ${action}: ${voterPhone} → [${voteData.selectedOptions.join(', ')}]`);
+    // console.log(`🗳️ ${action}: ${voterPhone} → [${voteData.selectedOptions.join(', ')}] (readingGroupId: ${readingGroupId})`);
     return result;
   } catch (err) {
     console.error('❌ Oy DB kayıt hatası:', err.message);
@@ -191,58 +198,83 @@ const DEFAULT_POLL_OPTIONS = [
   '150 dakika', '180 dakika'
 ];
 
+function getPollConfigKey() {
+  if (process.env.CONFIG_KEY && process.env.CONFIG_KEY.trim() !== '') {
+    return process.env.CONFIG_KEY.trim();
+  }
+  return null;
+}
+
 /**
  * Anket şablon ayarlarını MongoDB'den okur.
  * Doküman yoksa varsayılan değerleri döndürür.
+ * @param {string} [passedConfigKey] - İsteğe bağlı konfigürasyon ID'si. Verilmezse CONFIG_KEY kullanılır.
  */
-async function getPollConfig() {
+async function getPollConfig(passedConfigKey = null) {
+  const configKey = (passedConfigKey && String(passedConfigKey).trim())
+    ? String(passedConfigKey).trim()
+    : getPollConfigKey();
+
+  if (!configKey) return null;
+
   const defaultConfig = {
+    configKey: configKey,
     titleTemplate: '{{date}}',
     options: DEFAULT_POLL_OPTIONS,
-    groupId: process.env.WHATSAPP_GROUP_ID || null
+    groupId: null,
+    readingGroupId: configKey
   };
 
   if (!dbEnabled || !db) return defaultConfig;
 
   try {
-    const doc = await db.collection('poll_config').findOne({ _id: 'default' });
+    const doc = await db.collection('poll_config').findOne({ _id: configKey });
     if (!doc) {
       const initialDoc = {
-        _id: 'default',
+        _id: configKey,
         titleTemplate: defaultConfig.titleTemplate,
         options: defaultConfig.options,
         groupId: defaultConfig.groupId,
+        readingGroupId: defaultConfig.readingGroupId,
         updatedAt: getTRDateString()
       };
       await db.collection('poll_config').updateOne(
-        { _id: 'default' },
+        { _id: configKey },
         { $setOnInsert: initialDoc },
         { upsert: true }
       );
-      console.log('📌 poll_config dokümanı bulunamadı. Varsayılan anket ayarları veritabanına kaydedildi.');
-      return initialDoc;
+      console.log(`📌 poll_config (${configKey}) dokümanı oluşturuldu.`);
+      return { configKey, ...initialDoc };
     }
 
     return {
+      configKey: doc._id || configKey,
       titleTemplate: doc.titleTemplate || defaultConfig.titleTemplate,
       options: (Array.isArray(doc.options) && doc.options.length > 0) ? doc.options : defaultConfig.options,
-      groupId: (doc.groupId !== undefined && doc.groupId !== null) ? doc.groupId : (process.env.WHATSAPP_GROUP_ID || null),
+      groupId: (doc.groupId !== undefined && doc.groupId !== null && String(doc.groupId).trim() !== '') ? String(doc.groupId).trim() : null,
+      readingGroupId: (doc.readingGroupId && typeof doc.readingGroupId === 'string' && doc.readingGroupId.trim() !== '') ? String(doc.readingGroupId).trim() : configKey,
       updatedAt: doc.updatedAt || null
     };
   } catch (err) {
-    console.error('❌ Anket ayarları okuma hatası:', err.message);
+    console.error(`❌ Anket ayarları okuma hatası (${configKey}):`, err.message);
     return defaultConfig;
   }
 }
 
 /**
  * Anket şablon ayarlarını MongoDB'ye kaydeder.
- * @param {Object} configData - { titleTemplate, options, groupId }
+ * @param {Object} configData - { titleTemplate, options, groupId, readingGroupId, configKey }
  */
 async function savePollConfig(configData) {
   if (!dbEnabled || !db) return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
 
   try {
+    const configKey = (configData.configKey || configData.configId || '').trim() || getPollConfigKey();
+
+    if (!configKey) {
+      return { success: false, message: 'CONFIG_KEY çevre değişkeni tanımlanmamış.' };
+    }
+
     const titleTemplate = (configData.titleTemplate || '').trim() || '{{date}}';
     const options = Array.isArray(configData.options)
       ? configData.options.map(o => String(o).trim()).filter(Boolean)
@@ -252,26 +284,33 @@ async function savePollConfig(configData) {
       return { success: false, message: 'En az 1 anket seçeneği eklemelisiniz.' };
     }
 
-    const groupId = (configData.groupId !== undefined && configData.groupId !== null)
+    const groupId = (configData.groupId !== undefined && configData.groupId !== null && String(configData.groupId).trim() !== '')
       ? String(configData.groupId).trim()
       : null;
+
+    const readingGroupId = (configData.readingGroupId !== undefined && configData.readingGroupId !== null && String(configData.readingGroupId).trim() !== '')
+      ? String(configData.readingGroupId).trim()
+      : configKey;
 
     const setFields = {
       titleTemplate,
       options,
       groupId,
+      readingGroupId,
       updatedAt: getTRDateString()
     };
 
     await db.collection('poll_config').updateOne(
-      { _id: 'default' },
+      { _id: configKey },
       { $set: setFields },
       { upsert: true }
     );
 
-    return { success: true, config: setFields };
+    process.env.CONFIG_KEY = configKey;
+
+    return { success: true, config: { configKey, ...setFields } };
   } catch (err) {
-    console.error('❌ Anket ayarları kayıt hatası:', err.message);
+    console.error(`❌ Anket ayarları kayıt hatası:`, err.message);
     return { success: false, message: err.message };
   }
 }
@@ -390,20 +429,28 @@ function getPreviousDay(dateStr) {
   return d.toISOString().slice(0, 10);
 }
 
+
 /**
- * users_catikati23 ve readingstatuses_catikati23 koleksiyonlarını kullanarak
+ * users_<readingGroupId> ve readingstatuses_<readingGroupId> koleksiyonlarını kullanarak
  * her kullanıcı için okuma serisi ve okumama serisini hesaplar.
- *
- * Dönüş: { readers: [{name, streak}], nonReaders: [{name, streak}] }
- *   - readers:    Ardışık okuyan kullanıcılar (streak >= 1), azalan sıralı
- *   - nonReaders: Ardışık okumayan kullanıcılar (streak > 1), azalan sıralı
+ * @param {string} [passedReadingGroupId] - İsteğe bağlı okuma grubu veritabanı eki. Verilmezse poll_config'den okunur.
  */
-async function calculateReadingStreaks() {
+async function calculateReadingStreaks(passedReadingGroupId = null) {
   if (!dbEnabled || !db) return { readers: [], nonReaders: [] };
 
   try {
+    let readingGroupId = (passedReadingGroupId || '').trim();
+    if (!readingGroupId) {
+      const config = await getPollConfig();
+      readingGroupId = config?.readingGroupId || null;
+    }
+    if (!readingGroupId) return { readers: [], nonReaders: [] };
+
+    const usersCollName = `users_${readingGroupId}`;
+    const statusesCollName = `readingstatuses_${readingGroupId}`;
+
     // 1) Tüm kullanıcıları çek
-    const users = await db.collection('users_catikati23').find({}).toArray();
+    const users = await db.collection(usersCollName).find({}).toArray();
     if (!users || users.length === 0) return { readers: [], nonReaders: [] };
 
     const today = getTRTodayDate();
@@ -415,7 +462,7 @@ async function calculateReadingStreaks() {
       const userName = user.name || user.username || 'Bilinmeyen';
 
       // Kullanıcının tüm okuma dokümanlarını tarihe göre azalan sıralı çek
-      const statuses = await db.collection('readingstatuses_catikati23')
+      const statuses = await db.collection(statusesCollName)
         .find({ userId: userId })
         .sort({ date: -1 })
         .toArray();

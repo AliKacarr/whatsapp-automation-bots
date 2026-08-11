@@ -13,9 +13,12 @@ Bu proje, WhatsApp gruplarında **otomatik anket gönderme**, **mesaj gönderme*
 
 ## Öne Çıkan Özellikler
 
-- **Anket ve Mesaj Gönderimi:** WhatsApp gruplarınıza her gün otomatik anket ve mesaj gönderebilirsiniz.
-- **Veri Saklama:** Kullanıcıların **anlık anket oylamaları** ve **grup mesajları** MongoDB veri tabanında kalıcı olarak saklanır.
-- **Canlı Web Yönetim Paneli:** Arayüzden anket sonuçlarını görüntüleyebilir ve anket gönderimini tetikleyebilirsiniz.
+- **Anket ve Mesaj Gönderimi:** WhatsApp gruplarınıza her gün otomatik anket ve motivasyon cümlesi gönderebilirsiniz.
+- **Veri Saklama:** Kullanıcıların **anlık anket oylamaları** MongoDB veri tabanında kalıcı olarak saklanır.
+- **Haftalık Okuma Tablosu:** Her hafta grubun okuma istatistiklerini içeren tablo görseli otomatik olarak oluşturulur ve gruba gönderilir.
+- **Okuma Serisi Takibi:** Kullanıcıların kesintisiz okuma serileri (🔥 streak) hesaplanır ve haftalık raporda gösterilir.
+- **Çoklu Bot Desteği:** Aynı veritabanını paylaşan birden fazla bot, `CONFIG_KEY` sayesinde birbirinden bağımsız çalışır.
+- **Canlı Web Yönetim Paneli:** Arayüzden anket sonuçlarını görüntüleyebilir, ayarları düzenleyebilir ve anket gönderimini tetikleyebilirsiniz.
 
 ---
 
@@ -27,29 +30,35 @@ Uygulamayı ihtiyacınıza göre **Render.com üzerinde sunucu ortamında** veya
 
 Botunuzu Render.com üzerinde 7/24 kesintisiz çalışır hale getirmek için aşağıdaki adımları sırasıyla uygulayabilirsiniz:
 
-#### 1. Adım: Projeyi Render'da Yayına Alma ve İlk Bağlantı (QR Kod)
+#### 1. Adım: Projeyi Render'da Yayına Alma
 1. Bu projeyi kendi GitHub hesabınıza **Fork** edin.
 2. [Render.com](https://render.com/) adresine ücretsiz üye olun ve **New +** > **Web Service** seçeneğini seçin.
 3. Forkladığınız GitHub reponuzu bağlayın ve yayına alın.
 4. Render size özel bir web site adresi verecektir (Örn: `https://okuma-takip-botu.onrender.com`).
-5. Bu adrese tarayıcınızdan girin. Karşınıza gelen **QR Kodu** WhatsApp uygulamanızdan *(Bağlı Cihazlar > Cihaz Bağla)* okutarak botunuzu bağlayın.
 
-#### 2. Adım: Grup ID (JID) Bilgisini Kopyalama
-1. QR kodu okutup giriş yaptıktan sonra yönetim panelinin üst menüsünde yer alan **"Gruplar & JID"** butonuna tıklayın.
-2. Botun üye olduğu WhatsApp grupları listelenecektir. Anket göndermek istediğiniz grubun yanındaki **JID** kodunu kopyalayın (Örn: `123456789012345678@g.us`).
-
-#### 3. Adım: Render Ayarlarını Yapılandırma (Environment Variables)
-1. [Render.com](https://render.com/) paneline dönün ve oluşturduğunuz servis içerisinden **Environment** bölümüne gelin.
+#### 2. Adım: Ortam Değişkenlerini Yapılandırma (Environment Variables)
+1. Render panelinde oluşturduğunuz servis içerisinden **Environment** bölümüne gelin.
 2. Aşağıdaki değişkenleri **Add Environment Variable** butonunu kullanarak ekleyin:
 
-| Değişken Adı | Değer / Açıklama |
-| :--- | :--- |
-| **`WHATSAPP_GROUP_ID`** | 2. adımda kopyalamış olduğunuz grup JID bilgisi. |
-| **`PING_URL`** | Web sitenizin adresinin sonuna `/api/health` ekleyerek yazın.<br>*(Örn: `https://okuma-takip-botu.onrender.com/api/health`)* |
-| **`MONGO_URI`** | Anket sonuçları ve oy verilerini kaydetmek için MongoDB bağlantı adresiniz. |
-| **`DB_NAME`** | Veritabanı adınız. |
+| Değişken Adı | Zorunlu | Değer / Açıklama |
+| :--- | :---: | :--- |
+| **`CONFIG_KEY`** | ✅ | Botunuz için rastgele benzersiz bir anahtar belirleyin. *(Örn: `okumagrubu1`)* |
+| **`MONGO_URI`** | ✅ | MongoDB bağlantı adresiniz. *(Örn: `mongodb+srv://user:pass@cluster.mongodb.net`)* |
+| **`DB_NAME`** | ✅ | Veritabanı adınız. *(Örn: `readingTracker`)* |
+| **`PING_URL`** | ❌ | Render'ın uyku moduna girmesini engellemek için health check adresi.<br>*(Örn: `https://okuma-takip-botu.onrender.com/api/health`)* |
 
-3. Değişiklikleri kaydedin. Render uygulamanızı otomatik olarak yeniden başlatacak ve botunuz belirlenen saatlerde grubunuza otomatik anket göndermeye başlayacaktır!
+3. Değişiklikleri kaydedin. Render uygulamanızı otomatik olarak yeniden başlatacaktır.
+
+> **Not:** Bu üç zorunlu değişken tanımlanmadığında bot hiçbir WhatsApp işlemi gerçekleştirmez.
+
+#### 3. Adım: QR Kod ile WhatsApp Bağlantısı
+1. Render'ın verdiği web adresine tarayıcınızdan girin.
+2. Karşınıza gelen **QR Kodu** WhatsApp uygulamanızdan *(Bağlı Cihazlar > Cihaz Bağla)* okutarak botunuzu bağlayın.
+
+#### 4. Adım: Hedef Grup ve Ayarlar
+1. QR kodu okutup giriş yaptıktan sonra yönetim panelindeki **"Gruplar & JID"** butonuna tıklayın.
+2. Anket göndermek istediğiniz grubun yanındaki **JID** kodunu kopyalayın (Örn: `123456789012345678@g.us`).
+3. **Ayarlar** butonuna tıklayarak hedef WhatsApp grubu JID, okuma grubu ID ve anket şablonu gibi tüm ayarları arayüzden kolayca yapılandırabilirsiniz.
 
 ---
 
@@ -63,18 +72,18 @@ Projeyi kendi bilgisayarınızda geliştirme veya test amacıyla çalıştırmak
    ```
 
 2. **Ortam Değişkenlerini Oluşturun:**
-   Kök dizinde `.env` dosyası oluşturup değişkenlerinizi tanımlayın:
+   Kök dizinde `.env` dosyası oluşturup zorunlu değişkenlerinizi tanımlayın:
    ```env
-   WHATSAPP_GROUP_ID=123456789012345678@g.us
-   MONGO_URI=your_mongodb_uri
-   DB_NAME=yourdatabase
+   CONFIG_KEY=okumagrubu1
+   MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net
+   DB_NAME=readingTracker
    ```
 
 3. **Uygulamayı Başlatın:**
    ```bash
    npm start
    ```
-   Tarayıcınızda `http://localhost:3000/` adresine girerek yönetim paneline erişebilir ve QR kod taratarak oturum açabilirsiniz.
+   Tarayıcınızda `http://localhost:3000/` adresine girerek yönetim paneline erişebilir, QR kod taratarak oturum açabilir ve **Ayarlar** bölümünden hedef grup, okuma grubu ve anket ayarlarını yapılandırabilirsiniz.
 
 ---
 
@@ -82,8 +91,19 @@ Projeyi kendi bilgisayarınızda geliştirme veya test amacıyla çalıştırmak
 
 Anketlerin gönderim zamanını, başlığını ve seçeneklerini iki farklı şekilde güncelleyebilirsiniz:
 
+- **Yönetim Panelinden:** Web arayüzündeki **Ayarlar** butonuna tıklayarak anket başlığı şablonunu, seçenekleri, hedef WhatsApp grubu JID bilgisini ve okuma grubu ID bilgisini doğrudan güncelleyebilirsiniz.
 - **Dosya Üzerinden (`server.js`):** `scheduleWhatsAppPollJob` fonksiyonundaki cron saat zamanlamasını (varsayılan: `0 9 * * *` - her gün 09:00 TSİ) ile `DEFAULT_POLL_OPTIONS` ve `getDailyPollTitle` fonksiyonlarını doğrudan kod içerisinden değiştirebilirsiniz.
-- **Veritabanı Üzerinden (`poll_config` koleksiyonu):** MongoDB veritabanınız bağlıysa, arayüzdeki anket ayarları panelinden veya MongoDB veritabanınızdaki `poll_config` koleksiyonundan `titleTemplate` ve `options` verilerini dinamik olarak güncelleyebilirsiniz.
+
+---
+
+## Zamanlayıcılar
+
+| Görev | Zamanlama | Açıklama |
+| :--- | :--- | :--- |
+| Günlük Anket | Her gün 09:00 (TSİ) | Hedef gruba otomatik okuma anketi gönderir |
+| Motivasyon Cümlesi | Salı ve Perşembe 22:30 (TSİ) | Veritabanından rastgele bir cümle seçip gruba gönderir |
+| Haftalık Okuma Raporu | Cumartesi 22:30 (TSİ) | Okuma serisi ve istatistik özetini metin olarak gönderir |
+| Haftalık Tablo Görseli | Pazartesi 22:30 (TSİ) | Haftalık okuma tablosunu görsel olarak oluşturup gönderir |
 
 ---
 
@@ -117,12 +137,15 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 | :--- | :--- | :--- |
 | `/` | `GET` | Web Yönetim Paneli Arayüzü |
 | `/api/status` | `GET` | Bot ve veritabanı bağlantı durumu |
-| `/api/send-poll` | `POST` | Hedef gruba anlık anket gönderir |
+| `/api/send-poll` | `GET` / `POST` | Hedef gruba anlık anket gönderir |
+| `/api/send-sentence` | `GET` / `POST` | Hedef gruba motivasyon cümlesi gönderir |
+| `/api/send-reading-report` | `GET` / `POST` | Haftalık okuma raporu (metin) gönderir |
+| `/api/send-table-image` | `GET` / `POST` | Haftalık okuma tablosu görselini gönderir |
 | `/api/polls` | `GET` | Gönderilmiş anketleri listeler |
 | `/api/poll-votes/:pollId` | `GET` | Seçilen ankete ait detaylı oy kayıtlarını getirir |
-| `/api/poll-config` | `GET` / `POST` | Anket başlığı ve seçenek ayarlarını okur/günceller |
+| `/api/poll-config` | `GET` / `POST` | Anket başlığı, seçenekler, grup JID ve okuma grubu ayarlarını okur/günceller |
 | `/api/groups` | `GET` | Katılınan WhatsApp gruplarını ve JID adreslerini listeler |
-| `/api/request-pairing-code` | `POST` | Telefon numarası ile 8 haneli oturum kodu üretir |
+| `/api/pairing-code` | `POST` | Telefon numarası ile 8 haneli oturum kodu üretir |
 | `/api/restart` | `POST` | Oturumu ve istemciyi yeniden başlatır |
 | `/api/health` | `GET` | Sunucu canlılık (health check) endpoint'i |
 
@@ -130,24 +153,30 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 
 ## Veritabanı Şeması (MongoDB)
 
-#### `poll_config` Koleksiyonu (Anket Şablon Ayarları)
+#### `poll_config` Koleksiyonu (Bot Konfigürasyonu & Anket Şablon Ayarları)
 ```json
 {
-  "_id": "default",
+  "_id": "mygroupid34",
   "titleTemplate": "{{date}} Okuma Takibi",
   "options": [ "5 dakika", "10 dakika", "15 dakika", "20 dakika" ],
-  "updatedAt": "2026-08-04 10:45:00"
+  "groupId": "123456789012345678@g.us",
+  "readingGroupId": "mygroupid34",
+  "updatedAt": "2026-08-11 10:45:00"
 }
 ```
+
+- `_id`: `CONFIG_KEY` ile eşleşen benzersiz konfigürasyon anahtarı
+- `groupId`: Anketlerin gönderileceği WhatsApp grubu JID adresi
+- `readingGroupId`: RoTaKip veritabanındaki okuma grubu kodu (`users_<readingGroupId>` ve `readingstatuses_<readingGroupId>` koleksiyonlarını belirler)
 
 #### `polls` Koleksiyonu (Anket Kayıtları)
 ```json
 {
   "pollId": "3EB0FF9D45F3A12550DEDA",
   "groupId": "123456789012345678@g.us",
-  "title": "4 Ağustos",
+  "title": "1 Ağustos",
   "options": [ "5 dakika", "10 dakika", "15 dakika", "20 dakika" ],
-  "createdAt": "2026-08-04 10:00:00"
+  "createdAt": "2026-08-11 10:00:00"
 }
 ```
 
@@ -158,7 +187,9 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
   "voterJid": "905351234567",
   "voterPhone": "905351234567",
   "selectedOptions": [ "15 dakika" ],
-  "updatedAt": "2026-08-04 10:02:02"
+  "readingGroupId": "mygroupid34",
+  "pushName": "Ahmet",
+  "updatedAt": "2026-08-11 10:02:02"
 }
 ```
 
@@ -167,7 +198,7 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 {
   "_id": "114345098911975",
   "phone": "905351234567",
-  "updatedAt": "2026-08-04 10:00:00"
+  "updatedAt": "2026-08-11 10:00:00"
 }
 ```
 

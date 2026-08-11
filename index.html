@@ -651,7 +651,7 @@
         </button>
         <div class="btn-row">
           <button class="btn btn-info" id="showPollsBtn" onclick="showPolls()">
-            Anketler
+            Ayarlar
           </button>
           <button class="btn btn-purple" id="showVotesBtn" onclick="showVotes()">
             Anket Oyları
@@ -680,7 +680,7 @@
     <div class="modal-card">
       <h3 style="font-size: 18px; color: #fff; margin-bottom: 6px;">📋 WhatsApp Gruplarınız</h3>
       <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
-        <code>.env</code> dosyanızdaki <b>WHATSAPP_GROUP_ID</b> için ilgili grubun JID kodunu kopyalayın.
+        Anket ayarlarınızdaki <b>Hedef WhatsApp Grup JID</b> alanı için ilgili grubun JID kodunu kopyalayabilirsiniz.
       </p>
       <div id="groupsListArea" style="max-height: 280px; overflow-y: auto; padding-right: 4px;"></div>
       <button class="btn btn-secondary" style="margin-top: 16px;" onclick="closeGroupsModal()">Kapat</button>
@@ -697,62 +697,90 @@
       </div>
 
       <!-- Config Form Box -->
-      <div class="config-card-box">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-          <h4 style="font-size: 12px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
-            Anket Başlığı & Seçenek Ayarları
+      <div class="config-card-box" style="padding: 18px 20px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+          <h4 style="font-size: 16px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
+            ⚙️ Anket & Bot Konfigürasyon Ayarları
           </h4>
-          <span style="font-size: 10px; color: var(--text-sub);" id="configLastUpdate"></span>
+          <span style="font-size: 12px; color: var(--text-sub);" id="configLastUpdate"></span>
         </div>
 
-        <!-- 2-Column Grid for Inputs -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-bottom: 8px;">
+        <!-- 2x2 Grid for Inputs -->
+        <div
+          style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 14px;">
+          <!-- Config ID Input -->
+          <div style="text-align: left;">
+            <label
+              style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
+              Config Kimliği (_id / CONFIG_KEY):
+            </label>
+            <input type="text" id="cfgConfigKey" class="phone-input"
+              style="width: 100%; font-size: 14px; padding: 10px 12px;" placeholder="Örn: default veya mygroupid34" />
+            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
+              💡 Mongo'da <code>_id</code> olarak saklanır. (.env <code>CONFIG_KEY</code>)
+            </div>
+          </div>
+
           <!-- Group JID Input -->
           <div style="text-align: left;">
             <label
-              style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 3px;">
-              Hedef WhatsApp Grup JID (Kimliği):
+              style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
+              Hedef WhatsApp Grup JID (groupId):
             </label>
-            <input type="text" id="cfgGroupId" class="phone-input" style="width: 100%; font-size: 12px; padding: 6px 10px;"
-              placeholder="Örn: 120363400157653719@g.us" />
-            <div style="font-size: 9px; color: var(--text-sub); margin-top: 2px;">
-              💡 Boşsa <code>.env</code> içindeki <code>WHATSAPP_GROUP_ID</code> kullanılır.
+            <input type="text" id="cfgGroupId" class="phone-input"
+              style="width: 100%; font-size: 14px; padding: 10px 12px;" placeholder="Örn: mygroupid34@g.us" />
+            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
+              💡 <code>poll_config</code> dokümanında saklanır.
+            </div>
+          </div>
+
+          <!-- Reading Group Code Input -->
+          <div style="text-align: left;">
+            <label
+              style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
+              RoTaKip Okuma Grubu ID (readingGroupId):
+            </label>
+            <input type="text" id="cfgReadingGroupId" class="phone-input"
+              style="width: 100%; font-size: 14px; padding: 10px 12px;"
+              placeholder="Örn: mygroupid34 veya hisarkapisi16" />
+            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
+              💡 <code>poll_config</code> dokümanında saklanır.
             </div>
           </div>
 
           <!-- Title Template Input -->
           <div style="text-align: left;">
             <label
-              style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 3px;">
-              Anket Başlığı Şablonu:
+              style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
+              Anket Başlığı Şablonu (titleTemplate):
             </label>
-            <input type="text" id="cfgTitleTemplate" class="phone-input" style="width: 100%; font-size: 12px; padding: 6px 10px;"
-              placeholder="Örn: {{date}} Okuma Takibi" />
-            <div style="font-size: 9px; color: var(--text-sub); margin-top: 2px;">
+            <input type="text" id="cfgTitleTemplate" class="phone-input"
+              style="width: 100%; font-size: 14px; padding: 10px 12px;" placeholder="Örn: {{date}} Okuma Takibi" />
+            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
               💡 <code>{{date}}</code> = Günün tarihi.
             </div>
           </div>
         </div>
 
         <!-- Options Dynamic List -->
-        <div style="margin-bottom: 8px; text-align: left;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-            <label style="font-size: 10px; font-weight: 600; color: var(--text-muted);">
-              Anket Seçenekleri:
+        <div style="margin-bottom: 14px; text-align: left;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">
+              Anket Seçenekleri (options):
             </label>
-            <button class="copy-btn" style="padding: 2px 6px; font-size: 9px;" onclick="addOptionInput()">➕ Seçenek
+            <button class="copy-btn" style="padding: 5px 10px; font-size: 12px;" onclick="addOptionInput()">➕ Seçenek
               Ekle</button>
           </div>
           <div id="cfgOptionsList"
-            style="display: flex; flex-direction: column; gap: 4px; max-height: 110px; overflow-y: auto; padding-right: 4px;">
+            style="display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; padding-right: 4px;">
           </div>
         </div>
 
         <!-- Save / Reset Actions -->
-        <div style="display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px;">
-          <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 10px;"
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px;">
+          <button class="btn btn-secondary" style="width: auto; padding: 8px 16px; font-size: 12px;"
             onclick="resetPollConfigUI()">Varsayılana Sıfırla</button>
-          <button class="btn btn-primary" style="width: auto; padding: 4px 14px; font-size: 10px;"
+          <button class="btn btn-primary" style="width: auto; padding: 8px 20px; font-size: 13px; font-weight: 600;"
             onclick="savePollConfigUI()">Şablonu Kaydet</button>
         </div>
       </div>
@@ -817,7 +845,7 @@
         } else if (data.targetGroup?.id) {
           targetGroupEl.innerHTML = `<span style="font-size:12px; opacity:0.8;">${data.targetGroup.id}</span>`;
         } else {
-          targetGroupEl.innerText = '.env WHATSAPP_GROUP_ID tanımlanmadı';
+          targetGroupEl.innerText = 'Hedef WhatsApp Grup JID Tanımlanmadı';
         }
       }
 
@@ -827,10 +855,32 @@
         lastSentTime.innerText = new Date(data.lastPollSentAt).toLocaleString('tr-TR');
       }
 
-      // Status: MISSING_GROUP_ID
-      if (data.status === 'MISSING_GROUP_ID') {
+      // Status: MISSING_ENV or MISSING_CONFIG_KEY
+      if (data.status === 'MISSING_ENV' || data.status === 'MISSING_CONFIG_KEY') {
+        const missingText = (data.missingEnvs && data.missingEnvs.length > 0) ? data.missingEnvs.join(', ') : 'CONFIG_KEY, MONGO_URI, DB_NAME';
         badge.className = 'badge badge-error';
-        badge.innerHTML = '⚠️ WHATSAPP_GROUP_ID Eksik';
+        badge.innerHTML = `⚠️ Zorunlu .env Eksik`;
+        sendBtn.disabled = true;
+        if (showGroupsBtn) showGroupsBtn.disabled = true;
+
+        if (lastRenderedStatus !== 'MISSING_ENV') {
+          content.innerHTML = `
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(248, 113, 113, 0.25); border-radius: 18px; padding: 22px; width: 100%;">
+              <div style="font-size: 38px; margin-bottom: 10px;">🛑</div>
+              <h3 style="font-size: 17px; color: #f87171; margin-bottom: 8px;">Zorunlu .env Değişkenleri Eksik</h3>
+              <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                WhatsApp botunu başlatabilmek ve veritabanına bağlanabilmek için <code>.env</code> dosyanızda şu değişkenleri tanımlamalısınız: <br/>
+                <b style="color: #f87171; display: inline-block; margin-top: 6px; font-size: 14px;">${escapeHtml(missingText)}</b>
+              </p>
+            </div>
+          `;
+          lastRenderedStatus = 'MISSING_ENV';
+        }
+      }
+      // Status: MISSING_GROUP_ID
+      else if (data.status === 'MISSING_GROUP_ID') {
+        badge.className = 'badge badge-error';
+        badge.innerHTML = '⚠️ Hedef Grup JID Eksik';
         sendBtn.disabled = true;
         if (showGroupsBtn) showGroupsBtn.disabled = true;
 
@@ -838,9 +888,9 @@
           content.innerHTML = `
             <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(248, 113, 113, 0.25); border-radius: 18px; padding: 22px; width: 100%;">
               <div style="font-size: 38px; margin-bottom: 10px;">🛑</div>
-              <h3 style="font-size: 17px; color: #f87171; margin-bottom: 8px;">WHATSAPP_GROUP_ID Eksik</h3>
+              <h3 style="font-size: 17px; color: #f87171; margin-bottom: 8px;">Hedef Grup JID Eksik</h3>
               <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
-                WhatsApp QR kodunu üretebilmek veya oturum açabilmek için öncelikle <code>.env</code> dosyanıza geçerli bir <b>WHATSAPP_GROUP_ID</b> eklemelisiniz.
+                Anket gönderebilmek için <b>Anket Yönetimi & Şablon Ayarları</b> panelinden <b>Hedef WhatsApp Grup JID</b> alanını doldurmalısınız.
               </p>
             </div>
           `;
@@ -996,16 +1046,24 @@
     // ----------------------------------------------------
     let currentConfigOptions = [];
 
-    async function loadPollConfigUI() {
+    async function loadPollConfigUI(configKeyParam = null) {
       try {
-        const res = await fetch('/api/poll-config');
+        const configKeyInput = document.getElementById('cfgConfigKey');
+        const searchKey = configKeyParam || (configKeyInput ? configKeyInput.value.trim() : null);
+        const url = searchKey ? `/api/poll-config?configKey=${encodeURIComponent(searchKey)}` : '/api/poll-config';
+        const res = await fetch(url);
         const data = await res.json();
         if (data.success && data.config) {
+          if (configKeyInput) configKeyInput.value = data.config.configKey || 'default';
+
           const titleInput = document.getElementById('cfgTitleTemplate');
           if (titleInput) titleInput.value = data.config.titleTemplate || '{{date}}';
 
           const groupIdInput = document.getElementById('cfgGroupId');
           if (groupIdInput) groupIdInput.value = data.config.groupId || '';
+
+          const readingGroupIdInput = document.getElementById('cfgReadingGroupId');
+          if (readingGroupIdInput) readingGroupIdInput.value = data.config.readingGroupId || 'mygroupid34';
 
           currentConfigOptions = Array.isArray(data.config.options) ? [...data.config.options] : [];
 
@@ -1025,14 +1083,14 @@
       if (!container) return;
 
       if (currentConfigOptions.length === 0) {
-        container.innerHTML = '<p style="font-size:11px; color:var(--text-sub);">Henüz seçenek eklenmedi.</p>';
+        container.innerHTML = '<p style="font-size:12px; color:var(--text-sub);">Henüz seçenek eklenmedi.</p>';
         return;
       }
 
       container.innerHTML = currentConfigOptions.map((opt, idx) => `
         <div class="option-edit-row">
-          <input type="text" class="option-edit-input" value="${escapeHtml(opt)}" onchange="updateOptionValue(${idx}, this.value)" placeholder="Seçenek ${idx + 1}" />
-          <button class="btn-icon-danger" title="Sil" onclick="removeOptionInput(${idx})">🗑️</button>
+          <input type="text" class="option-edit-input" style="font-size:13px; padding:7px 10px;" value="${escapeHtml(opt)}" onchange="updateOptionValue(${idx}, this.value)" placeholder="Seçenek ${idx + 1}" />
+          <button class="btn-icon-danger" style="font-size:13px; padding:7px 10px;" title="Sil" onclick="removeOptionInput(${idx})">🗑️</button>
         </div>
       `).join('');
     }
@@ -1057,8 +1115,10 @@
     }
 
     async function savePollConfigUI() {
+      const configKey = document.getElementById('cfgConfigKey')?.value?.trim() || 'default';
       const titleTemplate = document.getElementById('cfgTitleTemplate')?.value?.trim() || '{{date}}';
       const groupId = document.getElementById('cfgGroupId')?.value?.trim() || '';
+      const readingGroupId = document.getElementById('cfgReadingGroupId')?.value?.trim() || 'mygroupid34';
       const container = document.getElementById('cfgOptionsList');
       const inputs = container?.querySelectorAll('.option-edit-input') || [];
       const options = [];
@@ -1076,13 +1136,13 @@
         const res = await fetch('/api/poll-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titleTemplate, options, groupId })
+          body: JSON.stringify({ configKey, titleTemplate, options, groupId, readingGroupId })
         });
         const data = await res.json();
         if (data.success) {
-          showToast('✅ Anket şablonu, grup JID ve seçenekler kaydedildi!');
+          showToast(`✅ Anket şablonu ve ayarlar (${configKey}) başarıyla kaydedildi!`);
           currentConfigOptions = options;
-          loadPollConfigUI();
+          loadPollConfigUI(configKey);
         } else {
           showToast('❌ Hata: ' + (data.message || 'Kaydedilemedi'));
         }
@@ -1092,10 +1152,14 @@
     }
 
     function resetPollConfigUI() {
+      const configKeyInput = document.getElementById('cfgConfigKey');
+      if (configKeyInput) configKeyInput.value = 'default';
       const titleInput = document.getElementById('cfgTitleTemplate');
       if (titleInput) titleInput.value = '{{date}}';
       const groupIdInput = document.getElementById('cfgGroupId');
       if (groupIdInput) groupIdInput.value = '';
+      const readingGroupIdInput = document.getElementById('cfgReadingGroupId');
+      if (readingGroupIdInput) readingGroupIdInput.value = 'mygroupid34';
       currentConfigOptions = [
         '5 dakika', '10 dakika', '15 dakika', '20 dakika', '30 dakika',
         '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika',

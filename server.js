@@ -10,7 +10,7 @@ const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDate
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 
 // ============================================================================
-// LOG FİLTRESİ (Libsignal / Bad MAC Gürültüsünü Engelleme)
+// LOG FİLTRESİ VE HATA YÖNETİMİ (Libsignal / Bad MAC / Noise Gürültüsünü Engelleme)
 // ============================================================================
 const originalStderrWrite = process.stderr.write;
 process.stderr.write = function (chunk, encoding, callback) {
@@ -19,20 +19,39 @@ process.stderr.write = function (chunk, encoding, callback) {
     str.includes('MAC Error: Bad MAC') ||
     str.includes('SessionCipher') ||
     str.includes('Closing open session') ||
+    str.includes('Closing session') ||
     str.includes('verifyMAC') ||
-    str.includes('doDecryptWhisperMessage')
+    str.includes('doDecryptWhisperMessage') ||
+    str.includes('Failed to decrypt message')
   ) {
     return true; // Gürültülü libsignal dahili şifreleme hatalarını konsoldan gizle
   }
   return originalStderrWrite.apply(process.stderr, arguments);
 };
 
+// Baileys Noise/GCM şifre çözme hatalarının Node.js sürecini çökertmesini önleme
+process.on('uncaughtException', (err) => {
+  const errStr = err?.stack || err?.message || String(err);
+  if (
+    errStr.includes('Unsupported state or unable to authenticate data') ||
+    errStr.includes('Bad MAC') ||
+    errStr.includes('noise-handler') ||
+    errStr.includes('SessionCipher')
+  ) {
+    console.warn('⚠️ Baileys Noise/GCM deşifre hatası yakalandı (Uygulama çökmesi engellendi):', err.message);
+    return;
+  }
+  console.error('💥 Yakalanmamış İstisna (Uncaught Exception):', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('💥 Yakalanmamış Söz (Unhandled Rejection):', reason);
+});
+
 
 // ============================================================================
 // KONFİGÜRASYON VE SABİTLER
 // ============================================================================
-
-const DEFAULT_GROUP_ID = process.env.WHATSAPP_GROUP_ID;
 
 async function getTargetGroupId() {
   if (isDBEnabled() && getDB()) {
@@ -43,12 +62,33 @@ async function getTargetGroupId() {
       }
     } catch (e) { }
   }
-  return DEFAULT_GROUP_ID || null;
+  return null;
+}
+
+async function getTargetReadingGroupId() {
+  if (isDBEnabled() && getDB()) {
+    try {
+      const config = await getPollConfig();
+      if (config && config.readingGroupId && typeof config.readingGroupId === 'string' && config.readingGroupId.trim() !== '') {
+        return config.readingGroupId.trim();
+      }
+    } catch (e) { }
+  }
+  return null;
+}
+
+function checkRequiredEnvVars() {
+  const missing = [];
+  if (!process.env.CONFIG_KEY || process.env.CONFIG_KEY.trim() === '') missing.push('CONFIG_KEY');
+  if (!process.env.MONGO_URI || process.env.MONGO_URI.trim() === '') missing.push('MONGO_URI');
+  if (!process.env.DB_NAME || process.env.DB_NAME.trim() === '') missing.push('DB_NAME');
+  return missing;
 }
 
 async function hasValidGroupId() {
+  if (checkRequiredEnvVars().length > 0) return false;
   const targetId = await getTargetGroupId();
-  return !!(targetId && targetId.trim() !== '' && !targetId.includes('1234567890'));
+  return !!(targetId && targetId.trim() !== '' && !targetId.includes('1234567890') && !targetId.includes('mygroupid34'));
 }
 
 const DEFAULT_POLL_OPTIONS = [
@@ -62,56 +102,56 @@ const MONTH_NAMES_TR = [
   'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
 ];
 
-    const reminderAlternatives = [
-      "Okumalarımıza düzenli devam edebilmek dileğiyle 🌿",
-      "Okuma alışkanlığımızı birlikte güçlendirelim inşaAllah 📖",
-      "Küçük adımlar, büyük alışkanlıklar oluşturur. Takipteyiz! 📘",
-      "Bu hatırlatma bir vesile olsun, kaldığımız yerden devam edelim 🔄",
-      "Düzenli okumalarla bereketli bir sürece birlikte yürüyelim 🌱",
-      "İstikrar güzeldir; eksiklerimizi birlikte tamamlayalım 🤝",
-      "Okuyanlara tebrikler, henüz okumayanlara nazik bir davet 😊",
-      "İstikrarın güzelliğini hep birlikte yaşayalım 🌟",
-      "Daha okumasını tamamlamayanlar için nazik bir hatırlatma 📖",
-      "Okumalarımıza birlikte devam edebilmek duasıyla 🤲",
-      "Birlikte ilerlemek, devam etmenin en güzel hali 👣",
-      "Okumalarımıza sadakatle devam edelim inşaAllah 🕊️",
-      "Her gün bir satır da olsa, devam edelim ✍️",
-      "İstikrarla yürüdüğümüz bu yolda hep birlikteyiz 🛤️",
-      "Bu küçük hatırlatma, güzel bir başlangıç olsun 🌸",
-      "Unutmak kolay, alışkanlık ise emek ister. Devam edelim 💪",
-      "Güzel alışkanlıklar birlikte inşa edilir 🍃",
-      "Okuma yolculuğumuza birlikte güç katalım 🚀",
-      "Birlikte tamamlanan okumalarda bereket vardır 🧡",
-      "Düzenli okumalarla kalplerimizi diri tutalım ❤️🔥",
-      "Hatırlatmak bizden, gayret sizden 🙏",
-      "Okumaları unutmayalım 🔔",
-      "İstikrarlı adımlar en kalıcı olanlardır ⏳",
-      "Okuma halkamızın bir parçası olmaya ne dersiniz? 💫",
-      "Birlikte okumak, yalnız okumaktan daha değerlidir 🤝",
-      "Okudukça zihin açılır, gönül ferahlar ☀️",
-      "İstikrarlı olan kazanır; bugünü de boş geçmeyelim ⏰",
-      "Birlikte okumak, birlikte güçlenmektir 💪",
-      "Bugün okumaya vakit ayırmak, kendine bir iyiliktir 💝",
-      "Okuma halkamızda siz de yerinizi alın 🤗",
-      "Bir satır da bugün için, alışkanlık zincirini kırma 🔗",
-      "Okumak, gönlü besleyen en güzel alışkanlıktır 🌾",
-      "Okuma yolculuğumuzda mola değil, devam zamanı 🔄",
-      "Zinciri kırmayalım, okumaya devam 🔗",
-      "Az da olsa devamlı okuyalım 💧",
-      "Kaldığımız yerden aynı şevkle devam! 🚀",
-      "Birkaç satır da olsa okuyalım 📖",
-      "Birlikte okuyor, birlikte güzelleşiyoruz 🌱",
-      "Ruhumuza kısa bir okuma molası ☕",
-      "Günün yoğunluğuna kısa bir okuma arası ☕",
-      "Günün bereketini okumayla yakalayalım ☀️",
-      "Okuma saatimiz geldi, sizleri de aramızda görmek isteriz ⏰",
-      "Günü kapatmadan okumalarımızı tamamlayalım ⌛",
-      "Küçük bir gayret, büyük bereket 🌾",
-      "Kitaplar bizi bekler, hadi okumaya 📚",
-      "Gönlümüze iyi gelecek satırlara dönelim 🕊️",
-      "Okuma kervanımız yola devam ediyor 🛤️",
-      "Okumalarımızı tamamlayıp güne huzur katalım 🍂"
-    ];
+const reminderAlternatives = [
+  "Okumalarımıza düzenli devam edebilmek dileğiyle 🌿",
+  "Okuma alışkanlığımızı birlikte güçlendirelim inşaAllah 📖",
+  "Küçük adımlar, büyük alışkanlıklar oluşturur. Takipteyiz! 📘",
+  "Bu hatırlatma bir vesile olsun, kaldığımız yerden devam edelim 🔄",
+  "Düzenli okumalarla bereketli bir sürece birlikte yürüyelim 🌱",
+  "İstikrar güzeldir; eksiklerimizi birlikte tamamlayalım 🤝",
+  "Okuyanlara tebrikler, henüz okumayanlara nazik bir davet 😊",
+  "İstikrarın güzelliğini hep birlikte yaşayalım 🌟",
+  "Daha okumasını tamamlamayanlar için nazik bir hatırlatma 📖",
+  "Okumalarımıza birlikte devam edebilmek duasıyla 🤲",
+  "Birlikte ilerlemek, devam etmenin en güzel hali 👣",
+  "Okumalarımıza sadakatle devam edelim inşaAllah 🕊️",
+  "Her gün bir satır da olsa, devam edelim ✍️",
+  "İstikrarla yürüdüğümüz bu yolda hep birlikteyiz 🛤️",
+  "Bu küçük hatırlatma, güzel bir başlangıç olsun 🌸",
+  "Unutmak kolay, alışkanlık ise emek ister. Devam edelim 💪",
+  "Güzel alışkanlıklar birlikte inşa edilir 🍃",
+  "Okuma yolculuğumuza birlikte güç katalım 🚀",
+  "Birlikte tamamlanan okumalarda bereket vardır 🧡",
+  "Düzenli okumalarla kalplerimizi diri tutalım ❤️🔥",
+  "Hatırlatmak bizden, gayret sizden 🙏",
+  "Okumaları unutmayalım 🔔",
+  "İstikrarlı adımlar en kalıcı olanlardır ⏳",
+  "Okuma halkamızın bir parçası olmaya ne dersiniz? 💫",
+  "Birlikte okumak, yalnız okumaktan daha değerlidir 🤝",
+  "Okudukça zihin açılır, gönül ferahlar ☀️",
+  "İstikrarlı olan kazanır; bugünü de boş geçmeyelim ⏰",
+  "Birlikte okumak, birlikte güçlenmektir 💪",
+  "Bugün okumaya vakit ayırmak, kendine bir iyiliktir 💝",
+  "Okuma halkamızda siz de yerinizi alın 🤗",
+  "Bir satır da bugün için, alışkanlık zincirini kırma 🔗",
+  "Okumak, gönlü besleyen en güzel alışkanlıktır 🌾",
+  "Okuma yolculuğumuzda mola değil, devam zamanı 🔄",
+  "Zinciri kırmayalım, okumaya devam 🔗",
+  "Az da olsa devamlı okuyalım 💧",
+  "Kaldığımız yerden aynı şevkle devam! 🚀",
+  "Birkaç satır da olsa okuyalım 📖",
+  "Birlikte okuyor, birlikte güzelleşiyoruz 🌱",
+  "Ruhumuza kısa bir okuma molası ☕",
+  "Günün yoğunluğuna kısa bir okuma arası ☕",
+  "Günün bereketini okumayla yakalayalım ☀️",
+  "Okuma saatimiz geldi, sizleri de aramızda görmek isteriz ⏰",
+  "Günü kapatmadan okumalarımızı tamamlayalım ⌛",
+  "Küçük bir gayret, büyük bereket 🌾",
+  "Kitaplar bizi bekler, hadi okumaya 📚",
+  "Gönlümüze iyi gelecek satırlara dönelim 🕊️",
+  "Okuma kervanımız yola devam ediyor 🛤️",
+  "Okumalarımızı tamamlayıp güne huzur katalım 🍂"
+];
 
 /**
  * Günlük dinamik anket başlığını üretir (Örn: "4 Ağustos" veya "4 Ağustos Okuma Anketi")
@@ -290,7 +330,7 @@ async function updateLidPhoneMapFromGroups() {
  * JID adresini (LID veya s.whatsapp.net) temiz telefon numarasına dönüştürür.
  * (Örn: "905351234567@s.whatsapp.net" -> "905351234567", "114345098911975@lid" -> "905361234567")
  */
-async function getPhoneNumberFromJid(jid, groupId = DEFAULT_GROUP_ID) {
+async function getPhoneNumberFromJid(jid, groupId = null) {
   if (!jid) return null;
 
   const normalized = jidNormalizedUser ? jidNormalizedUser(jid) : jid;
@@ -549,11 +589,14 @@ async function processPollVoteUpdate(pollUpdateMsg) {
 
   // 5) Telefon numarasını çöz ve veritabanına kaydet / güncelle / sil
   const activeVoterJid = successfulVoterJid || voterJid;
-  const voterPhone = await getPhoneNumberFromJid(activeVoterJid, pollMsg.key?.remoteJid || DEFAULT_GROUP_ID);
+  const currentGroupId = pollMsg.key?.remoteJid || (await getTargetGroupId());
+  const voterPhone = await getPhoneNumberFromJid(activeVoterJid, currentGroupId);
   const rawLid = (activeVoterJid || '').split('@')[0].split(':')[0];
   const pushName = pollUpdateMsg.pushName || pollUpdateMsg.verifiedBizName || (isFromMe ? (sock?.user?.name || 'Kendi Oyunuz') : null);
 
   console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone} (JID: ${activeVoterJid}) → Seçimler:`, selectedOptionNames);
+
+  const currentReadingGroupId = await getTargetReadingGroupId();
 
   await saveVote({
     pollId: pollMsgId,
@@ -562,6 +605,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
     rawLid: rawLid,
     pushName: pushName,
     selectedOptions: selectedOptionNames,
+    readingGroupId: currentReadingGroupId,
     updatedAt: getTRDateString()
   });
 
@@ -589,7 +633,7 @@ const state = {
   qrDataUrl: null,
   userInfo: null,
   targetGroup: {
-    id: DEFAULT_GROUP_ID,
+    id: null,
     name: null
   },
   lastPollSentAt: null,
@@ -719,7 +763,8 @@ async function useMongoDBAuthState(db, collectionName = 'baileys_auth') {
 
 function getAuthCollectionName() {
   if (process.env.AUTH_COLLECTION) return process.env.AUTH_COLLECTION;
-  return (process.env.RENDER === 'true' || process.env.NODE_ENV === 'production') ? 'baileys_auth' : 'baileys_auth_dev';
+  const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : 'default';
+  return (process.env.RENDER === 'true' || process.env.NODE_ENV === 'production') ? `baileys_auth_${configKey}` : `baileys_auth_dev_${configKey}`;
 }
 
 function shouldUseMongoAuth() {
@@ -743,6 +788,14 @@ async function hasExistingSession() {
 }
 
 async function initWhatsAppClient(onlyIfSessionExists = false) {
+  const missingEnvs = checkRequiredEnvVars();
+  if (missingEnvs.length > 0) {
+    console.log(`⚠️ Zorunlu çevre değişkenleri (.env) eksik: ${missingEnvs.join(', ')}. WhatsApp istemcisi başlatılamıyor.`);
+    state.status = 'MISSING_ENV';
+    state.lastError = `.env dosyanızda şu değişkenler eksik: ${missingEnvs.join(', ')}`;
+    return null;
+  }
+
   if (sock && (state.status === 'READY' || state.status === 'WAITING_FOR_QR' || state.status === 'INITIALIZING')) {
     return sock;
   }
@@ -953,6 +1006,8 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
 
           const allCurrentVoters = new Set();
 
+          const currentReadingGroupId = await getTargetReadingGroupId();
+
           for (const optionResult of aggregatedVotes) {
             const optionName = optionResult.name;
             const voters = optionResult.voters || [];
@@ -967,6 +1022,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
                 voterPhone: voterPhone,
                 rawLid: rawLid,
                 selectedOptions: [optionName],
+                readingGroupId: currentReadingGroupId,
                 updatedAt: getTRDateString()
               });
             }
@@ -985,6 +1041,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
                   voterPhone: existingVote.voterPhone || existingVote.voterJid,
                   pushName: existingVote.pushName,
                   selectedOptions: [],
+                  readingGroupId: existingVote.readingGroupId || currentReadingGroupId,
                   updatedAt: getTRDateString()
                 });
               }
@@ -1058,6 +1115,15 @@ async function restartWhatsAppClient() {
 }
 
 async function sendWhatsAppPoll(options = {}) {
+  const missingEnvs = checkRequiredEnvVars();
+  if (missingEnvs.length > 0) {
+    return {
+      success: false,
+      status: state.status,
+      message: `.env dosyanızda zorunlu değişkenler eksik: ${missingEnvs.join(', ')}`
+    };
+  }
+
   const targetGroupId = options.groupId || await getTargetGroupId();
   const pollTitleCustom = options.pollTitleCustom || null;
 
@@ -1065,7 +1131,7 @@ async function sendWhatsAppPoll(options = {}) {
     return {
       success: false,
       status: state.status,
-      message: 'WhatsApp Grup JID (WHATSAPP_GROUP_ID) tanımlanmamış! Lütfen paneldeki ayarlar kısmından veya .env dosyasından grup JID adresini girin.'
+      message: 'WhatsApp Grup JID (groupId) poll_config dokümanında tanımlanmamış! Lütfen Anket Yönetimi panelinden grup JID adresini girin.'
     };
   }
 
@@ -1136,13 +1202,22 @@ async function sendWhatsAppPoll(options = {}) {
 // ============================================================================
 
 async function sendWhatsAppSentence(options = {}) {
-  const targetGroupId = options.groupId || DEFAULT_GROUP_ID;
-
-  if (!hasValidGroupId() && !options.groupId) {
+  const missingEnvs = checkRequiredEnvVars();
+  if (missingEnvs.length > 0) {
     return {
       success: false,
       status: state.status,
-      message: '.env dosyasında WHATSAPP_GROUP_ID tanımlanmamış!'
+      message: `.env dosyanızda zorunlu değişkenler eksik: ${missingEnvs.join(', ')}`
+    };
+  }
+
+  const targetGroupId = options.groupId || await getTargetGroupId();
+
+  if (!(await hasValidGroupId()) && !options.groupId) {
+    return {
+      success: false,
+      status: state.status,
+      message: 'WhatsApp Grup JID (groupId) poll_config dokümanında tanımlanmamış!'
     };
   }
 
@@ -1255,7 +1330,7 @@ async function sendWeeklyReadingReport(options = {}) {
     return {
       success: false,
       status: state.status,
-      message: 'WhatsApp Grup JID (WHATSAPP_GROUP_ID) tanımlanmamış!'
+      message: 'WhatsApp Grup JID (groupId) poll_config dokümanında tanımlanmamış!'
     };
   }
 
@@ -1275,7 +1350,8 @@ async function sendWeeklyReadingReport(options = {}) {
   }
 
   try {
-    const { readers, nonReaders } = await calculateReadingStreaks();
+    const targetReadingGroupId = options.readingGroupId || await getTargetReadingGroupId();
+    const { readers, nonReaders } = await calculateReadingStreaks(targetReadingGroupId);
 
     // Mesaj 1: Okuma serisi yapanlar
     let msg1 = '*Okuma serisi yapanlar:*\n';
@@ -1351,7 +1427,7 @@ async function sendWeeklyTableImage(options = {}) {
     return {
       success: false,
       status: state.status,
-      message: 'WhatsApp Grup JID (WHATSAPP_GROUP_ID) tanımlanmamış!'
+      message: 'WhatsApp Grup JID (groupId) poll_config dokümanında tanımlanmamış!'
     };
   }
 
@@ -1371,7 +1447,8 @@ async function sendWeeklyTableImage(options = {}) {
   }
 
   try {
-    const tableResult = await generateWeeklyTableCanvas(getDB(), targetGroupId);
+    const targetReadingGroupId = options.readingGroupId || await getTargetReadingGroupId();
+    const tableResult = await generateWeeklyTableCanvas(getDB(), targetReadingGroupId);
     const imageBuffer = tableResult.buffer || tableResult;
     const captionText = tableResult.captionText || 'Haftalık okuma tablosu';
     const mimetype = tableResult.mimetype || 'image/png';
@@ -1428,6 +1505,23 @@ function scheduleWeeklyTableImageJob() {
 }
 
 async function getWhatsAppStatus(autoStartIfDisconnected = false) {
+  const missingEnvs = checkRequiredEnvVars();
+  if (missingEnvs.length > 0) {
+    return {
+      status: 'MISSING_ENV',
+      missingEnvs: missingEnvs,
+      qrDataUrl: null,
+      userInfo: null,
+      targetGroup: {
+        id: null,
+        name: null
+      },
+      lastPollSentAt: state.lastPollSentAt,
+      lastError: `.env dosyanızda zorunlu değişkenler tanımlanmamış: ${missingEnvs.join(', ')}`,
+      engine: 'Baileys Engine'
+    };
+  }
+
   if (autoStartIfDisconnected && (state.status === 'DISCONNECTED' || state.status === 'ERROR') && !sock) {
     initWhatsAppClient(false);
   }
@@ -1634,7 +1728,8 @@ app.post('/api/pairing-code', async (req, res) => {
 // Anket şablon ayarlarını getir
 app.get('/api/poll-config', async (req, res) => {
   try {
-    const config = await getPollConfig();
+    const configKey = req.query.configKey || req.query.configId || null;
+    const config = await getPollConfig(configKey);
     res.json({ success: true, config, dbEnabled: isDBEnabled() });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -1644,8 +1739,8 @@ app.get('/api/poll-config', async (req, res) => {
 // Anket şablon ayarlarını kaydet / güncelle
 app.post('/api/poll-config', async (req, res) => {
   try {
-    const { titleTemplate, options, groupId } = req.body;
-    const result = await savePollConfig({ titleTemplate, options, groupId });
+    const { titleTemplate, options, groupId, readingGroupId, configKey, configId } = req.body;
+    const result = await savePollConfig({ titleTemplate, options, groupId, readingGroupId, configKey: configKey || configId });
     if (result.success) {
       if (sock && state.status === 'READY') {
         fetchTargetGroupInfo();

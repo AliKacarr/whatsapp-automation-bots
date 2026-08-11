@@ -241,23 +241,39 @@ function drawDefaultAvatar(ctx, x, y, radius) {
   ctx.restore();
 }
 
+
 /**
  * Haftalık Okuma Tablosu Görselini Çizer ve PNG Buffer Döner
  * @param {object} db - MongoDB veritabanı referansı
- * @param {string} groupId - Grup kimliği (varsayılan: catikati23)
+ * @param {string} [passedReadingGroupId] - Okuma grubu koleksiyon eki (örn: 'mygroupid34', 'hisarkapisi16'). Verilmezse poll_config'den çekilir.
  * @returns {Promise<Buffer>} PNG Resim Buffer'ı
  */
-async function generateWeeklyTableCanvas(db, groupId = 'catikati23') {
+async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   if (!db) throw new Error('Veritabanı bağlantısı aktif değil.');
 
-  const mongoGroupId = (groupId && !groupId.includes('@')) ? groupId : 'catikati23';
-  const usersColl = db.collection(`users_${mongoGroupId}`);
-  const statusesColl = db.collection(`readingstatuses_${mongoGroupId}`);
+  let readingGroupId = (passedReadingGroupId || '').trim();
+  if (!readingGroupId) {
+    const configKey = process.env.CONFIG_KEY?.trim();
+    if (!configKey) throw new Error('CONFIG_KEY tanımlanmamış. .env dosyanıza CONFIG_KEY ekleyin.');
+    try {
+      const pollConfig = await db.collection('poll_config').findOne({ _id: configKey });
+      if (pollConfig?.readingGroupId && typeof pollConfig.readingGroupId === 'string' && pollConfig.readingGroupId.trim() !== '') {
+        readingGroupId = pollConfig.readingGroupId.trim();
+      } else {
+        readingGroupId = configKey;
+      }
+    } catch (e) {
+      readingGroupId = configKey;
+    }
+  }
+
+  const usersColl = db.collection(`users_${readingGroupId}`);
+  const statusesColl = db.collection(`readingstatuses_${readingGroupId}`);
 
   const users = await usersColl.find({}).sort({ name: 1 }).toArray();
   const allStatuses = await statusesColl.find({}).toArray();
 
-  console.log(`📊 Tablo görseli oluşturuluyor [Koleksiyon: users_${mongoGroupId}] → Kullanıcı sayısı: ${users.length}`);
+  console.log(`📊 Tablo görseli oluşturuluyor [Koleksiyon: users_${readingGroupId}] → Kullanıcı sayısı: ${users.length}`);
 
   // 1. Tarihleri hesapla (Son 7 gün: 7 gün öncesinden düne kadar)
   const dates = getWeeklyDates();
