@@ -565,6 +565,68 @@ async function calculateReadingStreaks(passedReadingGroupId = null) {
   }
 }
 
+// ============================================================================
+// LİG ATLAMA KUTLAMA KUYRUĞU (pending_league_congratulations)
+// ============================================================================
+
+/**
+ * Kutlanmayı bekleyen lig atlama dokümanlarını getirir.
+ * status: 'pending' olanları döner, groupId ile filtrelenebilir.
+ * @param {string|null} [filterGroupId] - Belirli bir gruba göre filtrele (opsiyonel)
+ * @returns {Array} Bekleyen kutlama dokümanları
+ */
+async function getPendingCongratulations(filterGroupId = null) {
+  if (!dbEnabled || !db) return [];
+  try {
+    const query = { status: 'pending' };
+    if (filterGroupId) {
+      query.groupId = filterGroupId;
+    }
+    const docs = await db.collection('pending_league_congratulations')
+      .find(query)
+      .sort({ createdAt: 1 }) // En eskiden en yeniye (sıra sıra gönder)
+      .toArray();
+    return docs;
+  } catch (err) {
+    console.error('❌ getPendingCongratulations hatası:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Bir kutlama dokümanını kuyruğu'ndan siler VE
+ * ilgili kullanıcının lastCongratulatedLeague alanını günceller.
+ *
+ * @param {string} docId          - pending_league_congratulations doküman _id'si
+ * @param {string} userId         - Kullanıcı _id'si (string)
+ * @param {string} groupId        - RoTaKip reading group ID'si (users_<groupId> koleksiyonu için)
+ * @param {string} league         - Yeni kutlanan lig adı
+ */
+async function completeCongratulation(docId, userId, groupId, league) {
+  if (!dbEnabled || !db) return false;
+  try {
+    const { ObjectId } = require('mongodb');
+
+    // 1. Kuyruğu'ndan sil
+    await db.collection('pending_league_congratulations').deleteOne({
+      _id: typeof docId === 'string' ? new ObjectId(docId) : docId
+    });
+
+    // 2. Kullanıcının lastCongratulatedLeague alanını güncelle
+    const usersCollName = `users_${groupId}`;
+    await db.collection(usersCollName).updateOne(
+      { _id: typeof userId === 'string' ? new ObjectId(userId) : userId },
+      { $set: { lastCongratulatedLeague: league } }
+    );
+
+    console.log(`✅ Kutlama tamamlandı: userId=${userId}, lig=${league}, grup=${groupId}`);
+    return true;
+  } catch (err) {
+    console.error('❌ completeCongratulation hatası:', err.message);
+    return false;
+  }
+}
+
 module.exports = {
   connectDB,
   isDBEnabled,
@@ -578,5 +640,7 @@ module.exports = {
   saveLidMapping,
   getAllLidMappings,
   getRandomSentence,
-  calculateReadingStreaks
+  calculateReadingStreaks,
+  getPendingCongratulations,
+  completeCongratulation
 };

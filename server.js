@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getRandomSentence, calculateReadingStreaks } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 
 // ============================================================================
@@ -533,8 +533,8 @@ async function processPollVoteUpdate(pollUpdateMsg) {
     rawMsg?.pollCreationMessageV2 ||
     rawMsg?.pollCreationMessageV3;
 
-  const pollEncKey = pollMsg.message?.messageContextInfo?.messageSecret || 
-    rawMsg?.messageContextInfo?.messageSecret || 
+  const pollEncKey = pollMsg.message?.messageContextInfo?.messageSecret ||
+    rawMsg?.messageContextInfo?.messageSecret ||
     pollCreation?.messageSecret;
   if (!pollEncKey) {
     console.warn(`⚠️ Anket mesajında messageSecret bulunamadı (${pollMsgId}).`);
@@ -1576,6 +1576,122 @@ function scheduleWeeklyTableImageJob() {
   return job;
 }
 
+// ============================================================================
+// LİG ATLAMA KUTLAMA MESAJLARI (pending_league_congratulations)
+// ============================================================================
+
+/**
+ * pending_league_congratulations koleksiyonundaki bekleyen tebrik dokümanlarını kontrol eder.
+ * Her biri için WhatsApp grubuna kutlama mesajı gönderir, ardından dokümanı siler ve
+ * lastCongratulatedLeague alanını günceller.
+ *
+ * @param {object} [options]           - Opsiyonel parametreler
+ * @param {string} [options.groupId]   - Belirli bir WhatsApp grup JID'si (yoksa poll_config'den alınır)
+ * @param {string} [options.readingGroupId] - Belirli bir reading group ID (yoksa poll_config'den alınır)
+ */
+async function sendLeagueCongratulations(options = {}) {
+  if (!isDBEnabled()) {
+    return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  }
+
+  if (!sock || state.status !== 'READY') {
+    return {
+      success: false,
+      status: state.status,
+      message: 'WhatsApp istemcisi bağlı veya hazır değil!'
+    };
+  }
+
+  try {
+    // poll_config'den bu botun bağlı olduğu reading group ID'yi al
+    const targetReadingGroupId = options.readingGroupId || await getTargetReadingGroupId();
+    if (!targetReadingGroupId) {
+      return { success: false, message: 'readingGroupId belirlenemedi (poll_config kontrol edin).' };
+    }
+
+    // Bu bota ait grubu filtrele (kendi readingGroupId'si ile eşleşen kutlamalar)
+    const pending = await getPendingCongratulations(targetReadingGroupId);
+    if (!pending || pending.length === 0) {
+      return { success: true, sent: 0, message: 'Bekleyen lig atlama kutlaması yok.' };
+    }
+
+    // Kutlamaları gruba göre gruplandır (aynı WhatsApp grubuna tek seferde gönder)
+    // groupId: kutlama dokümanındaki RoTaKip group ID (= readingGroupId ile aynı olmalı)
+    // WhatsApp JID ise poll_config.groupId'den alıyoruz
+    const targetWhatsAppJid = options.groupId || await getTargetGroupId();
+    if (!targetWhatsAppJid) {
+      return { success: false, message: 'WhatsApp Grup JID belirlenemedi (poll_config kontrol edin).' };
+    }
+
+    let sentCount = 0;
+    const errors = [];
+
+    for (const doc of pending) {
+      try {
+        const leagueLower = doc.league ? doc.league.toLowerCase() : 'yeni';
+        const leagueMin = doc.leagueMin || '';
+
+        // Kutlama mesajı — İstenen format:
+        // Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉
+        //
+        // ⚡100 gün - *Süha* elmas lige yükseldi.
+        const messageText =
+          `Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉\n\n` +
+          `⚡${leagueMin} gün - *${doc.name}* ${leagueLower} lige yükseldi.`;
+
+        await sock.sendMessage(targetWhatsAppJid, { text: messageText });
+
+        // Mesajlar arasında kısa bekleme (WhatsApp spam koruması)
+        await new Promise(r => setTimeout(r, 1500));
+
+        // Kuyruğundan sil + lastCongratulatedLeague güncelle
+        const docIdStr = doc._id ? doc._id.toString() : null;
+        if (docIdStr) {
+          await completeCongratulation(docIdStr, doc.userId, doc.groupId, doc.league);
+        }
+
+        sentCount++;
+        console.log(`🏆 [Lig Kutlaması] ${doc.name} → ${doc.league} ligi. Mesaj gönderildi. [Grup: ${targetWhatsAppJid}]`);
+      } catch (sendErr) {
+        errors.push({ name: doc.name, error: sendErr.message });
+        console.error(`❌ Lig kutlama gönderme hatası (${doc.name}):`, sendErr.message);
+      }
+    }
+
+    const result = {
+      success: true,
+      sent: sentCount,
+      total: pending.length,
+      groupId: targetWhatsAppJid,
+      readingGroupId: targetReadingGroupId
+    };
+    if (errors.length > 0) result.errors = errors;
+    return result;
+  } catch (err) {
+    console.error('❌ sendLeagueCongratulations hatası:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Her 1 dakikada bir pending_league_congratulations koleksiyonunu kontrol eder.
+ * Yeni bir lig atlama varsa WhatsApp'a kutlama mesajı gönderir.
+ */
+function scheduleLeagueCongratulationsJob() {
+  const job = schedule.scheduleJob('* * * * *', async () => {
+    try {
+      const res = await sendLeagueCongratulations();
+      if (res.sent > 0) {
+        console.log(`[LİG KUTLAMA] ${res.sent} kutlama mesajı gönderildi.`);
+      }
+    } catch (error) {
+      console.error('[LİG KUTLAMA] Zamanlayıcı hatası:', error.message);
+    }
+  });
+  console.log('✅ Lig Kutlama Zamanlayıcısı Kuruldu: Her 1 dakikada bir kontrol (pending_league_congratulations)');
+  return job;
+}
+
 async function getWhatsAppStatus(autoStartIfDisconnected = false) {
   const missingEnvs = checkRequiredEnvVars();
   if (missingEnvs.length > 0) {
@@ -1703,6 +1819,7 @@ const pingJob = schedulePing();
     scheduleSentenceJob();
     scheduleWeeklyReadingReportJob();
     scheduleWeeklyTableImageJob();
+    scheduleLeagueCongratulationsJob();
   } catch (wpInitErr) {
     console.error("⚠️ WhatsApp servisi başlatılırken hata:", wpInitErr.message);
   }
@@ -1756,6 +1873,19 @@ app.all(['/api/send-reading-report', '/api/run-reading-report'], async (req, res
     res.json(result);
   } catch (error) {
     console.error('WhatsApp haftalık rapor gönderim hatası:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Manuel Lig Kutlama Kontrolü Endpoint'i
+app.all(['/api/send-league-congratulations', '/api/run-league-congratulations'], async (req, res) => {
+  try {
+    const groupId = req.query.groupId || req.body?.groupId;
+    const readingGroupId = req.query.readingGroupId || req.body?.readingGroupId;
+    const result = await sendLeagueCongratulations({ groupId, readingGroupId });
+    res.json(result);
+  } catch (error) {
+    console.error('Lig kutlama gönderim hatası:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
