@@ -58,6 +58,30 @@ function getRawMessage(msgObj) {
 }
 
 
+let noiseErrorCounter = 0;
+let lastNoiseErrorTime = 0;
+
+function handleNoiseError(errMessage) {
+  const now = Date.now();
+  if (now - lastNoiseErrorTime > 60000) {
+    noiseErrorCounter = 0;
+  }
+  lastNoiseErrorTime = now;
+  noiseErrorCounter++;
+
+  console.warn(`⚠️ Baileys Noise/GCM deşifre hatası (${noiseErrorCounter}/5):`, errMessage);
+
+  if (noiseErrorCounter >= 5) {
+    noiseErrorCounter = 0;
+    console.error('🔄 Üst üste Noise deşifre hatası alındı (Socket zombi durumunda). WhatsApp bağlantısı otomatik yenileniyor...');
+    if (sock) {
+      try {
+        sock.end(new Error('Noise Decryption Failure Auto-Reconnect'));
+      } catch (e) { }
+    }
+  }
+}
+
 // Baileys Noise/GCM şifre çözme hatalarının Node.js sürecini çökertmesini önleme
 process.on('uncaughtException', (err) => {
   const errStr = err?.stack || err?.message || String(err);
@@ -67,13 +91,23 @@ process.on('uncaughtException', (err) => {
     errStr.includes('noise-handler') ||
     errStr.includes('SessionCipher')
   ) {
-    console.warn('⚠️ Baileys Noise/GCM deşifre hatası yakalandı (Uygulama çökmesi engellendi):', err.message);
+    handleNoiseError(err.message || String(err));
     return;
   }
   console.error('💥 Yakalanmamış İstisna (Uncaught Exception):', err);
 });
 
 process.on('unhandledRejection', (reason) => {
+  const errStr = reason?.stack || reason?.message || String(reason);
+  if (
+    errStr.includes('Unsupported state or unable to authenticate data') ||
+    errStr.includes('Bad MAC') ||
+    errStr.includes('noise-handler') ||
+    errStr.includes('SessionCipher')
+  ) {
+    handleNoiseError(reason?.message || String(reason));
+    return;
+  }
   console.error('💥 Yakalanmamış Söz (Unhandled Rejection):', reason);
 });
 
@@ -869,6 +903,10 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
       logger: pino({ level: 'silent' }),
       printQRInTerminal: false,
       browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'],
+      keepAliveIntervalMs: 30000,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      syncFullHistory: false,
       getMessage: async (key) => {
         // 1) Önce bellekte ara
         const msg = messageStore.get(key.id);
@@ -1734,10 +1772,10 @@ app.all(['/api/send-table-image', '/api/run-table-image'], async (req, res) => {
   }
 });
 
-app.post('/api/restart', async (req, res) => {
+app.all(['/api/restart', '/api/logout'], async (req, res) => {
   try {
     await restartWhatsAppClient();
-    res.json({ success: true, message: 'WhatsApp istemcisi yeniden başlatılıyor...' });
+    res.json({ success: true, message: 'WhatsApp istemcisi sıfırlandı ve yeniden başlatılıyor. Yeni QR kod oluşturuluyor...' });
   } catch (error) {
     console.error("WhatsApp restart hatası:", error);
     res.status(500).json({ success: false, error: error.message });
