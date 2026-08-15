@@ -1615,68 +1615,71 @@ async function sendLeagueCongratulations(options = {}) {
       return { success: true, sent: 0, message: 'Bekleyen lig atlama kutlaması yok.' };
     }
 
-    // Kutlamaları gruba göre gruplandır (aynı WhatsApp grubuna tek seferde gönder)
-    // groupId: kutlama dokümanındaki RoTaKip group ID (= readingGroupId ile aynı olmalı)
-    // WhatsApp JID ise poll_config.groupId'den alıyoruz
     const targetWhatsAppJid = options.groupId || await getTargetGroupId();
     if (!targetWhatsAppJid) {
       return { success: false, message: 'WhatsApp Grup JID belirlenemedi (poll_config kontrol edin).' };
     }
 
-    let sentCount = 0;
-    const errors = [];
+    // Sıralama:
+    // 1. En üst ligdekiler / en çok güne sahip olanlar en üstte (büyükten küçüğe)
+    // 2. Aynı ligdeki kişiler ise kendi arasında alfabetik (A'dan Z'ye)
+    pending.sort((a, b) => {
+      const minA = a.leagueMin != null ? Number(a.leagueMin) : 0;
+      const minB = b.leagueMin != null ? Number(b.leagueMin) : 0;
+      if (minB !== minA) {
+        return minB - minA; // Yüksek lig (gün sayısı fazla olan) üstte
+      }
+      const nameA = (a.name || '').trim();
+      const nameB = (b.name || '').trim();
+      return nameA.localeCompare(nameB, 'tr', { sensitivity: 'base' }); // Aynı ligdekiler alfabetik
+    });
 
+    // Başlık: Tek kişi varsa tekil, birden fazla kişi varsa çoğul
+    const title = pending.length === 1
+      ? 'Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉'
+      : 'Lig atlayan arkadaşlarımızı tebrik ediyoruz! 🎉🎉';
+
+    // Satırlar: Sonuncusu '.' ile, öncekiler ',' ile biter
+    const lines = pending.map((doc, index) => {
+      const leagueLower = doc.league ? doc.league.toLowerCase() : 'yeni';
+      const leagueMin = doc.leagueMin !== undefined && doc.leagueMin !== null ? doc.leagueMin : '';
+      const punctuation = index === pending.length - 1 ? '.' : ',';
+      return `⚡${leagueMin} gün - *${doc.name}* ${leagueLower} lige yükseldi${punctuation}`;
+    });
+
+    const messageText = `${title}\n\n${lines.join('\n')}`;
+
+    // Gruba tek seferde toplu mesajı gönder
+    await sock.sendMessage(targetWhatsAppJid, { text: messageText });
+    console.log(`🏆 [Lig Kutlaması] ${pending.length} kişi için toplu kutlama mesajı gönderildi. [Grup: ${targetWhatsAppJid}]`);
+
+    // Gönderilen her kullanıcı için kuyruktan sil ve lastCongratulatedLeague alanını güncelle
+    let processedCount = 0;
     for (const doc of pending) {
       try {
-        const leagueLower = doc.league ? doc.league.toLowerCase() : 'yeni';
-        const leagueMin = doc.leagueMin || '';
-
-        // Kutlama mesajı — İstenen format:
-        // Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉
-        //
-        // ⚡100 gün - *Süha* elmas lige yükseldi.
-        const messageText =
-          `Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉\n\n` +
-          `⚡${leagueMin} gün - *${doc.name}* ${leagueLower} lige yükseldi.`;
-
-        await sock.sendMessage(targetWhatsAppJid, { text: messageText });
-
-        // Mesajlar arasında kısa bekleme (WhatsApp spam koruması)
-        await new Promise(r => setTimeout(r, 1500));
-
-        // Kuyruğundan sil + lastCongratulatedLeague güncelle
         const docIdStr = doc._id ? doc._id.toString() : null;
         if (docIdStr) {
           await completeCongratulation(docIdStr, doc.userId, doc.groupId, doc.league);
+          processedCount++;
         }
-
-        sentCount++;
-        console.log(`🏆 [Lig Kutlaması] ${doc.name} → ${doc.league} ligi. Mesaj gönderildi. [Grup: ${targetWhatsAppJid}]`);
-      } catch (sendErr) {
-        errors.push({ name: doc.name, error: sendErr.message });
-        console.error(`❌ Lig kutlama gönderme hatası (${doc.name}):`, sendErr.message);
+      } catch (err) {
+        console.error(`❌ completeCongratulation hatası (${doc.name}):`, err.message);
       }
     }
 
-    const result = {
+    return {
       success: true,
-      sent: sentCount,
+      sent: processedCount,
       total: pending.length,
       groupId: targetWhatsAppJid,
       readingGroupId: targetReadingGroupId
     };
-    if (errors.length > 0) result.errors = errors;
-    return result;
   } catch (err) {
     console.error('❌ sendLeagueCongratulations hatası:', err);
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Her 1 dakikada bir pending_league_congratulations koleksiyonunu kontrol eder.
- * Yeni bir lig atlama varsa WhatsApp'a kutlama mesajı gönderir.
- */
 function scheduleLeagueCongratulationsJob() {
   const job = schedule.scheduleJob('* * * * *', async () => {
     try {
