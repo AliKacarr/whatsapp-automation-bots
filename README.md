@@ -125,9 +125,15 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 
 ---
 
-## Yönetim Paneli
+## Ekran Görüntüleri
 
-![Ana Sayfa Yönetim Paneli](screenshots/Ana%20Sayfa.png)
+| Ana Sayfa | Grup Ayarları |
+|:---------:|:-------------:|
+| <img src="screenshots/Ana%20Sayfa.png" width="500"> | <img src="screenshots/Grup%20Ayarları.png" width="500"> | 
+
+| Grup Seçim Paneli | Anket Ayarları | 
+|:---------:|:-------------:|
+| <img src="screenshots/Grup%20Seçme.png" width="500"> | <img src="screenshots/Anket%20Ayarları.png" width="500"> | 
 
 ---
 

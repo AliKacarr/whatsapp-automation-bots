@@ -690,7 +690,7 @@
       <!-- Action Buttons -->
       <div class="actions-grid">
         <button class="btn btn-primary" id="sendPollBtn" onclick="sendPoll()" disabled>
-          📊 Anketi Şimdi Gönder
+          🚀 Günlük Anketi Şimdi Gönder
         </button>
 
         <div class="btn-row">
@@ -704,7 +704,7 @@
 
         <div class="btn-row">
           <button class="btn btn-rose" id="sendReadingReportBtn" onclick="sendReadingReport()" disabled>
-            🔥 Okuma Serisini Gönder
+            🔥 Okuma Serisi Raporunu Gönder
           </button>
           <button class="btn btn-purple" id="showVotesBtn" onclick="showVotes()" disabled>
             📈 Anket Oylarını Görüntüle
@@ -712,11 +712,11 @@
         </div>
 
         <div class="btn-row">
-          <button class="btn btn-secondary" id="showPollsBtn" onclick="showPolls()">
-            ⚙️ Ayarlar
+          <button class="btn btn-secondary" id="showGroupsBtn" onclick="showGroupSettings()">
+            ⚙️ Grup Ayarları
           </button>
-          <button class="btn btn-secondary" id="showGroupsBtn" onclick="showGroups()" disabled>
-            👥 Grup JID Kopyala
+          <button class="btn btn-secondary" id="showPollsBtn" onclick="showPolls()">
+            🗳️ Anket Ayarları
           </button>
         </div>
 
@@ -733,90 +733,142 @@
     </div>
   </div>
 
-  <!-- Groups & JID List Modal -->
-  <div class="modal-overlay" id="groupsModal">
-    <div class="modal-card">
-      <h3 style="font-size: 18px; color: #fff; margin-bottom: 6px;">📋 WhatsApp Gruplarınız</h3>
-      <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
-        Anket ayarlarınızdaki <b>Hedef WhatsApp Grup JID</b> alanı için ilgili grubun JID kodunu kopyalayabilirsiniz.
-      </p>
-      <div id="groupsListArea" style="max-height: 280px; overflow-y: auto; padding-right: 4px;"></div>
-      <button class="btn btn-secondary" style="margin-top: 16px;" onclick="closeGroupsModal()">Kapat</button>
+  <!-- Grup Ayarlari Modal -->
+  <div class="modal-overlay" id="groupSettingsModal">
+    <div class="modal-card" style="max-width: 520px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px;">
+        <div>
+          <h3 style="font-size: 18px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
+            ⚙️ Grup Ayarları
+          </h3>
+          <p style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">
+            WhatsApp ve RoTaKip grup bağlantılarınızı buradan ayarlayın.
+          </p>
+        </div>
+        <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;"
+          onclick="closeGroupSettingsModal()">✕ Kapat</button>
+      </div>
+
+      <div class="config-card-box" style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+
+        <!-- Kullanici Adi (readonly) -->
+        <div style="text-align: left;">
+          <label
+            style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">
+            👤 Kullanıcı Adı:
+          </label>
+          <input type="text" id="gsConfigKey" class="phone-input"
+            style="width: 100%; font-size: 13px; padding: 10px 14px; background: rgba(0,0,0,0.4); opacity: 0.85; cursor: not-allowed; border-color: rgba(255,255,255,0.08);"
+            readonly />
+        </div>
+
+        <!-- RoTaKip Okuma Grubu -->
+        <div style="text-align: left;">
+          <label
+            style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">
+            📚 RoTaKip Okuma Grubu:
+          </label>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <div
+              style="flex: 1; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 14px; min-height: 44px; display: flex; align-items: center; overflow: hidden;">
+              <span id="gsReadingGroupDisplay"
+                style="font-size: 13px; color: var(--text-sub); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Henüz
+                grup seçilmedi</span>
+            </div>
+            <button class="btn btn-info" style="width: auto; padding: 0 16px; white-space: nowrap; height: 44px;"
+              onclick="openReadingGroupPicker()">
+              🔍 Grup Seç
+            </button>
+          </div>
+          <input type="hidden" id="gsReadingGroupId" />
+        </div>
+
+        <!-- Hedef WhatsApp Grubu -->
+        <div style="text-align: left;">
+          <label
+            style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">
+            💬 Hedef WhatsApp Grubu:
+          </label>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <div
+              style="flex: 1; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 14px; min-height: 44px; display: flex; align-items: center; overflow: hidden;">
+              <span id="gsWpGroupDisplay"
+                style="font-size: 13px; color: var(--text-sub); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Henüz
+                grup seçilmedi</span>
+            </div>
+            <button class="btn btn-info" style="width: auto; padding: 0 16px; white-space: nowrap; height: 44px;"
+              onclick="openWpGroupPicker()">
+              🔍 Grup Seç
+            </button>
+          </div>
+          <input type="hidden" id="gsWpGroupId" />
+        </div>
+
+        <div
+          style="display: flex; justify-content: flex-end; margin-top: 6px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06);">
+          <button class="btn btn-primary" style="padding: 10px 26px;" onclick="saveGroupSettingsUI()">
+            💾 Kaydet
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WP Grup Secici Mini Modal -->
+  <div class="modal-overlay" id="wpGroupPickerModal" style="z-index: 200;">
+    <div class="modal-card" style="max-width: 420px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h4 style="font-size: 15px; color: #fff;">💬 WhatsApp Grubu Seç</h4>
+        <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
+          onclick="closeWpGroupPicker()">✕</button>
+      </div>
+      <input type="text" id="wpGroupSearch" class="phone-input" style="width: 100%; margin-bottom: 10px;"
+        placeholder="Grup adı ile ara..." oninput="filterWpGroups(this.value)" />
+      <div id="wpGroupPickerList" style="max-height: 280px; overflow-y: auto; padding-right: 4px;"></div>
+    </div>
+  </div>
+
+  <!-- Okuma Grubu Secici Mini Modal -->
+  <div class="modal-overlay" id="readingGroupPickerModal" style="z-index: 200;">
+    <div class="modal-card" style="max-width: 420px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h4 style="font-size: 15px; color: #fff;">📚 Okuma Grubu Seç</h4>
+        <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
+          onclick="closeReadingGroupPicker()">✕</button>
+      </div>
+      <input type="text" id="readingGroupSearch" class="phone-input" style="width: 100%; margin-bottom: 10px;"
+        placeholder="Grup adı veya ID ile ara..." oninput="filterReadingGroups(this.value)" />
+      <div id="readingGroupPickerList" style="max-height: 280px; overflow-y: auto; padding-right: 4px;"></div>
     </div>
   </div>
 
   <!-- Polls List & Settings Modal -->
   <div class="modal-overlay" id="pollsModal">
-    <div class="modal-card modal-card-large">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-        <h3 style="font-size: 16px; color: #fff;">Anket Yönetimi & Şablon Ayarları</h3>
-        <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
+    <div class="modal-card" style="max-width: 520px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="font-size: 18px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
+          🗳️ Anket Ayarları
+        </h3>
+        <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;"
           onclick="closePollsModal()">✕ Kapat</button>
       </div>
 
       <!-- Config Form Box -->
       <div class="config-card-box" style="padding: 18px 20px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
-          <h4 style="font-size: 16px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
-            ⚙️ Anket & Bot Konfigürasyon Ayarları
-          </h4>
-          <span style="font-size: 12px; color: var(--text-sub);" id="configLastUpdate"></span>
+        <div style="display: flex; align-items: center; justify-content: flex-end;">
+          <span style="font-size: 11px; color: var(--text-sub);" id="configLastUpdate"></span>
         </div>
 
-        <!-- 2x2 Grid for Inputs -->
-        <div
-          style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 14px;">
-          <!-- Config ID Input -->
-          <div style="text-align: left;">
-            <label
-              style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
-              Config Kimliği (_id / CONFIG_KEY):
-            </label>
-            <input type="text" id="cfgConfigKey" class="phone-input"
-              style="width: 100%; font-size: 14px; padding: 10px 12px;" placeholder="Örn: default veya mygroupid34" />
-            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
-              💡 Mongo'da <code>_id</code> olarak saklanır. (.env <code>CONFIG_KEY</code>)
-            </div>
-          </div>
-
-          <!-- Group JID Input -->
-          <div style="text-align: left;">
-            <label
-              style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
-              Hedef WhatsApp Grup JID (groupId):
-            </label>
-            <input type="text" id="cfgGroupId" class="phone-input"
-              style="width: 100%; font-size: 14px; padding: 10px 12px;" placeholder="Örn: mygroupid34@g.us" />
-            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
-              💡 <code>poll_config</code> dokümanında saklanır.
-            </div>
-          </div>
-
-          <!-- Reading Group Code Input -->
-          <div style="text-align: left;">
-            <label
-              style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
-              RoTaKip Okuma Grubu ID (readingGroupId):
-            </label>
-            <input type="text" id="cfgReadingGroupId" class="phone-input"
-              style="width: 100%; font-size: 14px; padding: 10px 12px;"
-              placeholder="Örn: mygroupid34 veya hisarkapisi16" />
-            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
-              💡 <code>poll_config</code> dokümanında saklanır.
-            </div>
-          </div>
-
-          <!-- Title Template Input -->
-          <div style="text-align: left;">
-            <label
-              style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
-              Anket Başlığı Şablonu (titleTemplate):
-            </label>
-            <input type="text" id="cfgTitleTemplate" class="phone-input"
-              style="width: 100%; font-size: 14px; padding: 10px 12px;" placeholder="Örn: {{date}} Okuma Takibi" />
-            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
-              💡 <code>{{date}}</code> = Günün tarihi.
-            </div>
+        <!-- Anket Baslik Sablonu -->
+        <div style="margin-bottom: 16px; text-align: left;">
+          <label
+            style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
+            Anket Başlığı:
+          </label>
+          <input type="text" id="cfgTitleTemplate" class="phone-input"
+            style="width: 100%; font-size: 14px; padding: 10px 12px;" placeholder="Örn: {{date}} Okuma Takibi" />
+          <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
+            💡 <code>{{date}}</code> bugünün tarihiyle değiştirilir. Örn: "16 Ağustos"
           </div>
         </div>
 
@@ -824,7 +876,7 @@
         <div style="margin-bottom: 14px; text-align: left;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
             <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">
-              Anket Seçenekleri (options):
+              Anket Seçenekleri:
             </label>
             <button class="copy-btn" style="padding: 5px 10px; font-size: 12px;" onclick="addOptionInput()">➕ Seçenek
               Ekle</button>
@@ -836,9 +888,9 @@
 
         <!-- Save / Reset Actions -->
         <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px;">
-          <button class="btn btn-secondary" style="width: auto; padding: 8px 16px; font-size: 12px;"
+          <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px;"
             onclick="resetPollConfigUI()">Varsayılana Sıfırla</button>
-          <button class="btn btn-primary" style="width: auto; padding: 8px 20px; font-size: 13px; font-weight: 600;"
+          <button class="btn btn-primary" style="padding: 8px 20px; font-size: 13px; font-weight: 600;"
             onclick="savePollConfigUI()">Şablonu Kaydet</button>
         </div>
       </div>
@@ -894,7 +946,6 @@
         document.getElementById('sendTableImageBtn'),
         document.getElementById('sendReadingReportBtn'),
         document.getElementById('showVotesBtn'),
-        document.getElementById('showGroupsBtn')
       ];
       const isReady = (data.status === 'READY');
       actionButtons.forEach(btn => {
@@ -1130,36 +1181,325 @@
       }
     }
 
-    async function showGroups() {
-      const modal = document.getElementById('groupsModal');
-      const listArea = document.getElementById('groupsListArea');
-      listArea.innerHTML = '<div class="spinner"></div><p style="font-size:12px; color:var(--text-muted); text-align:center;">Gruplar çekiliyor...</p>';
+    // ====================================================
+    // GRUP AYARLARI MODAL
+    // ====================================================
+    let wpGroupsCache = [];
+    let readingGroupsCache = [];
+    let selectedWpGroupId = '';
+    let selectedWpGroupName = '';
+    let selectedReadingGroupId = '';
+    let selectedReadingGroupName = '';
+
+    async function showGroupSettings() {
+      const modal = document.getElementById('groupSettingsModal');
       modal.style.display = 'flex';
 
+      // Mevcut config'i yukle
       try {
-        const res = await fetch('/api/groups');
+        const res = await fetch('/api/poll-config');
         const data = await res.json();
+        if (data.success && data.config) {
+          document.getElementById('gsConfigKey').value = data.config.configKey || '';
 
-        if (data.success && data.groups && data.groups.length > 0) {
-          listArea.innerHTML = data.groups.map(g => `
-            <div class="group-item">
-              <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                <div class="group-item-name">${escapeHtml(g.name)}</div>
-                <div class="group-item-id">${g.id}</div>
-              </div>
-              <button class="copy-btn" onclick="copyText('${g.id}')">Kopyala</button>
-            </div>
-          `).join('');
-        } else {
-          listArea.innerHTML = '<p style="font-size: 13px; color: var(--text-muted); text-align:center; padding: 20px 0;">Grup bulunamadı veya henüz katıldığınız grup yok.</p>';
+          // Okuma grubu
+          if (data.config.readingGroupId) {
+            selectedReadingGroupId = data.config.readingGroupId;
+            selectedReadingGroupName = data.config.readingGroupId; // varsayilan, grup listesinden guncellenir
+            document.getElementById('gsReadingGroupId').value = selectedReadingGroupId;
+            document.getElementById('gsReadingGroupDisplay').textContent = selectedReadingGroupId;
+            document.getElementById('gsReadingGroupDisplay').style.fontStyle = 'normal';
+            document.getElementById('gsReadingGroupDisplay').style.color = 'var(--text-main)';
+            // groupName'i usergroups listesinden bulmaya calis
+            loadReadingGroupsCache().then(() => {
+              const found = readingGroupsCache.find(g => g.groupId === selectedReadingGroupId);
+              if (found) {
+                selectedReadingGroupName = found.groupName;
+                document.getElementById('gsReadingGroupDisplay').textContent = `${found.groupName} (${found.groupId})`;
+              }
+            });
+          } else {
+            selectedReadingGroupId = '';
+            selectedReadingGroupName = '';
+            document.getElementById('gsReadingGroupId').value = '';
+            document.getElementById('gsReadingGroupDisplay').textContent = 'Henüz grup seçilmedi';
+            document.getElementById('gsReadingGroupDisplay').style.fontStyle = 'italic';
+            document.getElementById('gsReadingGroupDisplay').style.color = 'var(--text-sub)';
+          }
+
+          // WP grubu — ID'den adi bulmaya calis
+          if (data.config.groupId) {
+            selectedWpGroupId = data.config.groupId;
+            selectedWpGroupName = data.config.groupId;
+            document.getElementById('gsWpGroupId').value = selectedWpGroupId;
+            document.getElementById('gsWpGroupDisplay').textContent = selectedWpGroupId;
+            document.getElementById('gsWpGroupDisplay').style.fontStyle = 'normal';
+            document.getElementById('gsWpGroupDisplay').style.color = 'var(--text-main)';
+            loadWpGroupsCache().then(() => {
+              const found = wpGroupsCache.find(g => g.id === selectedWpGroupId);
+              if (found) {
+                selectedWpGroupName = found.name;
+                document.getElementById('gsWpGroupDisplay').textContent = found.name;
+              }
+            });
+          } else {
+            selectedWpGroupId = '';
+            selectedWpGroupName = '';
+            document.getElementById('gsWpGroupId').value = '';
+            document.getElementById('gsWpGroupDisplay').textContent = 'Henüz grup seçilmedi';
+            document.getElementById('gsWpGroupDisplay').style.fontStyle = 'italic';
+            document.getElementById('gsWpGroupDisplay').style.color = 'var(--text-sub)';
+          }
         }
-      } catch (err) {
-        listArea.innerHTML = '<p style="font-size: 13px; color: var(--accent-rose); text-align:center;">Gruplar alınırken hata oluştu.</p>';
+      } catch (e) {
+        console.error('Grup ayarlari yuklenemedi:', e);
       }
     }
 
-    function closeGroupsModal() {
-      document.getElementById('groupsModal').style.display = 'none';
+    function closeGroupSettingsModal() {
+      document.getElementById('groupSettingsModal').style.display = 'none';
+    }
+
+    async function saveGroupSettingsUI() {
+      const readingGroupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId').value.trim();
+      const groupId = selectedWpGroupId || document.getElementById('gsWpGroupId').value.trim();
+      const configKey = document.getElementById('gsConfigKey').value.trim();
+
+      if (!readingGroupId) {
+        showToast('⚠️ Lütfen bir okuma grubu seçin!');
+        return;
+      }
+      if (!groupId) {
+        showToast('⚠️ Lütfen bir WhatsApp grubu seçin!');
+        return;
+      }
+
+      try {
+        // Mevcut config'i al, sadece groupId ve readingGroupId'yi guncelle
+        const getRes = await fetch('/api/poll-config');
+        const getData = await getRes.json();
+        const currentConfig = (getData.success && getData.config) ? getData.config : {};
+
+        const body = {
+          configKey: configKey || currentConfig.configKey,
+          groupId: groupId,
+          readingGroupId: readingGroupId,
+          titleTemplate: currentConfig.titleTemplate || '{{date}}',
+          options: currentConfig.options && currentConfig.options.length > 0 ? currentConfig.options : ['5 dakika', '10 dakika', '15 dakika', '20 dakika', '30 dakika', '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika', '150 dakika', '180 dakika']
+        };
+
+        const res = await fetch('/api/poll-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ Grup ayarları başarıyla kaydedildi!');
+          closeGroupSettingsModal();
+          checkStatus();
+        } else {
+          showToast('❌ Hata: ' + (data.message || 'Kaydedilemedi'));
+        }
+      } catch (err) {
+        showToast('❌ Sunucu hatası oluştu');
+      }
+    }
+
+    // ====================================================
+    // WP GRUP SECİCİ
+    // ====================================================
+    let wpGroupsLimit = 10;
+    let currentFilteredWpGroups = [];
+
+    async function loadWpGroupsCache() {
+      if (wpGroupsCache.length > 0) return;
+      try {
+        const res = await fetch('/api/groups');
+        const data = await res.json();
+        if (data.success && data.groups) {
+          wpGroupsCache = data.groups;
+        }
+      } catch (e) { }
+    }
+
+    async function openWpGroupPicker() {
+      document.getElementById('wpGroupPickerModal').style.display = 'flex';
+      document.getElementById('wpGroupSearch').value = '';
+      wpGroupsLimit = 10;
+      const listEl = document.getElementById('wpGroupPickerList');
+      listEl.innerHTML = `
+        <div style="padding: 28px 0; text-align: center;">
+          <div class="spinner" style="margin: 0 auto 10px;"></div>
+          <p style="font-size: 13px; color: var(--text-muted);">Gruplar yükleniyor...</p>
+        </div>
+      `;
+
+      await loadWpGroupsCache();
+      currentFilteredWpGroups = wpGroupsCache;
+      renderWpGroupList(currentFilteredWpGroups);
+    }
+
+    function closeWpGroupPicker() {
+      document.getElementById('wpGroupPickerModal').style.display = 'none';
+    }
+
+    function renderWpGroupList(groups) {
+      const listEl = document.getElementById('wpGroupPickerList');
+      if (!groups || groups.length === 0) {
+        listEl.innerHTML = '<p style="font-size:13px; color:var(--text-muted); text-align:center; padding:24px 0;">Grup bulunamadı.</p>';
+        return;
+      }
+
+      const visibleGroups = groups.slice(0, wpGroupsLimit);
+      const remainingCount = groups.length - visibleGroups.length;
+
+      let html = visibleGroups.map(g => `
+        <div class="group-item" style="cursor:pointer;" onclick="selectWpGroup('${g.id}', '${escapeHtml(g.name).replace(/'/g, "\\'")}')">
+          <div style="overflow:hidden; flex:1;">
+            <div class="group-item-name">${escapeHtml(g.name)}</div>
+            <div class="group-item-id">${g.id}</div>
+          </div>
+          <button class="copy-btn" onclick="event.stopPropagation(); selectWpGroup('${g.id}', '${escapeHtml(g.name).replace(/'/g, "\\'")}')">Seç</button>
+        </div>
+      `).join('');
+
+      if (remainingCount > 0) {
+        html += `
+          <button class="btn btn-secondary" style="width: 100%; margin-top: 10px; padding: 10px; font-size: 12px; font-weight: 600;" onclick="loadMoreWpGroups()">
+            ➕ Daha Fazla Göster (${remainingCount} grup kaldı)
+          </button>
+        `;
+      }
+
+      listEl.innerHTML = html;
+    }
+
+    function loadMoreWpGroups() {
+      wpGroupsLimit += 10;
+      renderWpGroupList(currentFilteredWpGroups);
+    }
+
+    function filterWpGroups(q) {
+      wpGroupsLimit = 10;
+      currentFilteredWpGroups = wpGroupsCache.filter(g =>
+        g.name.toLowerCase().includes(q.toLowerCase()) ||
+        g.id.toLowerCase().includes(q.toLowerCase())
+      );
+      renderWpGroupList(currentFilteredWpGroups);
+    }
+
+    function selectWpGroup(id, name) {
+      selectedWpGroupId = id;
+      selectedWpGroupName = name;
+      document.getElementById('gsWpGroupId').value = id;
+      const display = document.getElementById('gsWpGroupDisplay');
+      display.textContent = name;
+      display.style.fontStyle = 'normal';
+      display.style.color = 'var(--text-main)';
+      closeWpGroupPicker();
+    }
+
+    // ====================================================
+    // OKUMA GRUBU SECİCİ
+    // ====================================================
+    let readingGroupsLimit = 10;
+    let currentFilteredReadingGroups = [];
+
+    async function loadReadingGroupsCache() {
+      if (readingGroupsCache.length > 0) return;
+      try {
+        const res = await fetch('/api/reading-groups');
+        const data = await res.json();
+        if (data.success && data.groups) {
+          readingGroupsCache = data.groups;
+        }
+      } catch (e) { }
+    }
+
+    async function openReadingGroupPicker() {
+      document.getElementById('readingGroupPickerModal').style.display = 'flex';
+      document.getElementById('readingGroupSearch').value = '';
+      readingGroupsLimit = 10;
+      const listEl = document.getElementById('readingGroupPickerList');
+      listEl.innerHTML = `
+        <div style="padding: 28px 0; text-align: center;">
+          <div class="spinner" style="margin: 0 auto 10px;"></div>
+          <p style="font-size: 13px; color: var(--text-muted);">Gruplar yükleniyor...</p>
+        </div>
+      `;
+
+      await loadReadingGroupsCache();
+      currentFilteredReadingGroups = readingGroupsCache;
+      renderReadingGroupList(currentFilteredReadingGroups);
+    }
+
+    function closeReadingGroupPicker() {
+      document.getElementById('readingGroupPickerModal').style.display = 'none';
+    }
+
+    function renderReadingGroupList(groups) {
+      const listEl = document.getElementById('readingGroupPickerList');
+      if (!groups || groups.length === 0) {
+        listEl.innerHTML = '<p style="font-size:13px; color:var(--text-muted); text-align:center; padding:24px 0;">Grup bulunamadı.</p>';
+        return;
+      }
+
+      const visibleGroups = groups.slice(0, readingGroupsLimit);
+      const remainingCount = groups.length - visibleGroups.length;
+
+      let html = visibleGroups.map(g => {
+        let imgSrc = g.groupImage;
+        if (imgSrc && !imgSrc.startsWith('http://') && !imgSrc.startsWith('https://') && !imgSrc.startsWith('/')) {
+          imgSrc = '/' + imgSrc;
+        }
+        return `
+        <div class="group-item" style="cursor:pointer;" onclick="selectReadingGroup('${g.groupId}', '${escapeHtml(g.groupName).replace(/'/g, "\\'")}')">
+          ${imgSrc ? `<img src="${imgSrc}" alt="" style="width:36px; height:36px; border-radius:50%; object-fit:cover; flex-shrink:0;" onerror="this.style.display='none'">` : `<div style="width:36px; height:36px; border-radius:50%; background:rgba(139,92,246,0.3); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:16px;">📚</div>`}
+          <div style="overflow:hidden; flex:1;">
+            <div class="group-item-name">${escapeHtml(g.groupName)}</div>
+            <div class="group-item-id">${g.groupId}${g.description ? ' · ' + escapeHtml(g.description) : ''}</div>
+          </div>
+          <button class="copy-btn" onclick="event.stopPropagation(); selectReadingGroup('${g.groupId}', '${escapeHtml(g.groupName).replace(/'/g, "\\'")}')">Seç</button>
+        </div>
+      `;
+      }).join('');
+
+      if (remainingCount > 0) {
+        html += `
+          <button class="btn btn-secondary" style="width: 100%; margin-top: 10px; padding: 10px; font-size: 12px; font-weight: 600;" onclick="loadMoreReadingGroups()">
+            ➕ Daha Fazla Göster (${remainingCount} grup kaldı)
+          </button>
+        `;
+      }
+
+      listEl.innerHTML = html;
+    }
+
+    function loadMoreReadingGroups() {
+      readingGroupsLimit += 10;
+      renderReadingGroupList(currentFilteredReadingGroups);
+    }
+
+    function filterReadingGroups(q) {
+      readingGroupsLimit = 10;
+      currentFilteredReadingGroups = readingGroupsCache.filter(g =>
+        g.groupName.toLowerCase().includes(q.toLowerCase()) ||
+        g.groupId.toLowerCase().includes(q.toLowerCase()) ||
+        (g.description || '').toLowerCase().includes(q.toLowerCase())
+      );
+      renderReadingGroupList(currentFilteredReadingGroups);
+    }
+
+    function selectReadingGroup(id, name) {
+      selectedReadingGroupId = id;
+      selectedReadingGroupName = name;
+      document.getElementById('gsReadingGroupId').value = id;
+      const display = document.getElementById('gsReadingGroupDisplay');
+      display.textContent = `${name} (${id})`;
+      display.style.fontStyle = 'normal';
+      display.style.color = 'var(--text-main)';
+      closeReadingGroupPicker();
     }
 
     // ----------------------------------------------------
@@ -1169,22 +1509,12 @@
 
     async function loadPollConfigUI(configKeyParam = null) {
       try {
-        const configKeyInput = document.getElementById('cfgConfigKey');
-        const searchKey = configKeyParam || (configKeyInput ? configKeyInput.value.trim() : null);
-        const url = searchKey ? `/api/poll-config?configKey=${encodeURIComponent(searchKey)}` : '/api/poll-config';
+        const url = '/api/poll-config';
         const res = await fetch(url);
         const data = await res.json();
         if (data.success && data.config) {
-          if (configKeyInput) configKeyInput.value = data.config.configKey || 'default';
-
           const titleInput = document.getElementById('cfgTitleTemplate');
           if (titleInput) titleInput.value = data.config.titleTemplate || '{{date}}';
-
-          const groupIdInput = document.getElementById('cfgGroupId');
-          if (groupIdInput) groupIdInput.value = data.config.groupId || '';
-
-          const readingGroupIdInput = document.getElementById('cfgReadingGroupId');
-          if (readingGroupIdInput) readingGroupIdInput.value = data.config.readingGroupId || 'mygroupid34';
 
           currentConfigOptions = Array.isArray(data.config.options) ? [...data.config.options] : [];
 
@@ -1236,10 +1566,7 @@
     }
 
     async function savePollConfigUI() {
-      const configKey = document.getElementById('cfgConfigKey')?.value?.trim() || 'default';
       const titleTemplate = document.getElementById('cfgTitleTemplate')?.value?.trim() || '{{date}}';
-      const groupId = document.getElementById('cfgGroupId')?.value?.trim() || '';
-      const readingGroupId = document.getElementById('cfgReadingGroupId')?.value?.trim() || 'mygroupid34';
       const container = document.getElementById('cfgOptionsList');
       const inputs = container?.querySelectorAll('.option-edit-input') || [];
       const options = [];
@@ -1254,16 +1581,26 @@
       }
 
       try {
+        // Mevcut config’i al, sadece titleTemplate ve options güncelle
+        const getRes = await fetch('/api/poll-config');
+        const getData = await getRes.json();
+        const currentConfig = (getData.success && getData.config) ? getData.config : {};
+
         const res = await fetch('/api/poll-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ configKey, titleTemplate, options, groupId, readingGroupId })
+          body: JSON.stringify({
+            configKey: currentConfig.configKey,
+            titleTemplate,
+            options,
+            groupId: currentConfig.groupId,
+            readingGroupId: currentConfig.readingGroupId
+          })
         });
         const data = await res.json();
         if (data.success) {
-          showToast(`✅ Anket şablonu ve ayarlar (${configKey}) başarıyla kaydedildi!`);
+          showToast('✅ Anket ayarları başarıyla kaydedildi!');
           currentConfigOptions = options;
-          loadPollConfigUI(configKey);
         } else {
           showToast('❌ Hata: ' + (data.message || 'Kaydedilemedi'));
         }
@@ -1273,14 +1610,8 @@
     }
 
     function resetPollConfigUI() {
-      const configKeyInput = document.getElementById('cfgConfigKey');
-      if (configKeyInput) configKeyInput.value = 'default';
       const titleInput = document.getElementById('cfgTitleTemplate');
       if (titleInput) titleInput.value = '{{date}}';
-      const groupIdInput = document.getElementById('cfgGroupId');
-      if (groupIdInput) groupIdInput.value = '';
-      const readingGroupIdInput = document.getElementById('cfgReadingGroupId');
-      if (readingGroupIdInput) readingGroupIdInput.value = 'mygroupid34';
       currentConfigOptions = [
         '5 dakika', '10 dakika', '15 dakika', '20 dakika', '30 dakika',
         '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika',
@@ -1293,11 +1624,20 @@
     // ----------------------------------------------------
     // ANKETLER MODALI (polls)
     // ----------------------------------------------------
-    function showPolls() {
+    async function showPolls() {
+      // Once grup ayarlarinin kayitli olup olmadigini kontrol et
+      try {
+        const res = await fetch('/api/poll-config');
+        const data = await res.json();
+        if (!data.success || !data.config || !data.config.groupId) {
+          showToast("⚠️ Önce Grup Ayarları'nı kaydedin!");
+          showGroupSettings();
+          return;
+        }
+      } catch (e) { }
+
       const modal = document.getElementById('pollsModal');
       modal.style.display = 'flex';
-
-      // Anket şablon ayarlarını yükle
       loadPollConfigUI();
     }
 

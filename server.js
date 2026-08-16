@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 
 // ============================================================================
@@ -323,7 +323,8 @@ function registerJidLidMapping(phoneCandidate, lidCandidate) {
   if (barePhone !== bareLid && /^\d{7,15}$/.test(barePhone)) {
     lidToPhoneMap.set(normLid, barePhone);
     lidToPhoneMap.set(bareLid, barePhone);
-    saveLidMapping(bareLid, barePhone);
+    const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : undefined;
+    saveLidMapping(bareLid, barePhone, configKey);
   }
 }
 
@@ -367,7 +368,8 @@ function processParticipantOrContact(item) {
 async function updateLidPhoneMapFromGroups() {
   // Önce MongoDB'de önceden kalıcı kaydedilmiş tüm haritaları belleğe yükle
   try {
-    const dbMap = await getAllLidMappings();
+    const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : undefined;
+    const dbMap = await getAllLidMappings(configKey);
     for (const lid in dbMap) {
       const phone = dbMap[lid];
       lidToPhoneMap.set(lid, phone);
@@ -664,6 +666,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone} (JID: ${activeVoterJid}) → Seçimler:`, selectedOptionNames);
 
   const currentReadingGroupId = await getTargetReadingGroupId();
+  const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
 
   await saveVote({
     pollId: pollMsgId,
@@ -673,6 +676,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
     pushName: pushName,
     selectedOptions: selectedOptionNames,
     readingGroupId: currentReadingGroupId,
+    configKey: configKey,
     updatedAt: getTRDateString()
   });
 
@@ -969,6 +973,12 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
           }
           if (isDBEnabled() && getDB()) {
             try { await getDB().collection(getAuthCollectionName()).deleteMany({}); } catch (e) { }
+            // Logout'ta bu configKey'e ait LID eşleşmelerini de temizle
+            const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+            if (configKey) {
+              await deleteLidMappingsByConfigKey(configKey);
+              lidToPhoneMap.clear();
+            }
           }
           if (sock) {
             try { sock.end(new Error('Logged out')); } catch (e) { }
@@ -1024,19 +1034,34 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
         const pollCreation = rawMsg?.pollCreationMessage || rawMsg?.pollCreationMessageV2 || rawMsg?.pollCreationMessageV3;
         if (pollCreation && msg.key?.id) {
           messageStore.set(msg.key.id, msg);
-          // console.log(`📋 Anket mesajı store'a kaydedildi: ${msg.key.id}`);
 
           // Mesajı MongoDB'ye kalıcı kaydet (bot yeniden başlatıldığında kaybolmaması için)
           if (isDBEnabled() && getDB()) {
             const serialized = serializePollMessage(msg.message);
-            if (serialized) {
-              try {
-                await getDB().collection('polls').updateOne(
-                  { pollId: msg.key.id },
-                  { $set: { messageData: serialized, pollId: msg.key.id, groupId: msg.key.remoteJid } },
-                  { upsert: true }
-                );
-              } catch (e) { }
+            const isFromMe = msg.key?.fromMe === true;
+
+            if (isFromMe) {
+              // Bot tarafından gönderilen anket: sadece messageData güncellenir (diğer alanlar sendWhatsAppPoll'da zaten yazıldı)
+              if (serialized) {
+                try {
+                  await getDB().collection('polls').updateOne(
+                    { pollId: msg.key.id },
+                    { $set: { messageData: serialized } },
+                    { upsert: false }
+                  );
+                } catch (e) { }
+              }
+            } else {
+              // Dışarıdan gelen anket: messageData + pollId + groupId
+              if (serialized) {
+                try {
+                  await getDB().collection('polls').updateOne(
+                    { pollId: msg.key.id },
+                    { $set: { messageData: serialized, pollId: msg.key.id, groupId: msg.key.remoteJid } },
+                    { upsert: true }
+                  );
+                } catch (e) { }
+              }
             }
           }
         }
@@ -1060,8 +1085,6 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
 
         if (!pollUpdates || pollUpdates.length === 0) continue;
 
-        // console.log(`🗳️ [update] Poll güncelleme geldi → Anket: ${key.id}, ${pollUpdates.length} güncelleme`);
-
         try {
           const pollMsg = messageStore.get(key.id);
           if (!pollMsg) {
@@ -1077,8 +1100,8 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
           if (!aggregatedVotes || aggregatedVotes.length === 0) continue;
 
           const allCurrentVoters = new Set();
-
           const currentReadingGroupId = await getTargetReadingGroupId();
+          const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
 
           for (const optionResult of aggregatedVotes) {
             const optionName = optionResult.name;
@@ -1095,6 +1118,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
                 rawLid: rawLid,
                 selectedOptions: [optionName],
                 readingGroupId: currentReadingGroupId,
+                configKey: configKey,
                 updatedAt: getTRDateString()
               });
             }
@@ -1114,12 +1138,12 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
                   pushName: existingVote.pushName,
                   selectedOptions: [],
                   readingGroupId: existingVote.readingGroupId || currentReadingGroupId,
+                  configKey: configKey,
                   updatedAt: getTRDateString()
                 });
               }
             }
           }
-          // console.log(`✅ [update] Oy işlendi → ${allCurrentVoters.size} aktif oy veren`);
         } catch (err) {
           console.error('❌ [update] Anket oy işleme hatası:', err.message);
         }
@@ -1203,7 +1227,7 @@ async function sendWhatsAppPoll(options = {}) {
     return {
       success: false,
       status: state.status,
-      message: 'WhatsApp Grup JID (groupId) poll_config dokümanında tanımlanmamış! Lütfen Anket Yönetimi panelinden grup JID adresini girin.'
+      message: 'Henüz bir hedef WhatsApp grubu seçilmemiş! Lütfen Grup Ayarları panelinden WhatsApp Grubunuzu seçin.'
     };
   }
 
@@ -1243,11 +1267,13 @@ async function sendWhatsAppPoll(options = {}) {
 
     // Anketi veritabanına kaydet (DB aktifse)
     if (isDBEnabled()) {
+      const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
       await savePoll({
         pollId: messageId,
         groupId: targetGroupId,
         title: pollTitle,
         options: pollOptions,
+        configKey,
         messageData: serializePollMessage(sent?.message),
         createdAt: getTRDateString()
       });
@@ -1289,7 +1315,7 @@ async function sendWhatsAppSentence(options = {}) {
     return {
       success: false,
       status: state.status,
-      message: 'WhatsApp Grup JID (groupId) poll_config dokümanında tanımlanmamış!'
+      message: 'Henüz bir hedef WhatsApp grubu seçilmemiş! Lütfen Grup Ayarları panelinden WhatsApp Grubunuzu seçin.'
     };
   }
 
@@ -1402,7 +1428,7 @@ async function sendWeeklyReadingReport(options = {}) {
     return {
       success: false,
       status: state.status,
-      message: 'WhatsApp Grup JID (groupId) poll_config dokümanında tanımlanmamış!'
+      message: 'Henüz bir hedef WhatsApp grubu seçilmemiş! Lütfen Grup Ayarları panelinden WhatsApp Grubunuzu seçin.'
     };
   }
 
@@ -1499,7 +1525,7 @@ async function sendWeeklyTableImage(options = {}) {
     return {
       success: false,
       status: state.status,
-      message: 'WhatsApp Grup JID (groupId) poll_config dokümanında tanımlanmamış!'
+      message: 'Henüz bir hedef WhatsApp grubu seçilmemiş! Lütfen Grup Ayarları panelinden WhatsApp Grubunuzu seçin.'
     };
   }
 
@@ -1691,7 +1717,7 @@ function scheduleLeagueCongratulationsJob() {
       console.error('[LİG KUTLAMA] Zamanlayıcı hatası:', error.message);
     }
   });
-  console.log('✅ Lig Kutlama Zamanlayıcısı Kuruldu: Her 1 dakikada bir kontrol (pending_league_congratulations)');
+  console.log('✅ Lig Kutlama Zamanlayıcısı Kuruldu');
   return job;
 }
 
@@ -1748,6 +1774,8 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/groupAvatars', express.static(path.join(__dirname, 'groupAvatars')));
+app.use('/userAvatars', express.static(path.join(__dirname, 'userAvatars')));
 
 // Sağlık kontrolü endpoint'i
 app.get('/api/health', (req, res) => {
@@ -1837,6 +1865,16 @@ app.get('/api/status', async (req, res) => {
 app.get('/api/groups', async (req, res) => {
   try {
     const groups = await getWhatsAppGroups();
+    res.json({ success: true, count: groups.length, groups });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// RoTaKip okuma gruplarini listele (usergroups koleksiyonu)
+app.get('/api/reading-groups', async (req, res) => {
+  try {
+    const groups = await getReadingGroups();
     res.json({ success: true, count: groups.length, groups });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -1976,7 +2014,7 @@ app.get('/api/polls', async (req, res) => {
     if (!targetGroupId) {
       return res.json({
         success: false,
-        message: 'Hedef WhatsApp Grup JID henüz tanımlanmamış. Lütfen Ayarlar panelinden grup JID bilgisi girin.',
+        message: 'Henüz bir hedef grup seçilmemiş. Lütfen Grup Ayarları panelinden Hedef WhatsApp Grubunuzu seçin.',
         polls: []
       });
     }

@@ -518,8 +518,9 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
         // Yerel veya bağıntılı dosya yolu (örn: /userAvatars/9334176.jpg, groupAvatars/0.jpg vb.)
         const cleanPath = imgSource.startsWith('/') ? imgSource.substring(1) : imgSource;
         const filename = path.basename(cleanPath);
-
         const possiblePaths = [
+          path.join(__dirname, 'groupAvatars', filename),
+          path.join(__dirname, 'groupAvatars', cleanPath),
           path.join(__dirname, 'userAvatars', filename),
           path.join(__dirname, 'userAvatars', cleanPath),
           path.join(__dirname, cleanPath),

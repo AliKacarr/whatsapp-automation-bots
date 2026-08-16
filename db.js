@@ -86,7 +86,9 @@ function getTRDateString(date = new Date()) {
 
 /**
  * Anket oluşturulduğunda veritabanına kaydeder.
- * @param {Object} pollData - { pollId, groupId, title, options, createdAt }
+ * @param {Object} pollData - { pollId, groupId, title, options, createdAt, configKey, messageData }
+ * Bot tarafından gönderilen anketlerde title, options ve configKey dolu gelir.
+ * Dışarıdan yakalanan anketlerde sadece messageData+pollId+groupId kaydedilir.
  */
 async function savePoll(pollData) {
   if (!dbEnabled || !db) return null;
@@ -94,10 +96,14 @@ async function savePoll(pollData) {
   try {
     const setFields = {
       groupId: pollData.groupId,
-      title: pollData.title,
-      options: pollData.options,
-      createdAt: getTRDateString(pollData.createdAt)
     };
+
+    // Sadece bot anketlerinde (fromMe) gelen alanlar
+    if (pollData.title !== undefined) setFields.title = pollData.title;
+    if (Array.isArray(pollData.options)) setFields.options = pollData.options;
+    if (pollData.configKey) setFields.configKey = pollData.configKey;
+    if (pollData.createdAt) setFields.createdAt = getTRDateString(pollData.createdAt);
+
     // Anket mesaj verisini kalıcı sakla (oy şifre çözümü için gerekli)
     if (pollData.messageData) {
       setFields.messageData = pollData.messageData;
@@ -119,7 +125,7 @@ async function savePoll(pollData) {
 /**
  * Oy geldiğinde veritabanına kaydeder (upsert).
  * Aynı kullanıcı aynı ankete tekrar oy verirse günceller.
- * @param {Object} voteData - { pollId, voterJid, voterPhone, rawLid, selectedOptions, pushName, readingGroupId, updatedAt }
+ * @param {Object} voteData - { pollId, voterJid, voterPhone, rawLid, selectedOptions, pushName, readingGroupId, configKey, updatedAt }
  */
 async function saveVote(voteData) {
   if (!dbEnabled || !db) return null;
@@ -151,6 +157,10 @@ async function saveVote(voteData) {
     };
     if (voteData.pushName) {
       setFields.pushName = voteData.pushName;
+    }
+    // configKey alanı: farklı kullanıcıların oylarını izole etmek için
+    if (voteData.configKey) {
+      setFields.configKey = voteData.configKey;
     }
 
     const result = await db.collection('poll_votes').updateOne(
@@ -222,7 +232,7 @@ async function getPollConfig(passedConfigKey = null) {
     titleTemplate: '{{date}}',
     options: DEFAULT_POLL_OPTIONS,
     groupId: null,
-    readingGroupId: configKey
+    readingGroupId: null
   };
 
   if (!dbEnabled || !db) return defaultConfig;
@@ -252,7 +262,7 @@ async function getPollConfig(passedConfigKey = null) {
       titleTemplate: doc.titleTemplate || defaultConfig.titleTemplate,
       options: (Array.isArray(doc.options) && doc.options.length > 0) ? doc.options : defaultConfig.options,
       groupId: (doc.groupId !== undefined && doc.groupId !== null && String(doc.groupId).trim() !== '') ? String(doc.groupId).trim() : null,
-      readingGroupId: (doc.readingGroupId && typeof doc.readingGroupId === 'string' && doc.readingGroupId.trim() !== '') ? String(doc.readingGroupId).trim() : configKey,
+      readingGroupId: (doc.readingGroupId && typeof doc.readingGroupId === 'string' && doc.readingGroupId.trim() !== '') ? String(doc.readingGroupId).trim() : null,
       updatedAt: doc.updatedAt || null
     };
   } catch (err) {
@@ -290,7 +300,7 @@ async function savePollConfig(configData) {
 
     const readingGroupId = (configData.readingGroupId !== undefined && configData.readingGroupId !== null && String(configData.readingGroupId).trim() !== '')
       ? String(configData.readingGroupId).trim()
-      : configKey;
+      : null;
 
     const setFields = {
       titleTemplate,
@@ -317,29 +327,44 @@ async function savePollConfig(configData) {
 
 /**
  * LID -> Telefon Numarası eşleşmesini MongoDB'deki lid_mappings koleksiyonuna kalıcı kaydeder.
+ * configKey ile izole edilir: farklı kullanıcıların LID eşleşmeleri karışmaz.
+ * @param {string} lid - LID değeri
+ * @param {string} phone - Telefon numarası
+ * @param {string} [configKey] - Konfigürasyon anahtarı (process.env.CONFIG_KEY)
  */
-async function saveLidMapping(lid, phone) {
+async function saveLidMapping(lid, phone, configKey) {
   if (!dbEnabled || !db || !lid || !phone) return;
   const bareLid = String(lid).split('@')[0].split(':')[0];
   const barePhone = String(phone).split('@')[0].split(':')[0];
   if (bareLid === barePhone || !/^\d{7,15}$/.test(barePhone)) return;
 
+  const setFields = { phone: barePhone, updatedAt: getTRDateString() };
+  if (configKey && String(configKey).trim()) {
+    setFields.configKey = String(configKey).trim();
+  }
+
   try {
     await db.collection('lid_mappings').updateOne(
       { _id: bareLid },
-      { $set: { phone: barePhone, updatedAt: getTRDateString() } },
+      { $set: setFields },
       { upsert: true }
     );
   } catch (e) { }
 }
 
 /**
- * MongoDB'de saklanan tüm kalıcı LID -> Telefon Numarası haritasını getirir.
+ * MongoDB'de saklanan kalıcı LID -> Telefon Numarası haritasını getirir.
+ * configKey verilirse sadece o kullanıcıya ait eşleşmeleri getirir.
+ * @param {string} [configKey] - Konfigürasyon anahtarı ile filtrele (opsiyonel)
  */
-async function getAllLidMappings() {
+async function getAllLidMappings(configKey) {
   if (!dbEnabled || !db) return {};
   try {
-    const list = await db.collection('lid_mappings').find({}).toArray();
+    const query = {};
+    if (configKey && String(configKey).trim()) {
+      query.configKey = String(configKey).trim();
+    }
+    const list = await db.collection('lid_mappings').find(query).toArray();
     const map = {};
     for (const item of list) {
       if (item._id && item.phone) {
@@ -349,6 +374,43 @@ async function getAllLidMappings() {
     return map;
   } catch (e) {
     return {};
+  }
+}
+
+/**
+ * Belirli bir configKey'e ait tüm LID eşleşmelerini siler.
+ * Kullanıcı WhatsApp oturumunu kapattığında çağrılır.
+ * @param {string} configKey - Konfigürasyon anahtarı
+ */
+async function deleteLidMappingsByConfigKey(configKey) {
+  if (!dbEnabled || !db || !configKey) return;
+  try {
+    const result = await db.collection('lid_mappings').deleteMany({
+      configKey: String(configKey).trim()
+    });
+    console.log(`🗑️ lid_mappings temizlendi (configKey: ${configKey}): ${result.deletedCount} doküman silindi.`);
+  } catch (e) {
+    console.error('❌ lid_mappings silme hatası:', e.message);
+  }
+}
+
+/**
+ * RoTaKip usergroups koleksiyonundan tüm okuma gruplarını getirir.
+ * Grup Ayarları UI'ında okuma grubu seçimi için kullanılır.
+ * @returns {Array} Gruplar: [{ groupName, groupId, groupImage, description }]
+ */
+async function getReadingGroups() {
+  if (!dbEnabled || !db) return [];
+  try {
+    const groups = await db.collection('usergroups')
+      .find({ visibility: { $ne: 'private' } })
+      .sort({ groupName: 1 })
+      .project({ groupName: 1, groupId: 1, groupImage: 1, description: 1, _id: 0 })
+      .toArray();
+    return groups;
+  } catch (e) {
+    console.error('❌ getReadingGroups hatası:', e.message);
+    return [];
   }
 }
 
@@ -639,6 +701,8 @@ module.exports = {
   savePollConfig,
   saveLidMapping,
   getAllLidMappings,
+  deleteLidMappingsByConfigKey,
+  getReadingGroups,
   getRandomSentence,
   calculateReadingStreaks,
   getPendingCongratulations,
