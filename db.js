@@ -246,6 +246,11 @@ async function getPollConfig(passedConfigKey = null) {
         options: defaultConfig.options,
         groupId: defaultConfig.groupId,
         readingGroupId: defaultConfig.readingGroupId,
+        featurePollEnabled: true,
+        featureSentenceEnabled: true,
+        featureWeeklyReportEnabled: true,
+        featureWeeklyTableEnabled: true,
+        featureVoteTrackingEnabled: true,
         updatedAt: getTRDateString()
       };
       await db.collection('poll_config').updateOne(
@@ -254,7 +259,11 @@ async function getPollConfig(passedConfigKey = null) {
         { upsert: true }
       );
       console.log(`📌 poll_config (${configKey}) dokümanı oluşturuldu.`);
-      return { configKey, ...initialDoc };
+      return {
+        configKey,
+        ...initialDoc,
+        features: { pollEnabled: true, sentenceEnabled: true, weeklyReportEnabled: true, weeklyTableEnabled: true, voteTrackingEnabled: true }
+      };
     }
 
     return {
@@ -263,7 +272,15 @@ async function getPollConfig(passedConfigKey = null) {
       options: (Array.isArray(doc.options) && doc.options.length > 0) ? doc.options : defaultConfig.options,
       groupId: (doc.groupId !== undefined && doc.groupId !== null && String(doc.groupId).trim() !== '') ? String(doc.groupId).trim() : null,
       readingGroupId: (doc.readingGroupId && typeof doc.readingGroupId === 'string' && doc.readingGroupId.trim() !== '') ? String(doc.readingGroupId).trim() : null,
-      updatedAt: doc.updatedAt || null
+      updatedAt: doc.updatedAt || null,
+      // Özellik bayrakları: undefined veya null ise varsayılan true (geriye dönük uyumluluk)
+      features: {
+        pollEnabled:         doc.featurePollEnabled !== false,
+        sentenceEnabled:     doc.featureSentenceEnabled !== false,
+        weeklyReportEnabled: doc.featureWeeklyReportEnabled !== false,
+        weeklyTableEnabled:  doc.featureWeeklyTableEnabled !== false,
+        voteTrackingEnabled: doc.featureVoteTrackingEnabled !== false,
+      }
     };
   } catch (err) {
     console.error(`❌ Anket ayarları okuma hatası (${configKey}):`, err.message);
@@ -273,7 +290,8 @@ async function getPollConfig(passedConfigKey = null) {
 
 /**
  * Anket şablon ayarlarını MongoDB'ye kaydeder.
- * @param {Object} configData - { titleTemplate, options, groupId, readingGroupId, configKey }
+ * @param {Object} configData - { titleTemplate, options, groupId, readingGroupId, configKey, features }
+ * features: { pollEnabled, sentenceEnabled, weeklyReportEnabled, weeklyTableEnabled, voteTrackingEnabled }
  */
 async function savePollConfig(configData) {
   if (!dbEnabled || !db) return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
@@ -309,6 +327,14 @@ async function savePollConfig(configData) {
       readingGroupId,
       updatedAt: getTRDateString()
     };
+
+    // Özellik bayrakları — sadece gönderilenleri güncelle (gönderilmeyenler mevcut değerini korur)
+    const features = configData.features || {};
+    if (typeof features.pollEnabled === 'boolean')         setFields.featurePollEnabled = features.pollEnabled;
+    if (typeof features.sentenceEnabled === 'boolean')     setFields.featureSentenceEnabled = features.sentenceEnabled;
+    if (typeof features.weeklyReportEnabled === 'boolean') setFields.featureWeeklyReportEnabled = features.weeklyReportEnabled;
+    if (typeof features.weeklyTableEnabled === 'boolean')  setFields.featureWeeklyTableEnabled = features.weeklyTableEnabled;
+    if (typeof features.voteTrackingEnabled === 'boolean') setFields.featureVoteTrackingEnabled = features.voteTrackingEnabled;
 
     await db.collection('poll_config').updateOne(
       { _id: configKey },

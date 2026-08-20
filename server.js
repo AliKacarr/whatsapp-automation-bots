@@ -491,6 +491,10 @@ function buildJidCandidates(inputs) {
 async function processPollVoteUpdate(pollUpdateMsg) {
   if (!isDBEnabled()) return;
 
+  // Oy tespiti özelliği pasifse oyları işleme
+  const _voteConfig = await getPollConfig();
+  if (_voteConfig?.features?.voteTrackingEnabled === false) return;
+
   const pollUpdate = pollUpdateMsg.message?.pollUpdateMessage;
   if (!pollUpdate) return;
 
@@ -507,20 +511,34 @@ async function processPollVoteUpdate(pollUpdateMsg) {
     : (pollUpdateMsg.key?.participant || pollUpdateMsg.key?.remoteJid || pollUpdateMsg.participant);
   const voterJid = jidNormalizedUser ? jidNormalizedUser(rawVoterJid) : rawVoterJid;
 
-  // 1) Orijinal anket mesajını bul (memory veya MongoDB)
-  let pollMsg = messageStore.get(pollMsgId);
-  if (!pollMsg && getDB()) {
+  // 1) Bu anket veritabanımızda (polls koleksiyonunda) kayıtlı mı ve bu bota (configKey) ait mi kontrol et
+  const myConfigKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+  let pollDoc = null;
+  if (getDB()) {
     try {
-      const pollDoc = await getDB().collection('polls').findOne({ pollId: pollMsgId });
-      if (pollDoc?.messageData) {
-        const decoded = deserializePollMessage(pollDoc.messageData);
-        if (decoded) {
-          pollMsg = { message: decoded, key: { id: pollMsgId, remoteJid: pollDoc.groupId, fromMe: true } };
-          messageStore.set(pollMsgId, pollMsg);
-        }
-      }
+      pollDoc = await getDB().collection('polls').findOne({ pollId: pollMsgId });
     } catch (e) {
       console.error('⚠️ DB anket okuma hatası:', e.message);
+    }
+  }
+
+  // Veritabanında (polls koleksiyonunda) kayıtlı olmayan yabancı/harici anketlerin oylarını KESİNLİKLE işleme ve kaydetme!
+  if (!pollDoc) {
+    return;
+  }
+
+  // Bu anket başka bir configKey'e ait mi? (Projeyi paylaşan diğer botların anketlerine karışmamak için)
+  if (myConfigKey && pollDoc.configKey && pollDoc.configKey !== myConfigKey) {
+    return;
+  }
+
+  // 2) Orijinal anket mesajını bul (memory veya MongoDB messageData)
+  let pollMsg = messageStore.get(pollMsgId);
+  if (!pollMsg && pollDoc?.messageData) {
+    const decoded = deserializePollMessage(pollDoc.messageData);
+    if (decoded) {
+      pollMsg = { message: decoded, key: { id: pollMsgId, remoteJid: pollDoc.groupId, fromMe: true } };
+      messageStore.set(pollMsgId, pollMsg);
     }
   }
 
@@ -1029,39 +1047,57 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
     // ================================================================
     sock.ev.on('messages.upsert', async ({ messages: msgs, type }) => {
       for (const msg of msgs) {
-        // 1) Anket oluşturma mesajlarını store'a kaydet + DB'ye messageData yaz
+        // 1) Anket oluşturma mesajlarını yakala
         const rawMsg = getRawMessage(msg);
         const pollCreation = rawMsg?.pollCreationMessage || rawMsg?.pollCreationMessageV2 || rawMsg?.pollCreationMessageV3;
         if (pollCreation && msg.key?.id) {
-          messageStore.set(msg.key.id, msg);
-
           // Mesajı MongoDB'ye kalıcı kaydet (bot yeniden başlatıldığında kaybolmaması için)
           if (isDBEnabled() && getDB()) {
             const serialized = serializePollMessage(msg.message);
             const isFromMe = msg.key?.fromMe === true;
+            const incomingGroupId = msg.key?.remoteJid;
+            const targetGroupId = await getTargetGroupId();
 
+            // 1) Hedef gruptan gelmeyen (farklı gruplar/özel sohbetler) TÜM anketleri yoksay
+            if (!incomingGroupId || !targetGroupId || incomingGroupId !== targetGroupId) {
+              continue;
+            }
+
+            // 2) SADECE hedef grupta ve siz/bot (fromMe: true) tarafından gönderilen anketleri işle
             if (isFromMe) {
-              // Bot tarafından gönderilen anket: sadece messageData güncellenir (diğer alanlar sendWhatsAppPoll'da zaten yazıldı)
+              messageStore.set(msg.key.id, msg);
               if (serialized) {
                 try {
-                  await getDB().collection('polls').updateOne(
-                    { pollId: msg.key.id },
-                    { $set: { messageData: serialized } },
-                    { upsert: false }
-                  );
-                } catch (e) { }
+                  const existingPoll = await getDB().collection('polls').findOne({ pollId: msg.key.id });
+                  if (existingPoll) {
+                    // Bot tarafından API/Zamanlayıcı ile oluşturulmuş, sadece messageData güncelle
+                    await getDB().collection('polls').updateOne(
+                      { pollId: msg.key.id },
+                      { $set: { messageData: serialized } }
+                    );
+                  } else {
+                    // WhatsApp uygulamasından elle hedef gruba atılmış anket: tam doküman olarak kaydet
+                    const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+                    const title = pollCreation.name || 'WhatsApp Anketi';
+                    const options = (pollCreation.options || []).map(opt => opt.optionName || opt);
+
+                    await savePoll({
+                      pollId: msg.key.id,
+                      groupId: incomingGroupId,
+                      title: title,
+                      options: options,
+                      configKey: configKey,
+                      messageData: serialized,
+                      createdAt: getTRDateString()
+                    });
+                    console.log(`🗳️ [Hedef Grup] WhatsApp'tan manuel gönderilen anket kaydedildi: "${title}" (PollId: ${msg.key.id})`);
+                  }
+                } catch (e) {
+                  console.error('⚠️ Anket kaydetme/güncelleme hatası:', e.message);
+                }
               }
             } else {
-              // Dışarıdan gelen anket: messageData + pollId + groupId
-              if (serialized) {
-                try {
-                  await getDB().collection('polls').updateOne(
-                    { pollId: msg.key.id },
-                    { $set: { messageData: serialized, pollId: msg.key.id, groupId: msg.key.remoteJid } },
-                    { upsert: true }
-                  );
-                } catch (e) { }
-              }
+              // fromMe: false -> Başka bir üyenin attığı anket. Kesinlikle messageStore'a ve DB'ye kaydedilmez!
             }
           }
         }
@@ -1079,6 +1115,10 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
     sock.ev.on('messages.update', async (updates) => {
       if (!isDBEnabled()) return;
 
+      // Oy tespiti özelliği pasifse oyları işleme
+      const _updateVoteConfig = await getPollConfig();
+      if (_updateVoteConfig?.features?.voteTrackingEnabled === false) return;
+
       for (const item of updates) {
         const key = item.key;
         const pollUpdates = item.update?.pollUpdates || item.pollUpdates;
@@ -1086,9 +1126,31 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
         if (!pollUpdates || pollUpdates.length === 0) continue;
 
         try {
-          const pollMsg = messageStore.get(key.id);
+          const db = getDB();
+          if (!db) continue;
+
+          // polls koleksiyonunda kayıtlı mı ve bu bota ait mi kontrol et
+          const myConfigKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+          const pollDoc = await db.collection('polls').findOne({ pollId: key.id });
+          if (!pollDoc) {
+            // DB'de kayıtlı bir anket değilse oyları yoksay
+            continue;
+          }
+          // Başka bir configKey'e ait anketin oylarını işleme
+          if (myConfigKey && pollDoc.configKey && pollDoc.configKey !== myConfigKey) {
+            continue;
+          }
+
+          let pollMsg = messageStore.get(key.id);
+          if (!pollMsg && pollDoc?.messageData) {
+            const decoded = deserializePollMessage(pollDoc.messageData);
+            if (decoded) {
+              pollMsg = { message: decoded, key: { id: key.id, remoteJid: pollDoc.groupId, fromMe: true } };
+              messageStore.set(key.id, pollMsg);
+            }
+          }
+
           if (!pollMsg) {
-            console.warn(`⚠️ [update] Anket mesajı store'da bulunamadı: ${key.id}`);
             continue;
           }
 
@@ -1125,7 +1187,6 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
           }
 
           // Oy çekme tespiti (dokümanı silmek yerine selectedOptions: [] olarak güncelle)
-          const db = getDB();
           if (db) {
             const existingVotes = await db.collection('poll_votes')
               .find({ pollId: key.id }).toArray();
@@ -1385,6 +1446,11 @@ async function getWhatsAppGroups() {
 
 function scheduleWhatsAppPollJob() {
   const job = schedule.scheduleJob({ rule: '0 9 * * *', tz: 'Europe/Istanbul' }, async () => {
+    const config = await getPollConfig();
+    if (!config?.features?.pollEnabled) {
+      console.log('[ZAMANLAYICI] Anket gönderimi pasif (featurePollEnabled: false), atlandı.');
+      return;
+    }
     const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
     console.log(`\n[ZAMANLAYICI - ${zaman}] Günlük WhatsApp anketi gönderimi başlatılıyor...`);
     try {
@@ -1404,6 +1470,11 @@ function scheduleWhatsAppPollJob() {
  */
 function scheduleSentenceJob() {
   const job = schedule.scheduleJob({ rule: '30 22 * * 2,4', tz: 'Europe/Istanbul' }, async () => {
+    const config = await getPollConfig();
+    if (!config?.features?.sentenceEnabled) {
+      console.log('[ZAMANLAYICI] Günün sözü gönderimi pasif (featureSentenceEnabled: false), atlandı.');
+      return;
+    }
     const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
     console.log(`\n[ZAMANLAYICI - ${zaman}] Rastgele cümle gönderimi başlatılıyor...`);
     try {
@@ -1501,6 +1572,11 @@ async function sendWeeklyReadingReport(options = {}) {
  */
 function scheduleWeeklyReadingReportJob() {
   const job = schedule.scheduleJob({ rule: '30 22 * * 6', tz: 'Europe/Istanbul' }, async () => {
+    const config = await getPollConfig();
+    if (!config?.features?.weeklyReportEnabled) {
+      console.log('[ZAMANLAYICI] Haftalık okuma raporu pasif (featureWeeklyReportEnabled: false), atlandı.');
+      return;
+    }
     const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
     console.log(`\n[ZAMANLAYICI - ${zaman}] Haftalık okuma serisi raporu gönderimi başlatılıyor...`);
     try {
@@ -1589,6 +1665,11 @@ async function sendWeeklyTableImage(options = {}) {
  */
 function scheduleWeeklyTableImageJob() {
   const job = schedule.scheduleJob({ rule: '30 22 * * 1', tz: 'Europe/Istanbul' }, async () => {
+    const config = await getPollConfig();
+    if (!config?.features?.weeklyTableEnabled) {
+      console.log('[ZAMANLAYICI] Haftalık tablo görseli pasif (featureWeeklyTableEnabled: false), atlandı.');
+      return;
+    }
     const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
     console.log(`\n[ZAMANLAYICI - ${zaman}] Haftalık okuma tablosu görseli gönderimi başlatılıyor...`);
     try {
@@ -1752,6 +1833,7 @@ async function getWhatsAppStatus(autoStartIfDisconnected = false) {
 
   return {
     status: state.status,
+    configKey: process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null,
     qrDataUrl: state.qrDataUrl,
     userInfo: state.userInfo,
     targetGroup: {
@@ -1985,8 +2067,8 @@ app.get('/api/poll-config', async (req, res) => {
 // Anket şablon ayarlarını kaydet / güncelle
 app.post('/api/poll-config', async (req, res) => {
   try {
-    const { titleTemplate, options, groupId, readingGroupId, configKey, configId } = req.body;
-    const result = await savePollConfig({ titleTemplate, options, groupId, readingGroupId, configKey: configKey || configId });
+    const { titleTemplate, options, groupId, readingGroupId, configKey, configId, features } = req.body;
+    const result = await savePollConfig({ titleTemplate, options, groupId, readingGroupId, configKey: configKey || configId, features });
     if (result.success) {
       if (sock && state.status === 'READY') {
         fetchTargetGroupInfo();

@@ -17,8 +17,9 @@ Bu proje, WhatsApp gruplarında **otomatik anket gönderme**, **mesaj gönderme*
 - **Veri Saklama:** Kullanıcıların **anlık anket oylamaları** MongoDB veri tabanında kalıcı olarak saklanır.
 - **Haftalık Okuma Tablosu:** Her hafta grubun okuma istatistiklerini içeren tablo görseli otomatik olarak oluşturulur ve gruba gönderilir.
 - **Okuma Serisi Takibi:** Kullanıcıların kesintisiz okuma serileri (🔥 streak) hesaplanır ve haftalık raporda gösterilir.
+- **Modüler Özellik Yönetimi:** Anket gönderimi, günün sözü, haftalık tablo/rapor gönderimi ve oy tespiti gibi özellikleri grup bazında bağımsız olarak aktif/pasif edebilirsiniz.
 - **Çoklu Bot Desteği:** Aynı veritabanını paylaşan birden fazla bot, `CONFIG_KEY` sayesinde birbirinden bağımsız çalışır.
-- **Canlı Web Yönetim Paneli:** Arayüzden anket sonuçlarını görüntüleyebilir, ayarları düzenleyebilir ve anket gönderimini tetikleyebilirsiniz.
+- **Canlı Web Yönetim Paneli:** Arayüzden anket sonuçlarını görüntüleyebilir, grup/özellik ayarlarını düzenleyebilir ve anket gönderimini tetikleyebilirsiniz.
 
 ---
 
@@ -87,11 +88,13 @@ Projeyi kendi bilgisayarınızda geliştirme veya test amacıyla çalıştırmak
 
 ---
 
-### Anketleri Özelleştirme
+### Anketleri ve Özellikleri Özelleştirme
 
-Anketlerin gönderim zamanını, başlığını ve seçeneklerini iki farklı şekilde güncelleyebilirsiniz:
+Botun otomatik işlevlerini ve anket ayarlarını iki farklı şekilde güncelleyebilirsiniz:
 
-- **Yönetim Panelinden:** Web arayüzündeki **Ayarlar** butonuna tıklayarak anket başlığı şablonunu, seçenekleri, hedef WhatsApp grubu JID bilgisini ve okuma grubu ID bilgisini doğrudan güncelleyebilirsiniz.
+- **Yönetim Panelinden (Özellik Yönetimi & Anket Ayarları):**
+  - **Grup Ayarları > Özellik Yönetimi:** Günlük anket gönderimi, günün sözü gönderimi, haftalık okuma raporu, haftalık tablo görseli ve oy tespiti gibi özellikleri bağımsız olarak tek tıkla aktif/pasif edebilirsiniz.
+  - **Anket Ayarları:** Anket başlığı şablonunu (`{{date}}`), anket seçeneklerini, hedef WhatsApp grubu JID bilgisini ve okuma grubu ID bilgisini arayüzden doğrudan değiştirebilirsiniz.
 - **Dosya Üzerinden (`server.js`):** `scheduleWhatsAppPollJob` fonksiyonundaki cron saat zamanlamasını (varsayılan: `0 9 * * *` - her gün 09:00 TSİ) ile `DEFAULT_POLL_OPTIONS` ve `getDailyPollTitle` fonksiyonlarını doğrudan kod içerisinden değiştirebilirsiniz.
 
 ---
@@ -142,14 +145,14 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 | Endpoint | Metod | Açıklama |
 | :--- | :--- | :--- |
 | `/` | `GET` | Web Yönetim Paneli Arayüzü |
-| `/api/status` | `GET` | Bot ve veritabanı bağlantı durumu |
+| `/api/status` | `GET` | Bot, konfigürasyon ve veritabanı bağlantı durumu |
 | `/api/send-poll` | `GET` / `POST` | Hedef gruba anlık anket gönderir |
 | `/api/send-sentence` | `GET` / `POST` | Hedef gruba motivasyon cümlesi gönderir |
 | `/api/send-reading-report` | `GET` / `POST` | Haftalık okuma raporu (metin) gönderir |
 | `/api/send-table-image` | `GET` / `POST` | Haftalık okuma tablosu görselini gönderir |
 | `/api/polls` | `GET` | Gönderilmiş anketleri listeler |
 | `/api/poll-votes/:pollId` | `GET` | Seçilen ankete ait detaylı oy kayıtlarını getirir |
-| `/api/poll-config` | `GET` / `POST` | Anket başlığı, seçenekler, grup JID ve okuma grubu ayarlarını okur/günceller |
+| `/api/poll-config` | `GET` / `POST` | Anket başlığı, seçenekler, grup JID, okuma grubu ve özellik bayraklarını okur/günceller |
 | `/api/groups` | `GET` | Katılınan WhatsApp gruplarını ve JID adreslerini listeler |
 | `/api/pairing-code` | `POST` | Telefon numarası ile 8 haneli oturum kodu üretir |
 | `/api/restart` | `POST` | Oturumu ve istemciyi yeniden başlatır |
@@ -159,7 +162,7 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 
 ## Veritabanı Şeması (MongoDB)
 
-#### `poll_config` Koleksiyonu (Bot Konfigürasyonu & Anket Şablon Ayarları)
+#### `poll_config` Koleksiyonu (Bot Konfigürasyonu, Özellik Bayrakları & Anket Şablon Ayarları)
 ```json
 {
   "_id": "mygroupid34",
@@ -167,6 +170,11 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
   "options": [ "5 dakika", "10 dakika", "15 dakika", "20 dakika" ],
   "groupId": "123456789012345678@g.us",
   "readingGroupId": "mygroupid34",
+  "featurePollEnabled": true,
+  "featureSentenceEnabled": true,
+  "featureWeeklyReportEnabled": true,
+  "featureWeeklyTableEnabled": true,
+  "featureVoteTrackingEnabled": true,
   "updatedAt": "2026-08-11 10:45:00"
 }
 ```
@@ -174,6 +182,11 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 - `_id`: `CONFIG_KEY` ile eşleşen benzersiz konfigürasyon anahtarı
 - `groupId`: Anketlerin gönderileceği WhatsApp grubu JID adresi
 - `readingGroupId`: RoTaKip veritabanındaki okuma grubu kodu (`users_<readingGroupId>` ve `readingstatuses_<readingGroupId>` koleksiyonlarını belirler)
+- `featurePollEnabled`: Günlük anket gönderiminin aktif/pasif durumu
+- `featureSentenceEnabled`: Günün sözü / motivasyon cümlesi gönderiminin aktif/pasif durumu
+- `featureWeeklyReportEnabled`: Haftalık okuma serisi raporunun aktif/pasif durumu
+- `featureWeeklyTableEnabled`: Haftalık okuma tablosu görselinin aktif/pasif durumu
+- `featureVoteTrackingEnabled`: WhatsApp anket oylarının tespit edilip `poll_votes` koleksiyonuna kaydedilmesinin aktif/pasif durumu
 
 #### `polls` Koleksiyonu (Anket Kayıtları)
 ```json

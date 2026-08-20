@@ -535,6 +535,50 @@
     }
 
     /* Modal Styling */
+    /* ── Özellik Toggle Switch ── */
+    .feature-toggle {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .feature-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .feature-slider {
+      position: absolute;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 24px;
+      transition: background 0.25s;
+    }
+
+    .feature-slider::before {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.25s;
+    }
+
+    .feature-toggle input:checked+.feature-slider {
+      background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+    }
+
+    .feature-toggle input:checked+.feature-slider::before {
+      transform: translateX(20px);
+    }
+
     .modal-overlay {
       display: none;
       position: fixed;
@@ -804,6 +848,82 @@
           <input type="hidden" id="gsWpGroupId" />
         </div>
 
+        <!-- Özellik Yönetimi -->
+        <div style="text-align: left; margin-top: 4px;">
+          <label
+            style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 10px;">
+            🎛️ Özellik Yönetimi:
+          </label>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+
+            <div
+              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Günlük Anket Gönderimi</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her sabah 09:00'da anket
+                  gönderilir</div>
+              </div>
+              <label class="feature-toggle">
+                <input type="checkbox" id="ftPollEnabled" checked />
+                <span class="feature-slider"></span>
+              </label>
+            </div>
+
+            <div
+              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">💬 Günün Sözü Gönderimi</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Salı ve Perşembe 22:30'da
+                  gönderilir</div>
+              </div>
+              <label class="feature-toggle">
+                <input type="checkbox" id="ftSentenceEnabled" checked />
+                <span class="feature-slider"></span>
+              </label>
+            </div>
+
+            <div
+              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📊 Haftalık Okuma Raporu</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Cumartesi 22:30'da gönderilir
+                </div>
+              </div>
+              <label class="feature-toggle">
+                <input type="checkbox" id="ftWeeklyReportEnabled" checked />
+                <span class="feature-slider"></span>
+              </label>
+            </div>
+
+            <div
+              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📋 Haftalık Tablo Görseli</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Pazartesi 22:30'da gönderilir
+                </div>
+              </div>
+              <label class="feature-toggle">
+                <input type="checkbox" id="ftWeeklyTableEnabled" checked />
+                <span class="feature-slider"></span>
+              </label>
+            </div>
+
+            <div
+              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Oy Tespiti & Kaydı</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Gelen oylar poll_votes'e
+                  kaydedilir</div>
+              </div>
+              <label class="feature-toggle">
+                <input type="checkbox" id="ftVoteTrackingEnabled" checked />
+                <span class="feature-slider"></span>
+              </label>
+            </div>
+
+          </div>
+        </div>
+
         <div
           style="display: flex; justify-content: flex-end; margin-top: 6px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06);">
           <button class="btn btn-primary" style="padding: 10px 26px;" onclick="saveGroupSettingsUI()">
@@ -813,6 +933,7 @@
       </div>
     </div>
   </div>
+
 
   <!-- WP Grup Secici Mini Modal -->
   <div class="modal-overlay" id="wpGroupPickerModal" style="z-index: 200;">
@@ -939,6 +1060,11 @@
       const lastSentTime = document.getElementById('lastSentTime');
       const targetGroupEl = document.getElementById('targetGroupName');
       const targetReadingGroupEl = document.getElementById('targetReadingGroupName');
+
+      if (data.configKey) {
+        const gsKeyEl = document.getElementById('gsConfigKey');
+        if (gsKeyEl) gsKeyEl.value = data.configKey;
+      }
 
       const actionButtons = [
         document.getElementById('sendPollBtn'),
@@ -1250,6 +1376,14 @@
             document.getElementById('gsWpGroupDisplay').style.fontStyle = 'italic';
             document.getElementById('gsWpGroupDisplay').style.color = 'var(--text-sub)';
           }
+
+          // Özellik bayraklarını toggle'lara yansit
+          const features = data.config.features || {};
+          document.getElementById('ftPollEnabled').checked = features.pollEnabled !== false;
+          document.getElementById('ftSentenceEnabled').checked = features.sentenceEnabled !== false;
+          document.getElementById('ftWeeklyReportEnabled').checked = features.weeklyReportEnabled !== false;
+          document.getElementById('ftWeeklyTableEnabled').checked = features.weeklyTableEnabled !== false;
+          document.getElementById('ftVoteTrackingEnabled').checked = features.voteTrackingEnabled !== false;
         }
       } catch (e) {
         console.error('Grup ayarlari yuklenemedi:', e);
@@ -1280,12 +1414,22 @@
         const getData = await getRes.json();
         const currentConfig = (getData.success && getData.config) ? getData.config : {};
 
+        // Özellik bayraklarını toggle'lardan oku
+        const features = {
+          pollEnabled: document.getElementById('ftPollEnabled').checked,
+          sentenceEnabled: document.getElementById('ftSentenceEnabled').checked,
+          weeklyReportEnabled: document.getElementById('ftWeeklyReportEnabled').checked,
+          weeklyTableEnabled: document.getElementById('ftWeeklyTableEnabled').checked,
+          voteTrackingEnabled: document.getElementById('ftVoteTrackingEnabled').checked,
+        };
+
         const body = {
           configKey: configKey || currentConfig.configKey,
           groupId: groupId,
           readingGroupId: readingGroupId,
           titleTemplate: currentConfig.titleTemplate || '{{date}}',
-          options: currentConfig.options && currentConfig.options.length > 0 ? currentConfig.options : ['5 dakika', '10 dakika', '15 dakika', '20 dakika', '30 dakika', '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika', '150 dakika', '180 dakika']
+          options: currentConfig.options && currentConfig.options.length > 0 ? currentConfig.options : ['5 dakika', '10 dakika', '15 dakika', '20 dakika', '30 dakika', '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika', '150 dakika', '180 dakika'],
+          features
         };
 
         const res = await fetch('/api/poll-config', {
@@ -1347,7 +1491,7 @@
     function renderWpGroupList(groups) {
       const listEl = document.getElementById('wpGroupPickerList');
       if (!groups || groups.length === 0) {
-        listEl.innerHTML = '<p style="font-size:13px; color:var(--text-muted); text-align:center; padding:24px 0;">Grup bulunamadı.</p>';
+        listEl.innerHTML = '<p style="font-size:13px; color:var(--text-muted); text-align:center; padding:24px 0;">Grup bulunamadı. WhatsApp bağlantısını kontrol edin.</p>';
         return;
       }
 
