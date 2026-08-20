@@ -1308,6 +1308,26 @@ async function sendWhatsAppPoll(options = {}) {
     ? config.options
     : DEFAULT_POLL_OPTIONS;
 
+  // Anket seçenekleri / oyları aynı olamaz kontrolü
+  const seenPollOptions = new Set();
+  const duplicatePollOptions = [];
+  for (const opt of pollOptions) {
+    const lower = String(opt).trim().toLowerCase();
+    if (seenPollOptions.has(lower)) {
+      if (!duplicatePollOptions.includes(opt)) duplicatePollOptions.push(opt);
+    } else {
+      seenPollOptions.add(lower);
+    }
+  }
+
+  if (duplicatePollOptions.length > 0) {
+    return {
+      success: false,
+      status: state.status,
+      message: `Anket seçenekleri aynı olamaz! Yinelenen seçenekler: ${duplicatePollOptions.join(', ')}`
+    };
+  }
+
   try {
     const sent = await sock.sendMessage(targetGroupId, {
       poll: {

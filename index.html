@@ -1684,14 +1684,41 @@
 
       container.innerHTML = currentConfigOptions.map((opt, idx) => `
         <div class="option-edit-row">
-          <input type="text" class="option-edit-input" style="font-size:13px; padding:7px 10px;" value="${escapeHtml(opt)}" onchange="updateOptionValue(${idx}, this.value)" placeholder="Seçenek ${idx + 1}" />
+          <input type="text" class="option-edit-input" style="font-size:13px; padding:7px 10px;" value="${escapeHtml(opt)}" oninput="updateOptionValue(${idx}, this.value)" onchange="updateOptionValue(${idx}, this.value)" placeholder="Seçenek ${idx + 1}" />
           <button class="btn-icon-danger" style="font-size:13px; padding:7px 10px;" title="Sil" onclick="removeOptionInput(${idx})">🗑️</button>
         </div>
       `).join('');
+
+      validateOptionInputs();
+    }
+
+    function validateOptionInputs() {
+      const container = document.getElementById('cfgOptionsList');
+      const inputs = container?.querySelectorAll('.option-edit-input') || [];
+      const seenMap = {};
+      inputs.forEach(inp => {
+        const val = inp.value.trim().toLowerCase();
+        if (!val) return;
+        if (!seenMap[val]) seenMap[val] = [];
+        seenMap[val].push(inp);
+      });
+      inputs.forEach(inp => {
+        const val = inp.value.trim().toLowerCase();
+        if (val && seenMap[val] && seenMap[val].length > 1) {
+          inp.style.borderColor = '#ef4444';
+          inp.style.backgroundColor = 'rgba(239, 68, 68, 0.12)';
+          inp.title = '⚠️ Bu seçenek zaten eklendi.';
+        } else {
+          inp.style.borderColor = '';
+          inp.style.backgroundColor = '';
+          inp.title = '';
+        }
+      });
     }
 
     function updateOptionValue(index, val) {
       currentConfigOptions[index] = val;
+      validateOptionInputs();
     }
 
     function addOptionInput() {
@@ -1721,6 +1748,24 @@
 
       if (options.length === 0) {
         showToast('⚠️ En az 1 geçerli anket seçeneği girmelisiniz!');
+        return;
+      }
+
+      // Anket oyları / seçenekleri aynı olamaz kontrolü
+      const seen = new Set();
+      const duplicates = [];
+      options.forEach(opt => {
+        const norm = opt.toLowerCase();
+        if (seen.has(norm)) {
+          if (!duplicates.includes(opt)) duplicates.push(opt);
+        } else {
+          seen.add(norm);
+        }
+      });
+
+      if (duplicates.length > 0) {
+        validateOptionInputs();
+        showToast(`⚠️ Anket seçenekleri aynı olamaz! Yinelenen: "${duplicates.join(', ')}"`);
         return;
       }
 

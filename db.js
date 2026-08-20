@@ -275,10 +275,10 @@ async function getPollConfig(passedConfigKey = null) {
       updatedAt: doc.updatedAt || null,
       // Özellik bayrakları: undefined veya null ise varsayılan true (geriye dönük uyumluluk)
       features: {
-        pollEnabled:         doc.featurePollEnabled !== false,
-        sentenceEnabled:     doc.featureSentenceEnabled !== false,
+        pollEnabled: doc.featurePollEnabled !== false,
+        sentenceEnabled: doc.featureSentenceEnabled !== false,
         weeklyReportEnabled: doc.featureWeeklyReportEnabled !== false,
-        weeklyTableEnabled:  doc.featureWeeklyTableEnabled !== false,
+        weeklyTableEnabled: doc.featureWeeklyTableEnabled !== false,
         voteTrackingEnabled: doc.featureVoteTrackingEnabled !== false,
       }
     };
@@ -312,6 +312,25 @@ async function savePollConfig(configData) {
       return { success: false, message: 'En az 1 anket seçeneği eklemelisiniz.' };
     }
 
+    // Anket seçenekleri aynı olamaz kontrolü
+    const seenOptions = new Set();
+    const duplicateOptions = [];
+    for (const opt of options) {
+      const lower = opt.toLowerCase();
+      if (seenOptions.has(lower)) {
+        if (!duplicateOptions.includes(opt)) duplicateOptions.push(opt);
+      } else {
+        seenOptions.add(lower);
+      }
+    }
+
+    if (duplicateOptions.length > 0) {
+      return {
+        success: false,
+        message: `Anket seçenekleri aynı olamaz! Yinelenen seçenekler: ${duplicateOptions.join(', ')}`
+      };
+    }
+
     const groupId = (configData.groupId !== undefined && configData.groupId !== null && String(configData.groupId).trim() !== '')
       ? String(configData.groupId).trim()
       : null;
@@ -330,10 +349,10 @@ async function savePollConfig(configData) {
 
     // Özellik bayrakları — sadece gönderilenleri güncelle (gönderilmeyenler mevcut değerini korur)
     const features = configData.features || {};
-    if (typeof features.pollEnabled === 'boolean')         setFields.featurePollEnabled = features.pollEnabled;
-    if (typeof features.sentenceEnabled === 'boolean')     setFields.featureSentenceEnabled = features.sentenceEnabled;
+    if (typeof features.pollEnabled === 'boolean') setFields.featurePollEnabled = features.pollEnabled;
+    if (typeof features.sentenceEnabled === 'boolean') setFields.featureSentenceEnabled = features.sentenceEnabled;
     if (typeof features.weeklyReportEnabled === 'boolean') setFields.featureWeeklyReportEnabled = features.weeklyReportEnabled;
-    if (typeof features.weeklyTableEnabled === 'boolean')  setFields.featureWeeklyTableEnabled = features.weeklyTableEnabled;
+    if (typeof features.weeklyTableEnabled === 'boolean') setFields.featureWeeklyTableEnabled = features.weeklyTableEnabled;
     if (typeof features.voteTrackingEnabled === 'boolean') setFields.featureVoteTrackingEnabled = features.voteTrackingEnabled;
 
     await db.collection('poll_config').updateOne(

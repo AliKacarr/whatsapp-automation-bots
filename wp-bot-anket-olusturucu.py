@@ -21,6 +21,21 @@ def main():
     ]
     allow_multiple_answers = False  # Birden çok yanıta izin verme
 
+    # Anket seçenekleri aynı olamaz kontrolü
+    seen_opts = set()
+    dup_opts = []
+    for opt in poll_options:
+        opt_norm = opt.strip().lower()
+        if opt_norm in seen_opts:
+            if opt not in dup_opts:
+                dup_opts.append(opt)
+        else:
+            seen_opts.add(opt_norm)
+
+    if dup_opts:
+        print(f"❌ Hata: Anket seçenekleri aynı olamaz! Yinelenen seçenekler: {', '.join(dup_opts)}")
+        sys.exit(1)
+
     options = Options()
     options.add_argument("--start-maximized")
     options.add_argument("--log-level=3")
