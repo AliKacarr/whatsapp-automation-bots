@@ -229,7 +229,7 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 ```
 
 - `date`: Mantıksal okuma günü (`YYYY-MM-DD`). TSİ 00:00–02:00 arası bir önceki güne yazılır; mesaj `dün` ile başlıyorsa bir gün daha geri alınır.
-- Kabul edilen formatlar: `20`, `20 sayfa`, `20 syf`, `dün 15 sayfa` (fazla kelime geçersiz).
+- Kabul edilen formatlar: `20`, `20 sayfa`, `20 syf`, `20 dk`, `20 dakika`, `dün 15 sayfa` (fazla kelime geçersiz).
 - Aynı `configKey` + `voterJid` + `date` için upsert (yeniden mesaj = güncelleme); başarıda mesaja ✔️ reaction bırakılır.
 
 #### `lid_mappings` Koleksiyonu (LID - Telefon Numarası Eşleşmeleri)

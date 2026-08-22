@@ -186,47 +186,50 @@ async function saveTextVote(voteData) {
 
 /**
  * Anket oluşturulduğunda veritabanına kaydeder.
+ * polls time-series olduğu için updateOne/upsert kullanılamaz → insertOne.
+ * Aynı pollId varsa önce deleteMany, sonra insertOne (messageData güncellemesi için).
  * @param {Object} pollData - { pollId, groupId, title, options, createdAt, configKey, messageData }
- * Bot tarafından gönderilen anketlerde title, options ve configKey dolu gelir.
- * Dışarıdan yakalanan anketlerde sadece messageData+pollId+groupId kaydedilir.
  */
 async function savePoll(pollData) {
   if (!dbEnabled || !db) return null;
+  if (!pollData?.pollId) return null;
 
   try {
-    const setFields = {
-      groupId: pollData.groupId,
-    };
+    const polls = db.collection('polls');
+    const existing = await polls.findOne({ pollId: pollData.pollId });
 
-    // Sadece bot anketlerinde (fromMe) gelen alanlar
-    if (pollData.title !== undefined) setFields.title = pollData.title;
-    if (Array.isArray(pollData.options)) setFields.options = pollData.options;
-    if (pollData.configKey) setFields.configKey = pollData.configKey;
-
-    // Anket mesaj verisini kalıcı sakla (oy şifre çözümü için gerekli)
-    if (pollData.messageData) {
-      setFields.messageData = pollData.messageData;
-    }
-
-    // time-series timeField (createdAt) sadece insert'te set edilir; güncellemede değiştirilmez
     let createdAt = new Date();
-    if (pollData.createdAt) {
+    if (existing?.createdAt) {
+      const prev = existing.createdAt instanceof Date
+        ? existing.createdAt
+        : new Date(existing.createdAt);
+      if (!isNaN(prev.getTime())) createdAt = prev;
+    } else if (pollData.createdAt) {
       const d = pollData.createdAt instanceof Date
         ? pollData.createdAt
         : new Date(pollData.createdAt);
       if (!isNaN(d.getTime())) createdAt = d;
     }
 
-    const result = await db.collection('polls').updateOne(
-      { pollId: pollData.pollId },
-      {
-        $set: setFields,
-        $setOnInsert: { createdAt, pollId: pollData.pollId }
-      },
-      { upsert: true }
-    );
-    // console.log(`📊 Anket DB'ye kaydedildi: "${pollData.title}" (${pollData.pollId})`);
-    return result;
+    const doc = {
+      pollId: pollData.pollId,
+      groupId: pollData.groupId !== undefined ? pollData.groupId : existing?.groupId,
+      createdAt
+    };
+    if (pollData.title !== undefined) doc.title = pollData.title;
+    else if (existing?.title !== undefined) doc.title = existing.title;
+    if (Array.isArray(pollData.options)) doc.options = pollData.options;
+    else if (Array.isArray(existing?.options)) doc.options = existing.options;
+    if (pollData.configKey) doc.configKey = pollData.configKey;
+    else if (existing?.configKey) doc.configKey = existing.configKey;
+    if (pollData.messageData) doc.messageData = pollData.messageData;
+    else if (existing?.messageData) doc.messageData = existing.messageData;
+
+    if (existing) {
+      await polls.deleteMany({ pollId: pollData.pollId });
+    }
+    await polls.insertOne(doc);
+    return { acknowledged: true };
   } catch (err) {
     console.error('❌ Anket DB kayıt hatası:', err.message);
     return null;
@@ -310,6 +313,32 @@ async function removeVote(pollId, voterJid) {
   } catch (err) {
     console.error('❌ Oy silme hatası:', err.message);
     return null;
+  }
+}
+
+/**
+ * Anketi polls koleksiyonundan siler (time-series → deleteMany).
+ * İlişkili poll_votes kayıtlarını da temizler.
+ */
+async function deletePoll(pollId) {
+  if (!dbEnabled || !db) return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  if (!pollId) return { success: false, message: 'pollId gerekli.' };
+
+  try {
+    const configKey = getPollConfigKey();
+    const filter = { pollId };
+    if (configKey) filter.configKey = configKey;
+
+    const pollResult = await db.collection('polls').deleteMany(filter);
+    if (pollResult.deletedCount === 0) {
+      return { success: false, message: 'Anket bulunamadı veya bu bota ait değil.' };
+    }
+
+    await db.collection('poll_votes').deleteMany({ pollId });
+    return { success: true, deletedCount: pollResult.deletedCount };
+  } catch (err) {
+    console.error('❌ Anket silme hatası:', err.message);
+    return { success: false, message: err.message };
   }
 }
 
@@ -863,6 +892,7 @@ module.exports = {
   saveVote,
   saveTextVote,
   removeVote,
+  deletePoll,
   getTRDateString,
   getLogicalReadingDate,
   getPollConfig,

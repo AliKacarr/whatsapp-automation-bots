@@ -1041,9 +1041,15 @@
           onclick="closeVotesModal()">✕ Kapat</button>
       </div>
 
-      <select id="pollSelectDropdown" class="select-input" onchange="loadSelectedPollVotes(this.value)">
-        <option value="">Anketler Yükleniyor...</option>
-      </select>
+      <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px;">
+        <select id="pollSelectDropdown" class="select-input" style="flex: 1; margin-bottom: 0;"
+          onchange="loadSelectedPollVotes(this.value)">
+          <option value="">Anketler Yükleniyor...</option>
+        </select>
+        <button class="btn btn-secondary" id="deletePollBtn" title="Anketi sil"
+          style="width: auto; padding: 10px 14px; font-size: 16px; flex-shrink: 0; color: #f87171;"
+          onclick="deleteSelectedPoll()">🗑️</button>
+      </div>
 
       <div id="votesContentArea" style="max-height: 340px; overflow-y: auto; padding-right: 4px;"></div>
     </div>
@@ -1852,6 +1858,14 @@
     // ----------------------------------------------------
     // ANKET OYLARI MODALI (poll_votes)
     // ----------------------------------------------------
+    // Anket tarihi: "2026-08-21 10:33:59" → "2026-08-21 10:33"
+    function formatPollDateShort(createdAt) {
+      if (!createdAt) return '-';
+      const s = String(createdAt);
+      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) return s.slice(0, 16);
+      return s;
+    }
+
     async function showVotes(targetPollId = null) {
       const modal = document.getElementById('votesModal');
       const dropdown = document.getElementById('pollSelectDropdown');
@@ -1871,7 +1885,7 @@
 
         dropdown.innerHTML = data.polls.map(p => `
           <option value="${escapeHtml(p.pollId)}" ${targetPollId === p.pollId ? 'selected' : ''}>
-            ${escapeHtml(p.title)} (${escapeHtml(p.createdAt || '-')}) - [ID: ${escapeHtml(p.pollId)}]
+            ${escapeHtml(p.title)} (${escapeHtml(formatPollDateShort(p.createdAt))})
           </option>
         `).join('');
 
@@ -1909,7 +1923,6 @@
           <div class="vote-summary-card">
             <div>
               <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(poll.title || 'Anket Oyları')}</div>
-              <div style="font-size:11px; color:var(--text-sub);">Oluşturulma: ${escapeHtml(poll.createdAt || '-')}</div>
             </div>
             <div style="text-align:right;">
               <div style="font-size:20px; font-weight:800; color:var(--accent-emerald);">${data.voteCount || 0}</div>
@@ -1937,7 +1950,7 @@
                     <td>${(v.selectedOptions && v.selectedOptions.length > 0)
               ? v.selectedOptions.map(opt => `<span class="option-tag" style="color:#fff; background:rgba(16,185,129,0.2); border-color:rgba(16,185,129,0.4);">${escapeHtml(opt)}</span>`).join(' ')
               : `<span class="option-tag" style="color:#f87171; background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3);">⚠️ Oy Çekildi</span>`}</td>
-                    <td style="text-align:right; color:var(--text-sub); font-size:11px;">${escapeHtml(v.updatedAt || '-')}</td>
+                    <td style="text-align:right; color:var(--text-sub); font-size:11px;">${escapeHtml(formatPollDateShort(v.updatedAt) || '-')}</td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -1949,6 +1962,30 @@
 
       } catch (err) {
         contentArea.innerHTML = '<p style="font-size:13px; color:var(--accent-rose); text-align:center;">Oy verileri alınırken hata oluştu.</p>';
+      }
+    }
+
+    async function deleteSelectedPoll() {
+      const dropdown = document.getElementById('pollSelectDropdown');
+      const pollId = dropdown.value;
+      if (!pollId) {
+        showToast('⚠️ Silinecek anket seçilmedi.');
+        return;
+      }
+      const label = dropdown.options[dropdown.selectedIndex]?.text || pollId;
+      if (!confirm(`Bu anketi silmek istediğinize emin misiniz?\n\n${label}`)) return;
+
+      try {
+        const res = await fetch(`/api/polls/${encodeURIComponent(pollId)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) {
+          showToast(`❌ ${data.message || 'Silinemedi'}`);
+          return;
+        }
+        showToast('🗑️ Anket silindi.');
+        await showVotes();
+      } catch (e) {
+        showToast('❌ Anket silinirken hata oluştu.');
       }
     }
 

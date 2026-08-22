@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 
 // ============================================================================
@@ -706,7 +706,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
 }
 
 /** Metin okuma mesajı: "20" | "20 sayfa" | "20 syf" | "dün 15 sayfa" vb. */
-const READING_MESSAGE_REGEX = /^(dün\s+)?(\d+)(?:\s+(?:sayfa|syf))?$/;
+const READING_MESSAGE_REGEX = /^(dün\s+)?(\d+)(?:\s+(?:sayfa|syf|dk|dakika))?$/;
 
 /**
  * Metin gövdesini normalize eder ve geçerli okuma mesajıysa { pages, isYesterday } döner.
@@ -1146,10 +1146,12 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
                   const existingPoll = await getDB().collection('polls').findOne({ pollId: msg.key.id });
                   if (existingPoll) {
                     // Bot tarafından API/Zamanlayıcı ile oluşturulmuş, sadece messageData güncelle
-                    await getDB().collection('polls').updateOne(
-                      { pollId: msg.key.id },
-                      { $set: { messageData: serialized } }
-                    );
+                    await savePoll({
+                      pollId: msg.key.id,
+                      groupId: existingPoll.groupId || incomingGroupId,
+                      messageData: serialized,
+                      createdAt: existingPoll.createdAt
+                    });
                   } else {
                     // WhatsApp uygulamasından elle hedef gruba atılmış anket: tam doküman olarak kaydet
                     const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
@@ -2186,13 +2188,14 @@ app.post('/api/poll-config', async (req, res) => {
 // ANKET VERİTABANI API ENDPOINT'LERİ
 // ============================================================================
 
-// Tüm anketleri listele (poll_config'deki groupId'ye göre filtrele)
+// Bu bota ait anketleri listele (configKey + groupId)
 app.get('/api/polls', async (req, res) => {
   if (!isDBEnabled() || !getDB()) {
     return res.json({ success: false, message: 'Veritabanı bağlantısı aktif değil.' });
   }
   try {
     const targetGroupId = await getTargetGroupId();
+    const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
     if (!targetGroupId) {
       return res.json({
         success: false,
@@ -2200,9 +2203,16 @@ app.get('/api/polls', async (req, res) => {
         polls: []
       });
     }
+    if (!configKey) {
+      return res.json({
+        success: false,
+        message: 'CONFIG_KEY tanımlı değil.',
+        polls: []
+      });
+    }
 
     const polls = await getDB().collection('polls')
-      .find({ groupId: targetGroupId })
+      .find({ groupId: targetGroupId, configKey })
       .sort({ createdAt: -1 })
       .limit(50)
       .toArray();
@@ -2218,6 +2228,16 @@ app.get('/api/polls', async (req, res) => {
   }
 });
 
+// Anketi polls koleksiyonundan sil (ilişkili oylar da silinir)
+app.delete('/api/polls/:pollId', async (req, res) => {
+  try {
+    const result = await deletePoll(req.params.pollId);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Belirli bir ankete ait tüm oyları getir
 app.get('/api/poll-votes/:pollId', async (req, res) => {
   if (!isDBEnabled() || !getDB()) {
@@ -2225,16 +2245,23 @@ app.get('/api/poll-votes/:pollId', async (req, res) => {
   }
   try {
     const { pollId } = req.params;
+    const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+
+    // Anket bu bota ait mi?
+    const pollFilter = { pollId };
+    if (configKey) pollFilter.configKey = configKey;
+    const poll = await getDB().collection('polls').findOne(pollFilter);
+    if (!poll) {
+      return res.json({ success: false, message: 'Anket bulunamadı veya bu bota ait değil.' });
+    }
+    if (poll.createdAt) {
+      poll.createdAt = getTRDateString(poll.createdAt);
+    }
+
     const votes = await getDB().collection('poll_votes')
       .find({ pollId })
       .sort({ updatedAt: -1 })
       .toArray();
-
-    // İlgili anketi de getir
-    const poll = await getDB().collection('polls').findOne({ pollId });
-    if (poll && poll.createdAt) {
-      poll.createdAt = getTRDateString(poll.createdAt);
-    }
 
     const formattedVotes = votes.map(v => ({
       ...v,
@@ -2243,7 +2270,7 @@ app.get('/api/poll-votes/:pollId', async (req, res) => {
 
     res.json({
       success: true,
-      poll: poll || null,
+      poll,
       voteCount: formattedVotes.length,
       votes: formattedVotes
     });
