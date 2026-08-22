@@ -17,7 +17,7 @@ Bu proje, WhatsApp gruplarında **otomatik anket gönderme**, **mesaj gönderme*
 - **Veri Saklama:** Kullanıcıların **anlık anket oylamaları** MongoDB veri tabanında kalıcı olarak saklanır.
 - **Haftalık Okuma Tablosu:** Her hafta grubun okuma istatistiklerini içeren tablo görseli otomatik olarak oluşturulur ve gruba gönderilir.
 - **Okuma Serisi Takibi:** Kullanıcıların kesintisiz okuma serileri (🔥 streak) hesaplanır ve haftalık raporda gösterilir.
-- **Modüler Özellik Yönetimi:** Anket gönderimi, günün sözü, haftalık tablo/rapor gönderimi ve oy tespiti gibi özellikleri grup bazında bağımsız olarak aktif/pasif edebilirsiniz.
+- **Modüler Özellik Yönetimi:** Anket gönderimi, günün sözü, haftalık tablo/rapor gönderimi, oy tespiti ve metin okuma kaydı gibi özellikleri grup bazında bağımsız olarak aktif/pasif edebilirsiniz.
 - **Çoklu Bot Desteği:** Aynı veritabanını paylaşan birden fazla bot, `CONFIG_KEY` sayesinde birbirinden bağımsız çalışır.
 - **Canlı Web Yönetim Paneli:** Arayüzden anket sonuçlarını görüntüleyebilir, grup/özellik ayarlarını düzenleyebilir ve anket gönderimini tetikleyebilirsiniz.
 
@@ -46,7 +46,7 @@ Botunuzu Render.com üzerinde 7/24 kesintisiz çalışır hale getirmek için a�
 | **`CONFIG_KEY`** | ✅ | Botunuz için rastgele benzersiz bir anahtar belirleyin. *(Örn: `okumagrubu1`)* |
 | **`MONGO_URI`** | ✅ | MongoDB bağlantı adresiniz. *(Örn: `mongodb+srv://user:pass@cluster.mongodb.net`)* |
 | **`DB_NAME`** | ✅ | Veritabanı adınız. *(Örn: `readingTracker`)* |
-| **`PING_URL`** | ❌ | Render'ın uyku moduna girmesini engellemek için health check adresi.<br>*(Örn: `https://okuma-takip-botu.onrender.com/api/health`)* |
+| **`PING_URL`** | ❌ | Render'ın uyku moduna girmesini engellemek için health check adresi.<br>*(Örn: `https://okuma-takip-botu.onrender.com/api/health` — Dilerseniz bu URL'i [cron-job.org](https://cron-job.org/) gibi harici bir servise ekleyip her 5 dakikada bir tetikleyerek de botu uyanık tutabilirsiniz.)* |
 
 3. Değişiklikleri kaydedin. Render uygulamanızı otomatik olarak yeniden başlatacaktır.
 
@@ -93,7 +93,7 @@ Projeyi kendi bilgisayarınızda geliştirme veya test amacıyla çalıştırmak
 Botun otomatik işlevlerini ve anket ayarlarını iki farklı şekilde güncelleyebilirsiniz:
 
 - **Yönetim Panelinden (Özellik Yönetimi & Anket Ayarları):**
-  - **Grup Ayarları > Özellik Yönetimi:** Günlük anket gönderimi, günün sözü gönderimi, haftalık okuma raporu, haftalık tablo görseli ve oy tespiti gibi özellikleri bağımsız olarak tek tıkla aktif/pasif edebilirsiniz.
+  - **Grup Ayarları > Özellik Yönetimi:** Günlük anket gönderimi, günün sözü gönderimi, haftalık okuma raporu, haftalık tablo görseli, oy tespiti ve metin okuma kaydı gibi özellikleri bağımsız olarak tek tıkla aktif/pasif edebilirsiniz.
   - **Anket Ayarları:** Anket başlığı şablonunu (`{{date}}`), anket seçeneklerini, hedef WhatsApp grubu JID bilgisini ve okuma grubu ID bilgisini arayüzden doğrudan değiştirebilirsiniz.
 - **Dosya Üzerinden (`server.js`):** `scheduleWhatsAppPollJob` fonksiyonundaki cron saat zamanlamasını (varsayılan: `0 9 * * *` - her gün 09:00 TSİ) ile `DEFAULT_POLL_OPTIONS` ve `getDailyPollTitle` fonksiyonlarını doğrudan kod içerisinden değiştirebilirsiniz.
 
@@ -175,6 +175,7 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
   "featureWeeklyReportEnabled": true,
   "featureWeeklyTableEnabled": true,
   "featureVoteTrackingEnabled": true,
+  "featureMessageReadingEnabled": true,
   "updatedAt": "2026-08-11 10:45:00"
 }
 ```
@@ -187,6 +188,7 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 - `featureWeeklyReportEnabled`: Haftalık okuma serisi raporunun aktif/pasif durumu
 - `featureWeeklyTableEnabled`: Haftalık okuma tablosu görselinin aktif/pasif durumu
 - `featureVoteTrackingEnabled`: WhatsApp anket oylarının tespit edilip `poll_votes` koleksiyonuna kaydedilmesinin aktif/pasif durumu
+- `featureMessageReadingEnabled`: Grup metin mesajlarından sayfa okuma bilgisinin `text_votes` koleksiyonuna kaydedilmesinin aktif/pasif durumu
 
 #### `polls` Koleksiyonu (Anket Kayıtları)
 ```json
@@ -195,7 +197,7 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
   "groupId": "123456789012345678@g.us",
   "title": "1 Ağustos",
   "options": [ "5 dakika", "10 dakika", "15 dakika", "20 dakika" ],
-  "createdAt": "2026-08-11 10:00:00"
+  "createdAt": { "$date": "2026-08-11T07:00:00.000Z" }
 }
 ```
 
@@ -211,6 +213,24 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
   "updatedAt": "2026-08-11 10:02:02"
 }
 ```
+
+#### `text_votes` Koleksiyonu (Metin Okuma Mesajları)
+```json
+{
+  "voterJid": "905351234567",
+  "voterPhone": "905351234567",
+  "selectedOptions": [ "20" ],
+  "readingGroupId": "mygroupid34",
+  "configKey": "mygroupid34",
+  "date": "2026-08-21",
+  "pushName": "Ahmet",
+  "updatedAt": "2026-08-22 01:05:00"
+}
+```
+
+- `date`: Mantıksal okuma günü (`YYYY-MM-DD`). TSİ 00:00–02:00 arası bir önceki güne yazılır; mesaj `dün` ile başlıyorsa bir gün daha geri alınır.
+- Kabul edilen formatlar: `20`, `20 sayfa`, `20 syf`, `dün 15 sayfa` (fazla kelime geçersiz).
+- Aynı `configKey` + `voterJid` + `date` için upsert (yeniden mesaj = güncelleme); başarıda mesaja ✔️ reaction bırakılır.
 
 #### `lid_mappings` Koleksiyonu (LID - Telefon Numarası Eşleşmeleri)
 ```json

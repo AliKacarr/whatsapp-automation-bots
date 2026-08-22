@@ -44,18 +44,10 @@ async function connectDB() {
     client = new MongoClient(uri);
     await client.connect();
     db = client.db(dbName);
-
-    // İndeksleri oluştur (zaten varsa hata vermez)
-    await db.collection('polls').createIndex({ pollId: 1 }, { unique: true });
-    await db.collection('polls').createIndex({ createdAt: -1 });
-    await db.collection('poll_votes').createIndex(
-      { pollId: 1, voterJid: 1 },
-      { unique: true }
-    );
-    await db.collection('poll_votes').createIndex({ pollId: 1 });
-
     dbEnabled = true;
     console.log('✅ MongoDB bağlantısı başarılı. Veritabanı:', dbName);
+
+    await ensureCollectionIndexes();
 
     // Anket ayarları yoksa varsayılan şablonu veritabanına ekle
     await getPollConfig();
@@ -65,6 +57,30 @@ async function connectDB() {
     dbEnabled = false;
     return null;
   }
+}
+
+/**
+ * Gerekli indeksleri oluşturur. polls time-series olduğu için unique indeks kullanılmaz.
+ * Bir indeks hatası tüm DB bağlantısını düşürmez.
+ */
+async function ensureCollectionIndexes() {
+  if (!db) return;
+
+  const createSafeIndex = async (collectionName, keys, options = {}) => {
+    try {
+      await db.collection(collectionName).createIndex(keys, options);
+    } catch (err) {
+      console.warn(`⚠️ İndeks oluşturulamadı [${collectionName}]:`, err.message);
+    }
+  };
+
+  // polls: time-series (timeField: createdAt) — unique desteklenmez; sadece sorgular için pollId indeksi
+  await createSafeIndex('polls', { pollId: 1 });
+  // createdAt zaten time-series timeField; ek indeks gerekmez
+
+  await createSafeIndex('poll_votes', { pollId: 1, voterJid: 1 }, { unique: true });
+  await createSafeIndex('poll_votes', { pollId: 1 });
+  await createSafeIndex('text_votes', { configKey: 1, voterJid: 1, date: 1 }, { unique: true });
 }
 
 /**
@@ -85,6 +101,90 @@ function getTRDateString(date = new Date()) {
 }
 
 /**
+ * Mesaj zamanına göre mantıksal okuma gününü 'YYYY-MM-DD' olarak döner (TSİ +3).
+ * 00:00–02:00 arası bir önceki gün sayılır; isYesterday ise bir gün daha geri alınır.
+ * @param {Date|number|string} [messageTime] - Mesaj zamanı (varsayılan: şimdi)
+ * @param {boolean} [isYesterday=false] - Mesaj "dün" ile başlıyorsa true
+ */
+function getLogicalReadingDate(messageTime = new Date(), isYesterday = false) {
+  let d;
+  if (messageTime instanceof Date) {
+    d = messageTime;
+  } else if (typeof messageTime === 'number') {
+    // Baileys messageTimestamp saniye veya ms olabilir
+    d = new Date(messageTime < 1e12 ? messageTime * 1000 : messageTime);
+  } else {
+    d = new Date(messageTime);
+  }
+  if (isNaN(d.getTime())) d = new Date();
+
+  const tr = new Date(d.getTime() + 3 * 60 * 60 * 1000);
+  if (tr.getUTCHours() < 2) {
+    tr.setUTCDate(tr.getUTCDate() - 1);
+  }
+  if (isYesterday) {
+    tr.setUTCDate(tr.getUTCDate() - 1);
+  }
+  return tr.toISOString().slice(0, 10);
+}
+
+/**
+ * Metin mesajından parse edilen okuma kaydını text_votes koleksiyonuna yazar (upsert).
+ * Aynı configKey + voterJid + date → güncelleme.
+ * @param {Object} voteData - { voterJid, voterPhone, rawLid, selectedOptions, pushName, readingGroupId, configKey, date, updatedAt }
+ */
+async function saveTextVote(voteData) {
+  if (!dbEnabled || !db) return null;
+
+  try {
+    const voterPhone = voteData.voterPhone || voteData.voterJid;
+    const configKey = voteData.configKey || null;
+    const date = voteData.date;
+    if (!date || !voterPhone) return null;
+
+    // Eski LID kaydı varsa ve telefon çözüldüyse temizle
+    if (voteData.rawLid && voteData.rawLid !== voterPhone && /^\d{10,15}$/.test(voterPhone)) {
+      try {
+        const lidFilter = {
+          date,
+          $or: [{ voterJid: voteData.rawLid }, { voterPhone: voteData.rawLid }]
+        };
+        if (configKey) lidFilter.configKey = configKey;
+        await db.collection('text_votes').deleteMany(lidFilter);
+      } catch (cleanErr) { }
+    }
+
+    let readingGroupId = voteData.readingGroupId;
+    if (!readingGroupId) {
+      const config = await getPollConfig();
+      readingGroupId = config?.readingGroupId || null;
+    }
+
+    const setFields = {
+      voterPhone,
+      selectedOptions: voteData.selectedOptions,
+      readingGroupId,
+      updatedAt: getTRDateString(voteData.updatedAt)
+    };
+    if (voteData.pushName) setFields.pushName = voteData.pushName;
+    if (configKey) setFields.configKey = configKey;
+
+    const filter = { voterJid: voterPhone, date };
+    if (configKey) filter.configKey = configKey;
+
+    const result = await db.collection('text_votes').updateOne(
+      filter,
+      { $set: setFields },
+      { upsert: true }
+    );
+    return result;
+  } catch (err) {
+    console.error('❌ Metin okuma DB kayıt hatası:', err.message);
+    return null;
+  }
+}
+
+/**
  * Anket oluşturulduğunda veritabanına kaydeder.
  * @param {Object} pollData - { pollId, groupId, title, options, createdAt, configKey, messageData }
  * Bot tarafından gönderilen anketlerde title, options ve configKey dolu gelir.
@@ -102,16 +202,27 @@ async function savePoll(pollData) {
     if (pollData.title !== undefined) setFields.title = pollData.title;
     if (Array.isArray(pollData.options)) setFields.options = pollData.options;
     if (pollData.configKey) setFields.configKey = pollData.configKey;
-    if (pollData.createdAt) setFields.createdAt = getTRDateString(pollData.createdAt);
 
     // Anket mesaj verisini kalıcı sakla (oy şifre çözümü için gerekli)
     if (pollData.messageData) {
       setFields.messageData = pollData.messageData;
     }
 
+    // time-series timeField (createdAt) sadece insert'te set edilir; güncellemede değiştirilmez
+    let createdAt = new Date();
+    if (pollData.createdAt) {
+      const d = pollData.createdAt instanceof Date
+        ? pollData.createdAt
+        : new Date(pollData.createdAt);
+      if (!isNaN(d.getTime())) createdAt = d;
+    }
+
     const result = await db.collection('polls').updateOne(
       { pollId: pollData.pollId },
-      { $set: setFields },
+      {
+        $set: setFields,
+        $setOnInsert: { createdAt, pollId: pollData.pollId }
+      },
       { upsert: true }
     );
     // console.log(`📊 Anket DB'ye kaydedildi: "${pollData.title}" (${pollData.pollId})`);
@@ -251,6 +362,7 @@ async function getPollConfig(passedConfigKey = null) {
         featureWeeklyReportEnabled: true,
         featureWeeklyTableEnabled: true,
         featureVoteTrackingEnabled: true,
+        featureMessageReadingEnabled: true,
         updatedAt: getTRDateString()
       };
       await db.collection('poll_config').updateOne(
@@ -262,7 +374,14 @@ async function getPollConfig(passedConfigKey = null) {
       return {
         configKey,
         ...initialDoc,
-        features: { pollEnabled: true, sentenceEnabled: true, weeklyReportEnabled: true, weeklyTableEnabled: true, voteTrackingEnabled: true }
+        features: {
+          pollEnabled: true,
+          sentenceEnabled: true,
+          weeklyReportEnabled: true,
+          weeklyTableEnabled: true,
+          voteTrackingEnabled: true,
+          messageReadingEnabled: true
+        }
       };
     }
 
@@ -280,6 +399,7 @@ async function getPollConfig(passedConfigKey = null) {
         weeklyReportEnabled: doc.featureWeeklyReportEnabled !== false,
         weeklyTableEnabled: doc.featureWeeklyTableEnabled !== false,
         voteTrackingEnabled: doc.featureVoteTrackingEnabled !== false,
+        messageReadingEnabled: doc.featureMessageReadingEnabled !== false,
       }
     };
   } catch (err) {
@@ -291,7 +411,7 @@ async function getPollConfig(passedConfigKey = null) {
 /**
  * Anket şablon ayarlarını MongoDB'ye kaydeder.
  * @param {Object} configData - { titleTemplate, options, groupId, readingGroupId, configKey, features }
- * features: { pollEnabled, sentenceEnabled, weeklyReportEnabled, weeklyTableEnabled, voteTrackingEnabled }
+ * features: { pollEnabled, sentenceEnabled, weeklyReportEnabled, weeklyTableEnabled, voteTrackingEnabled, messageReadingEnabled }
  */
 async function savePollConfig(configData) {
   if (!dbEnabled || !db) return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
@@ -354,6 +474,7 @@ async function savePollConfig(configData) {
     if (typeof features.weeklyReportEnabled === 'boolean') setFields.featureWeeklyReportEnabled = features.weeklyReportEnabled;
     if (typeof features.weeklyTableEnabled === 'boolean') setFields.featureWeeklyTableEnabled = features.weeklyTableEnabled;
     if (typeof features.voteTrackingEnabled === 'boolean') setFields.featureVoteTrackingEnabled = features.voteTrackingEnabled;
+    if (typeof features.messageReadingEnabled === 'boolean') setFields.featureMessageReadingEnabled = features.messageReadingEnabled;
 
     await db.collection('poll_config').updateOne(
       { _id: configKey },
@@ -740,8 +861,10 @@ module.exports = {
   getDB,
   savePoll,
   saveVote,
+  saveTextVote,
   removeVote,
   getTRDateString,
+  getLogicalReadingDate,
   getPollConfig,
   savePollConfig,
   saveLidMapping,

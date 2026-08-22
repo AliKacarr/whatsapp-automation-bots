@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, removeVote, getTRDateString, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 
 // ============================================================================
@@ -705,6 +705,81 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   }
 }
 
+/** Metin okuma mesajı: "20" | "20 sayfa" | "20 syf" | "dün 15 sayfa" vb. */
+const READING_MESSAGE_REGEX = /^(dün\s+)?(\d+)(?:\s+(?:sayfa|syf))?$/;
+
+/**
+ * Metin gövdesini normalize eder ve geçerli okuma mesajıysa { pages, isYesterday } döner.
+ */
+function parseReadingMessage(rawText) {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const normalized = rawText.trim().replace(/\s+/g, ' ').toLowerCase();
+  const match = normalized.match(READING_MESSAGE_REGEX);
+  if (!match) return null;
+  return {
+    pages: match[2],
+    isYesterday: Boolean(match[1])
+  };
+}
+
+/**
+ * Hedef gruptaki metin mesajlarından sayfa okuma bilgisini yakalar,
+ * text_votes'a kaydeder ve başarılıysa ✔️ reaction bırakır.
+ */
+async function processReadingMessage(msg) {
+  if (!isDBEnabled() || !sock) return;
+
+  const _cfg = await getPollConfig();
+  if (_cfg?.features?.messageReadingEnabled === false) return;
+
+  const incomingGroupId = msg.key?.remoteJid;
+  const targetGroupId = await getTargetGroupId();
+  if (!incomingGroupId || !targetGroupId || incomingGroupId !== targetGroupId) return;
+
+  const rawMsg = getRawMessage(msg);
+  const text =
+    rawMsg?.conversation ||
+    rawMsg?.extendedTextMessage?.text ||
+    msg.message?.conversation ||
+    msg.message?.extendedTextMessage?.text ||
+    null;
+  if (!text) return;
+
+  const parsed = parseReadingMessage(text);
+  if (!parsed) return;
+
+  const participantJid = msg.key?.participant || msg.participant || msg.key?.remoteJid;
+  const rawLid = participantJid ? (jidNormalizedUser ? jidNormalizedUser(participantJid) : participantJid).split('@')[0].split(':')[0] : null;
+  const voterPhone = await getPhoneNumberFromJid(participantJid, incomingGroupId);
+  if (!voterPhone) return;
+
+  const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+  const readingGroupId = await getTargetReadingGroupId();
+  const date = getLogicalReadingDate(msg.messageTimestamp, parsed.isYesterday);
+
+  const result = await saveTextVote({
+    voterJid: voterPhone,
+    voterPhone,
+    rawLid: rawLid && rawLid !== voterPhone ? rawLid : undefined,
+    selectedOptions: [parsed.pages],
+    pushName: msg.pushName || undefined,
+    readingGroupId,
+    configKey,
+    date,
+    updatedAt: getTRDateString()
+  });
+
+  if (!result) return;
+
+  try {
+    await sock.sendMessage(incomingGroupId, {
+      react: { text: '✔️', key: msg.key }
+    });
+  } catch (reactErr) {
+    console.error('⚠️ Okuma mesajı reaction hatası:', reactErr.message);
+  }
+}
+
 // Session ve kimlik doğrulama dizinleri
 const SESSION_BASE = path.resolve(__dirname, 'whatsapp', 'session');
 const BAILEYS_AUTH_PATH = path.join(SESSION_BASE, 'baileys_auth');
@@ -1088,7 +1163,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
                       options: options,
                       configKey: configKey,
                       messageData: serialized,
-                      createdAt: getTRDateString()
+                      createdAt: new Date()
                     });
                     console.log(`🗳️ [Hedef Grup] WhatsApp'tan manuel gönderilen anket kaydedildi: "${title}" (PollId: ${msg.key.id})`);
                   }
@@ -1105,6 +1180,11 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
         // 2) Oy güncelleme mesajlarını yakala (pollUpdateMessage)
         if (msg.message?.pollUpdateMessage && isDBEnabled()) {
           await processPollVoteUpdate(msg);
+        }
+
+        // 3) Metin okuma mesajlarını yakala (sayfa sayısı)
+        if (isDBEnabled()) {
+          await processReadingMessage(msg);
         }
       }
     });
@@ -1308,7 +1388,7 @@ async function sendWhatsAppPoll(options = {}) {
     ? config.options
     : DEFAULT_POLL_OPTIONS;
 
-  // Anket seçenekleri / oyları aynı olamaz kontrolü
+  // Anket seçenekleri aynı olamaz kontrolü
   const seenPollOptions = new Set();
   const duplicatePollOptions = [];
   for (const opt of pollOptions) {
@@ -1356,7 +1436,7 @@ async function sendWhatsAppPoll(options = {}) {
         options: pollOptions,
         configKey,
         messageData: serializePollMessage(sent?.message),
-        createdAt: getTRDateString()
+        createdAt: new Date()
       });
     }
 
