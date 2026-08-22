@@ -721,13 +721,26 @@ function normalizePollOptionLabel(optionName) {
 }
 
 /**
+ * Türkçe büyük/küçük harf: İ→i, I→ı (tr-TR).
+ * Anahtar kelime eşleşmesi için ı→i (IPTAL ve İPTAL ikisi de "iptal" olur).
+ */
+function normalizeReadingText(rawText) {
+  return String(rawText)
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ı/g, 'i')
+    .replace(/\u0307/g, ''); // olası combining-dot artığı
+}
+
+/**
  * Metin gövdesini normalize eder.
  * Geçerliyse { pages, isYesterday, clear } döner.
  * clear=true veya pages==="0" → text_votes'ta selectedOptions: []
  */
 function parseReadingMessage(rawText) {
   if (!rawText || typeof rawText !== 'string') return null;
-  const normalized = rawText.trim().replace(/\s+/g, ' ').toLowerCase();
+  const normalized = normalizeReadingText(rawText);
 
   const cancelMatch = normalized.match(READING_CANCEL_REGEX);
   if (cancelMatch) {
