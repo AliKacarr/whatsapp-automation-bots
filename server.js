@@ -2254,6 +2254,8 @@ app.get('/api/poll-votes/:pollId', async (req, res) => {
 
 // Web Arayüzü (Ana dizindeki index.html sunulur)
 app.get('/', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.set('Pragma', 'no-cache');
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
