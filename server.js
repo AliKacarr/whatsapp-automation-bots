@@ -669,7 +669,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
       const optName = opt.optionName || '';
       const optHashHex = crypto.createHash('sha256').update(optName).digest('hex');
       if (optHashHex === selectedHashHex) {
-        selectedOptionNames.push(optName);
+        selectedOptionNames.push(normalizePollOptionLabel(optName));
       }
     }
   }
@@ -705,20 +705,42 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   }
 }
 
-/** Metin okuma mesajı: "20" | "20 sayfa" | "20 syf" | "dün 15 sayfa" vb. */
+/** Metin okuma: "20" | "20 sayfa" | "0" | "iptal" | "dün 15 sayfa" vb. */
 const READING_MESSAGE_REGEX = /^(dün\s+)?(\d+)(?:\s+(?:sayfa|syf|dk|dakika))?$/;
+const READING_CANCEL_REGEX = /^(dün\s+)?iptal$/;
 
 /**
- * Metin gövdesini normalize eder ve geçerli okuma mesajıysa { pages, isYesterday } döner.
+ * Anket seçenek metnini kayda hazırlar.
+ * Başta sayı varsa sadece sayı ("5 sayfa" → "5"), yoksa metnin kendisi ("okumadım").
+ */
+function normalizePollOptionLabel(optionName) {
+  if (optionName == null) return optionName;
+  const trimmed = String(optionName).trim();
+  const match = trimmed.match(/^(\d+)/);
+  return match ? match[1] : trimmed;
+}
+
+/**
+ * Metin gövdesini normalize eder.
+ * Geçerliyse { pages, isYesterday, clear } döner.
+ * clear=true veya pages==="0" → text_votes'ta selectedOptions: []
  */
 function parseReadingMessage(rawText) {
   if (!rawText || typeof rawText !== 'string') return null;
   const normalized = rawText.trim().replace(/\s+/g, ' ').toLowerCase();
+
+  const cancelMatch = normalized.match(READING_CANCEL_REGEX);
+  if (cancelMatch) {
+    return { pages: '0', isYesterday: Boolean(cancelMatch[1]), clear: true };
+  }
+
   const match = normalized.match(READING_MESSAGE_REGEX);
   if (!match) return null;
+  const pages = match[2];
   return {
-    pages: match[2],
-    isYesterday: Boolean(match[1])
+    pages,
+    isYesterday: Boolean(match[1]),
+    clear: pages === '0'
   };
 }
 
@@ -756,12 +778,13 @@ async function processReadingMessage(msg) {
   const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
   const readingGroupId = await getTargetReadingGroupId();
   const date = getLogicalReadingDate(msg.messageTimestamp, parsed.isYesterday);
+  const selectedOptions = parsed.clear ? [] : [parsed.pages];
 
   const result = await saveTextVote({
     voterJid: voterPhone,
     voterPhone,
     rawLid: rawLid && rawLid !== voterPhone ? rawLid : undefined,
-    selectedOptions: [parsed.pages],
+    selectedOptions,
     pushName: msg.pushName || undefined,
     readingGroupId,
     configKey,
@@ -1260,7 +1283,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
                 voterJid: voterPhone,
                 voterPhone: voterPhone,
                 rawLid: rawLid,
-                selectedOptions: [optionName],
+                selectedOptions: [normalizePollOptionLabel(optionName)],
                 readingGroupId: currentReadingGroupId,
                 configKey: configKey,
                 updatedAt: getTRDateString()
