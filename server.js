@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getMonthlyReadingAmountTotal, getPendingCongratulations, completeCongratulation } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 
 // ============================================================================
@@ -1781,12 +1781,35 @@ async function sendWeeklyTableImage(options = {}) {
     await sock.sendMessage(targetGroupId, { text: summaryMessage });
     console.log(`✅ [Haftalık Okuma Oranı Mesajı] Mesaj başarıyla gönderildi: "${summaryMessage}" [Grup: ${targetGroupId}]`);
 
+    // Bu ayın amount toplamı (yoksa / 0 ise ikinci mesaj atlanır)
+    const MONTHLY_READING_GOAL = Number(process.env.MONTHLY_READING_GOAL) || 10000;
+    let monthlyMessage = null;
+    const monthly = await getMonthlyReadingAmountTotal(targetReadingGroupId);
+    if (monthly?.hasAmounts && monthly.total > 0) {
+      if (monthly.total >= MONTHLY_READING_GOAL) {
+        monthlyMessage =
+          `${monthly.monthName} Ayı Toplam Okumamız ${monthly.total}.\n` +
+          `Bu ayki okuma hedefimize ulaştık 🎉🎉 Herkesin eline sağlık! 👏`;
+      } else {
+        monthlyMessage =
+          `${monthly.monthName} Ayı Toplam Okumamız ${monthly.total}.\n` +
+          `Hedefimiz ${MONTHLY_READING_GOAL} okumaya ulaşmak. Herkese iyi okumalar!`;
+      }
+      await new Promise(res => setTimeout(res, 1500));
+      await sock.sendMessage(targetGroupId, { text: monthlyMessage });
+      console.log(`✅ [Aylık Okuma Toplamı] Mesaj gönderildi: toplam=${monthly.total} [Grup: ${targetGroupId}]`);
+    } else {
+      console.log(`ℹ️ [Aylık Okuma Toplamı] Bu ay amount kaydı yok veya toplam 0 — ikinci mesaj atlandı.`);
+    }
+
     return {
       success: true,
       sentAt,
       groupId: targetGroupId,
       weekSuccessPct,
-      summaryMessage
+      summaryMessage,
+      monthlyMessage,
+      monthlyTotal: monthly?.total || 0
     };
   } catch (err) {
     console.error('❌ Haftalık tablo resmi gönderme hatası:', err);

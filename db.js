@@ -686,6 +686,69 @@ function getPreviousDay(dateStr) {
   return d.toISOString().slice(0, 10);
 }
 
+const TR_MONTH_NAMES = [
+  'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
+];
+
+/**
+ * Bu ay (TSİ) readingstatuses_<readingGroupId> içindeki amount toplamını döner.
+ * amount alanı olmayan dokümanlar toplama girmez.
+ * @returns {{ total: number, year: number, month: number, monthName: string } | null}
+ */
+async function getMonthlyReadingAmountTotal(passedReadingGroupId = null) {
+  if (!dbEnabled || !db) return null;
+
+  try {
+    let readingGroupId = (passedReadingGroupId || '').trim();
+    if (!readingGroupId) {
+      const config = await getPollConfig();
+      readingGroupId = config?.readingGroupId || null;
+    }
+    if (!readingGroupId) return null;
+
+    const trNow = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const year = trNow.getUTCFullYear();
+    const month = trNow.getUTCMonth() + 1; // 1-12
+    const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+
+    const coll = db.collection(`readingstatuses_${readingGroupId}`);
+    const agg = await coll.aggregate([
+      {
+        $match: {
+          date: { $regex: `^${monthPrefix}` },
+          amount: { $exists: true, $ne: null, $type: 'number' }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      }
+    ]).toArray();
+
+    const total = agg[0]?.total != null ? Number(agg[0].total) : 0;
+    const count = agg[0]?.count != null ? Number(agg[0].count) : 0;
+
+    // Hiç amount kaydı yoksa ikinci mesaj gönderilmesin
+    if (count === 0 || total <= 0) {
+      return { total: 0, year, month, monthName: TR_MONTH_NAMES[month - 1], hasAmounts: false };
+    }
+
+    return {
+      total,
+      year,
+      month,
+      monthName: TR_MONTH_NAMES[month - 1],
+      hasAmounts: true
+    };
+  } catch (err) {
+    console.error('❌ getMonthlyReadingAmountTotal hatası:', err.message);
+    return null;
+  }
+}
 
 /**
  * users_<readingGroupId> ve readingstatuses_<readingGroupId> koleksiyonlarını kullanarak
@@ -903,6 +966,7 @@ module.exports = {
   getReadingGroups,
   getRandomSentence,
   calculateReadingStreaks,
+  getMonthlyReadingAmountTotal,
   getPendingCongratulations,
   completeCongratulation
 };
