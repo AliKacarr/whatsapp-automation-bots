@@ -56,6 +56,38 @@ const MONTH_NAMES_FULL_TR = [
 const DAY_NAMES_TR = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cts'];
 const FONT_FAMILY = 'Inter, "Segoe UI", Arial, sans-serif';
 
+// WhatsApp sohbet balonu ~1600px civarına sıkıştırır. 1x tablo (~800px) bulanık görünür.
+const RENDER_SCALE = 2;
+const JPEG_QUALITY = 92;
+const THUMB_MAX_EDGE = 256;
+const THUMB_JPEG_QUALITY = 82;
+const THUMB_MAX_BYTES = 64 * 1024;
+
+function encodeJpeg(canvas, quality = JPEG_QUALITY) {
+  return canvas.toBuffer('image/jpeg', quality);
+}
+
+function makeJpegThumbnail(sourceCanvas) {
+  const scale = THUMB_MAX_EDGE / Math.max(sourceCanvas.width, sourceCanvas.height);
+  const tw = Math.max(1, Math.round(sourceCanvas.width * scale));
+  const th = Math.max(1, Math.round(sourceCanvas.height * scale));
+  const thumb = createCanvas(tw, th);
+  const tctx = thumb.getContext('2d');
+  tctx.imageSmoothingEnabled = true;
+  if (tctx.imageSmoothingQuality) tctx.imageSmoothingQuality = 'high';
+  tctx.fillStyle = '#ffffff';
+  tctx.fillRect(0, 0, tw, th);
+  tctx.drawImage(sourceCanvas, 0, 0, tw, th);
+
+  let quality = THUMB_JPEG_QUALITY;
+  let buf = encodeJpeg(thumb, quality);
+  while (buf.length > THUMB_MAX_BYTES && quality > 70) {
+    quality -= 4;
+    buf = encodeJpeg(thumb, quality);
+  }
+  return buf.length <= THUMB_MAX_BYTES ? buf : null;
+}
+
 function parseFiniteAmount(value) {
   if (value == null || value === '') return null;
   const n = typeof value === 'number' ? value : Number(String(value).trim().replace(',', '.'));
@@ -437,8 +469,11 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   const width = margin * 2 + nameColWidth + (dayColWidth * 7) + amountColWidth + streakColWidth;
   const height = margin * 2 + headerHeight + statsRowHeight + (userCount * rowHeight);
 
-  const canvas = createCanvas(width, height);
+  const canvas = createCanvas(Math.round(width * RENDER_SCALE), Math.round(height * RENDER_SCALE));
   const ctx = canvas.getContext('2d');
+  ctx.scale(RENDER_SCALE, RENDER_SCALE);
+  ctx.imageSmoothingEnabled = true;
+  if (ctx.imageSmoothingQuality) ctx.imageSmoothingQuality = 'high';
 
   // Arka Plan (Beyaz)
   ctx.fillStyle = '#ffffff';
@@ -826,9 +861,19 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   const dateRangeText = formatWeeklyDateRange(dates);
   const captionText = `${dateRangeText} haftası okuma tablosu`;
 
+  let jpegThumbnail = null;
+  try {
+    jpegThumbnail = makeJpegThumbnail(canvas);
+  } catch (e) {
+    console.warn('⚠️ Haftalık tablo jpegThumbnail üretilemedi:', e.message);
+  }
+
   return {
-    buffer: canvas.toBuffer('image/png'),
-    mimetype: 'image/png',
+    buffer: encodeJpeg(canvas, JPEG_QUALITY),
+    mimetype: 'image/jpeg',
+    jpegThumbnail,
+    width: canvas.width,
+    height: canvas.height,
     dateRangeText,
     captionText,
     weekSuccessPct

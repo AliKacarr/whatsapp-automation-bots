@@ -1766,11 +1766,19 @@ async function sendWeeklyTableImage(options = {}) {
     const captionText = tableResult.captionText || 'Haftalık okuma tablosu';
     const mimetype = tableResult.mimetype || 'image/png';
 
-    await sock.sendMessage(targetGroupId, {
+    const imageMessage = {
       image: imageBuffer,
       mimetype: mimetype,
       caption: captionText
-    });
+    };
+    if (tableResult.jpegThumbnail) {
+      imageMessage.jpegThumbnail = tableResult.jpegThumbnail;
+    }
+    if (tableResult.width && tableResult.height) {
+      imageMessage.width = tableResult.width;
+      imageMessage.height = tableResult.height;
+    }
+    await sock.sendMessage(targetGroupId, imageMessage);
 
     const sentAt = getTRDateString();
     console.log(`✅ [Haftalık Tablo Resmi] Görsel başarıyla gönderildi! [Grup: ${targetGroupId}]`);
