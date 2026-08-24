@@ -8,6 +8,7 @@ const QRCode = require('qrcode');
 require('dotenv').config();
 const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getMonthlyReadingAmountTotal, getPendingCongratulations, completeCongratulation } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
+const { generateLeagueCongratulationImage } = require('./leagueCongratulationImage');
 
 // ============================================================================
 // LOG FİLTRESİ VE HATA YÖNETİMİ (Libsignal / Bad MAC / Noise Gürültüsünü Engelleme)
@@ -1849,13 +1850,9 @@ function scheduleWeeklyTableImageJob() {
 // ============================================================================
 
 /**
- * pending_league_congratulations koleksiyonundaki bekleyen tebrik dokümanlarını kontrol eder.
- * Her biri için WhatsApp grubuna kutlama mesajı gönderir, ardından dokümanı siler ve
- * lastCongratulatedLeague alanını günceller.
- *
- * @param {object} [options]           - Opsiyonel parametreler
- * @param {string} [options.groupId]   - Belirli bir WhatsApp grup JID'si (yoksa poll_config'den alınır)
- * @param {string} [options.readingGroupId] - Belirli bir reading group ID (yoksa poll_config'den alınır)
+ * pending_league_congratulations içinden bu gruba ait bekleyen kutlamaları kontrol eder.
+ * Her dakikada yalnızca 1 belge işlenir; kalanlar sonraki tura bırakılır.
+ * Lig şablonuna isim bindirilip WhatsApp grubuna görsel olarak gönderilir.
  */
 async function sendLeagueCongratulations(options = {}) {
   if (!isDBEnabled()) {
@@ -1871,16 +1868,14 @@ async function sendLeagueCongratulations(options = {}) {
   }
 
   try {
-    // poll_config'den bu botun bağlı olduğu reading group ID'yi al
     const targetReadingGroupId = options.readingGroupId || await getTargetReadingGroupId();
     if (!targetReadingGroupId) {
       return { success: false, message: 'readingGroupId belirlenemedi (poll_config kontrol edin).' };
     }
 
-    // Bu bota ait grubu filtrele (kendi readingGroupId'si ile eşleşen kutlamalar)
     const pending = await getPendingCongratulations(targetReadingGroupId);
     if (!pending || pending.length === 0) {
-      return { success: true, sent: 0, message: 'Bekleyen lig atlama kutlaması yok.' };
+      return { success: true, sent: 0, remaining: 0, message: 'Bekleyen lig atlama kutlaması yok.' };
     }
 
     const targetWhatsAppJid = options.groupId || await getTargetGroupId();
@@ -1888,57 +1883,54 @@ async function sendLeagueCongratulations(options = {}) {
       return { success: false, message: 'WhatsApp Grup JID belirlenemedi (poll_config kontrol edin).' };
     }
 
-    // Sıralama:
-    // 1. En üst ligdekiler / en çok güne sahip olanlar en üstte (büyükten küçüğe)
-    // 2. Aynı ligdeki kişiler ise kendi arasında alfabetik (A'dan Z'ye)
     pending.sort((a, b) => {
       const minA = a.leagueMin != null ? Number(a.leagueMin) : 0;
       const minB = b.leagueMin != null ? Number(b.leagueMin) : 0;
-      if (minB !== minA) {
-        return minB - minA; // Yüksek lig (gün sayısı fazla olan) üstte
-      }
-      const nameA = (a.name || '').trim();
-      const nameB = (b.name || '').trim();
-      return nameA.localeCompare(nameB, 'tr', { sensitivity: 'base' }); // Aynı ligdekiler alfabetik
+      if (minB !== minA) return minB - minA;
+      return (a.name || '').trim().localeCompare((b.name || '').trim(), 'tr', { sensitivity: 'base' });
     });
 
-    // Başlık: Tek kişi varsa tekil, birden fazla kişi varsa çoğul
-    const title = pending.length === 1
-      ? 'Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉'
-      : 'Lig atlayan arkadaşlarımızı tebrik ediyoruz! 🎉🎉';
-
-    // Satırlar: Sonuncusu '.' ile, öncekiler ',' ile biter
-    const lines = pending.map((doc, index) => {
-      const leagueLower = doc.league ? doc.league.toLowerCase() : 'yeni';
-      const leagueMin = doc.leagueMin !== undefined && doc.leagueMin !== null ? doc.leagueMin : '';
-      const punctuation = index === pending.length - 1 ? '.' : ',';
-      return `⚡${leagueMin} gün - *${doc.name}* ${leagueLower} lige yükseldi${punctuation}`;
-    });
-
-    const messageText = `${title}\n\n${lines.join('\n')}`;
-
-    // Gruba tek seferde toplu mesajı gönder
-    await sock.sendMessage(targetWhatsAppJid, { text: messageText });
-    console.log(`🏆 [Lig Kutlaması] ${pending.length} kişi için toplu kutlama mesajı gönderildi. [Grup: ${targetWhatsAppJid}]`);
-
-    // Gönderilen her kullanıcı için kuyruktan sil ve lastCongratulatedLeague alanını güncelle
-    let processedCount = 0;
-    for (const doc of pending) {
-      try {
-        const docIdStr = doc._id ? doc._id.toString() : null;
-        if (docIdStr) {
-          await completeCongratulation(docIdStr, doc.userId, doc.groupId, doc.league);
-          processedCount++;
-        }
-      } catch (err) {
-        console.error(`❌ completeCongratulation hatası (${doc.name}):`, err.message);
-      }
+    const doc = pending[0];
+    const remaining = pending.length - 1;
+    const docIdStr = doc._id ? doc._id.toString() : null;
+    if (!docIdStr) {
+      return { success: false, message: 'Kutlama belgesinde _id yok.' };
     }
+
+    let imagePayload;
+    try {
+      imagePayload = await generateLeagueCongratulationImage({
+        name: doc.name,
+        league: doc.league,
+        leagueMin: doc.leagueMin
+      });
+    } catch (imgErr) {
+      console.error('❌ Lig kutlama görseli üretilemedi, metin mesajına düşülüyor:', imgErr.message);
+    }
+
+    if (imagePayload?.buffer) {
+      await sock.sendMessage(targetWhatsAppJid, {
+        image: imagePayload.buffer,
+        caption: imagePayload.caption,
+        mimetype: imagePayload.mimetype || 'image/png'
+      });
+    } else {
+      const leagueLower = doc.league ? String(doc.league).toLocaleLowerCase('tr-TR') : 'yeni';
+      const leagueMin = doc.leagueMin !== undefined && doc.leagueMin !== null ? doc.leagueMin : '';
+      await sock.sendMessage(targetWhatsAppJid, {
+        text: `Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉\n\n⚡${leagueMin} gün - *${doc.name}* ${leagueLower} lige yükseldi.`
+      });
+    }
+
+    await completeCongratulation(docIdStr, doc.userId, doc.groupId, doc.league);
+    console.log(`🏆 [Lig Kutlaması] ${doc.name} → ${doc.league} görseli gönderildi. Kalan: ${remaining} [Grup: ${targetWhatsAppJid}]`);
 
     return {
       success: true,
-      sent: processedCount,
-      total: pending.length,
+      sent: 1,
+      remaining,
+      name: doc.name,
+      league: doc.league,
       groupId: targetWhatsAppJid,
       readingGroupId: targetReadingGroupId
     };
@@ -1953,7 +1945,7 @@ function scheduleLeagueCongratulationsJob() {
     try {
       const res = await sendLeagueCongratulations();
       if (res.sent > 0) {
-        console.log(`[LİG KUTLAMA] ${res.sent} kutlama mesajı gönderildi.`);
+        console.log(`[LİG KUTLAMA] ${res.name} (${res.league}) görseli gönderildi. Kalan: ${res.remaining}`);
       }
     } catch (error) {
       console.error('[LİG KUTLAMA] Zamanlayıcı hatası:', error.message);
