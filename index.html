@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>WhatsApp Anket & Analytics Dashboard</title>
 
   <!-- Google Fonts: Outfit & Inter -->
@@ -34,6 +34,13 @@
       padding: 0;
     }
 
+    html {
+      width: 100%;
+      overflow-x: hidden;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
+
     body {
       font-family: 'Inter', sans-serif;
       background-color: var(--bg-dark);
@@ -43,6 +50,9 @@
         radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.04) 0%, transparent 60%);
       color: var(--text-main);
       min-height: 100vh;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -119,6 +129,10 @@
       align-items: center;
       gap: 10px;
       font-size: 13px;
+      min-width: 0;
+    }
+
+    .group-info > div {
       min-width: 0;
     }
 
@@ -231,7 +245,6 @@
     }
 
     .phone-input {
-      flex: 1;
       background: rgba(0, 0, 0, 0.3);
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 12px;
@@ -689,6 +702,205 @@
         transform: translateY(0);
       }
     }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .modal-header h3,
+    .modal-header h4 {
+      min-width: 0;
+    }
+
+    .modal-header .btn {
+      flex-shrink: 0;
+    }
+
+    .picker-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .picker-display {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 10px 14px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 12px;
+    }
+
+    /* Mobil: paneller ekranı doldursun, yatay taşma sayfayı küçültmesin */
+    @media (max-width: 640px) {
+      body {
+        justify-content: flex-start;
+        align-items: stretch;
+        padding: 10px;
+        padding-bottom: max(12px, env(safe-area-inset-bottom));
+      }
+
+      .container {
+        max-width: 100%;
+      }
+
+      .main-card {
+        padding: 18px 14px;
+        border-radius: 18px;
+      }
+
+      .group-info {
+        width: 100%;
+      }
+
+      .group-info > div {
+        min-width: 0;
+      }
+
+      .group-banner {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+        padding: 12px 14px;
+      }
+
+      .group-banner-items {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .group-info-divider {
+        width: 100%;
+        height: 1px;
+      }
+
+      .group-name {
+        white-space: normal;
+      }
+
+      .badge {
+        align-self: flex-start;
+        width: fit-content;
+      }
+
+      .btn {
+        padding: 14px 12px;
+        min-height: 48px;
+        font-size: 14px;
+      }
+
+      .btn-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .phone-input-group {
+        flex-direction: column;
+      }
+
+      .pairing-code-display {
+        font-size: 22px;
+        letter-spacing: 3px;
+        width: 100%;
+        text-align: center;
+      }
+
+      .last-sent-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+      }
+
+      .toast {
+        left: 12px;
+        right: 12px;
+        bottom: 16px;
+      }
+
+      .modal-overlay {
+        padding: 0;
+        align-items: stretch;
+        justify-content: stretch;
+      }
+
+      .modal-card,
+      .modal-card-large {
+        max-width: 100% !important;
+        width: 100%;
+        height: 100vh;
+        height: 100dvh;
+        max-height: 100vh;
+        max-height: 100dvh;
+        border-radius: 0;
+        padding: 16px 14px;
+        padding-bottom: max(16px, env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+      }
+
+      .picker-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .picker-row .btn {
+        width: 100%;
+      }
+
+      .modal-actions {
+        flex-direction: column-reverse;
+        align-items: stretch;
+      }
+
+      .modal-actions .btn {
+        width: 100%;
+      }
+
+      #wpGroupPickerList,
+      #readingGroupPickerList,
+      #votesContentArea {
+        max-height: none !important;
+        flex: 1;
+        min-height: 0;
+      }
+
+      #votesContentArea {
+        overflow-x: auto;
+      }
+
+      .vote-summary-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+      }
+
+      .poll-header-row {
+        flex-wrap: wrap;
+      }
+
+      .modal-card > .config-card-box {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
+    }
   </style>
 </head>
 
@@ -780,7 +992,7 @@
   <!-- Grup Ayarlari Modal -->
   <div class="modal-overlay" id="groupSettingsModal">
     <div class="modal-card" style="max-width: 520px;">
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px;">
+      <div class="modal-header" style="margin-bottom: 18px;">
         <div>
           <h3 style="font-size: 18px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
             ⚙️ Grup Ayarları
@@ -812,9 +1024,8 @@
             style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">
             📚 RoTaKip Okuma Grubu:
           </label>
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <div
-              style="flex: 1; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 14px; min-height: 44px; display: flex; align-items: center; overflow: hidden;">
+          <div class="picker-row">
+            <div class="picker-display">
               <span id="gsReadingGroupDisplay"
                 style="font-size: 13px; color: var(--text-sub); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Henüz
                 grup seçilmedi</span>
@@ -833,9 +1044,8 @@
             style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">
             💬 Hedef WhatsApp Grubu:
           </label>
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <div
-              style="flex: 1; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 14px; min-height: 44px; display: flex; align-items: center; overflow: hidden;">
+          <div class="picker-row">
+            <div class="picker-display">
               <span id="gsWpGroupDisplay"
                 style="font-size: 13px; color: var(--text-sub); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Henüz
                 grup seçilmedi</span>
@@ -937,8 +1147,8 @@
           </div>
         </div>
 
-        <div
-          style="display: flex; justify-content: flex-end; margin-top: 6px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06);">
+        <div class="modal-actions"
+          style="margin-top: 6px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06);">
           <button class="btn btn-primary" style="padding: 10px 26px;" onclick="saveGroupSettingsUI()">
             💾 Kaydet
           </button>
@@ -951,7 +1161,7 @@
   <!-- WP Grup Secici Mini Modal -->
   <div class="modal-overlay" id="wpGroupPickerModal" style="z-index: 200;">
     <div class="modal-card" style="max-width: 420px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
         <h4 style="font-size: 15px; color: #fff;">💬 WhatsApp Grubu Seç</h4>
         <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
           onclick="closeWpGroupPicker()">✕</button>
@@ -965,7 +1175,7 @@
   <!-- Okuma Grubu Secici Mini Modal -->
   <div class="modal-overlay" id="readingGroupPickerModal" style="z-index: 200;">
     <div class="modal-card" style="max-width: 420px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
         <h4 style="font-size: 15px; color: #fff;">📚 Okuma Grubu Seç</h4>
         <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
           onclick="closeReadingGroupPicker()">✕</button>
@@ -979,7 +1189,7 @@
   <!-- Polls List & Settings Modal -->
   <div class="modal-overlay" id="pollsModal">
     <div class="modal-card" style="max-width: 520px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div class="modal-header">
         <h3 style="font-size: 18px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
           🗳️ Anket Ayarları
         </h3>
@@ -1021,7 +1231,7 @@
         </div>
 
         <!-- Save / Reset Actions -->
-        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px;">
+        <div class="modal-actions">
           <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px;"
             onclick="resetPollConfigUI()">Varsayılana Sıfırla</button>
           <button class="btn btn-primary" style="padding: 8px 20px; font-size: 13px; font-weight: 600;"
@@ -1035,7 +1245,7 @@
   <!-- Poll Votes Modal -->
   <div class="modal-overlay" id="votesModal">
     <div class="modal-card modal-card-large">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
         <h3 style="font-size: 18px; color: #fff;">🗳️ Anket Oyları (poll_votes)</h3>
         <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;"
           onclick="closeVotesModal()">✕ Kapat</button>

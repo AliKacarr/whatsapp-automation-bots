@@ -4,6 +4,7 @@ const fs = require('fs');
 
 // Inter Font Kaydı (Linux / Render ve tüm platformlarda Türkçe karakter desteği ve tipografi uyumu için)
 const fontRegularPath = path.join(__dirname, 'fonts', 'Inter-Regular.ttf');
+const fontMediumPath = path.join(__dirname, 'fonts', 'Inter-Medium.ttf');
 const fontSemiBoldPath = path.join(__dirname, 'fonts', 'Inter-SemiBold.ttf');
 
 if (fs.existsSync(fontRegularPath)) {
@@ -11,6 +12,17 @@ if (fs.existsSync(fontRegularPath)) {
     GlobalFonts.registerFromPath(fontRegularPath, 'Inter');
   } catch (e) {
     console.warn('⚠️ Inter-Regular font yüklenemedi:', e.message);
+  }
+}
+
+// Medium ayrı aile adı: SemiBold dosyası Regular kopyası; 600 sahte kalınlaşıyor, 400 ise çok ince kalıyor
+let FONT_MEDIUM_FAMILY = 'Inter';
+if (fs.existsSync(fontMediumPath)) {
+  try {
+    GlobalFonts.registerFromPath(fontMediumPath, 'Inter Medium');
+    FONT_MEDIUM_FAMILY = 'Inter Medium';
+  } catch (e) {
+    console.warn('⚠️ Inter-Medium font yüklenemedi:', e.message);
   }
 }
 
@@ -37,8 +49,80 @@ const LEAGUES = [
 ];
 
 const MONTH_NAMES_TR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haz', 'Tem', 'Ağu', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+const MONTH_NAMES_FULL_TR = [
+  'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
+];
 const DAY_NAMES_TR = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cts'];
 const FONT_FAMILY = 'Inter, "Segoe UI", Arial, sans-serif';
+
+function parseFiniteAmount(value) {
+  if (value == null || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(String(value).trim().replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function sumUserAmounts(statuses, userId, seasonKey) {
+  const uid = String(userId);
+  let sum = 0;
+  for (const s of statuses) {
+    if (String(s.userId) !== uid) continue;
+    if (seasonKey && String(s.date || '').slice(0, 7) !== seasonKey) continue;
+    const a = parseFiniteAmount(s.amount);
+    if (a != null) sum += a;
+  }
+  return sum;
+}
+
+function getWeekSeasonKey(dates) {
+  if (!dates || !dates.length) {
+    const n = new Date();
+    return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
+  }
+  const ym = String(dates[dates.length - 1]).slice(0, 7);
+  if (/^\d{4}-\d{2}$/.test(ym)) return ym;
+  const n = new Date();
+  return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
+}
+
+function getWeekSeasonMonthName(dates) {
+  const month = parseInt(getWeekSeasonKey(dates).slice(5, 7), 10);
+  if (month >= 1 && month <= 12) return MONTH_NAMES_FULL_TR[month - 1];
+  return MONTH_NAMES_FULL_TR[new Date().getMonth()];
+}
+
+function fitCanvasText(ctx, text, maxWidth) {
+  let display = String(text || '');
+  if (ctx.measureText(display).width <= maxWidth) return display;
+  while (display.length > 1 && ctx.measureText(display + '…').width > maxWidth) {
+    display = display.slice(0, -1);
+  }
+  return display + '…';
+}
+
+/** Sayı + vektörel ✔, yatay ortalı (public tablodaki "10 ✔" / "1500 ✔") */
+function drawTextWithCheck(ctx, cx, cy, text, options = {}) {
+  const {
+    font = `600 13px ${FONT_FAMILY}`,
+    color = '#2a9d49',
+    checkColor = color,
+    checkSize = 10,
+    checkStroke = 1.8,
+    gap = 3
+  } = options;
+  ctx.save();
+  ctx.font = font;
+  ctx.textBaseline = 'middle';
+  const str = String(text);
+  const numW = ctx.measureText(str).width;
+  const totalW = numW + gap + checkSize;
+  const startX = cx - totalW / 2;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = color;
+  ctx.fillText(str, startX, cy);
+  drawCheckmark(ctx, startX + numW + gap + checkSize / 2, cy, checkSize, checkColor, checkStroke);
+  ctx.restore();
+}
 
 /**
  * YYYY-MM-DD tarihinden önceki günü hesaplar
@@ -284,14 +368,22 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
 
   // 2. Kullanıcı veri haritalarını oluştur
   const statMap = {};
+  const amountMap = {};
   const userReadingCounts = {};
 
   for (const s of allStatuses) {
-    if (!statMap[s.userId]) statMap[s.userId] = {};
-    statMap[s.userId][s.date] = s.status;
+    const uid = String(s.userId);
+    if (!statMap[uid]) statMap[uid] = {};
+    statMap[uid][s.date] = s.status;
+
+    const amt = parseFiniteAmount(s.amount);
+    if (amt != null) {
+      if (!amountMap[uid]) amountMap[uid] = {};
+      amountMap[uid][s.date] = amt;
+    }
 
     if (s.status === 'okudum') {
-      userReadingCounts[s.userId] = (userReadingCounts[s.userId] || 0) + 1;
+      userReadingCounts[uid] = (userReadingCounts[uid] || 0) + 1;
     }
   }
 
@@ -318,17 +410,31 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
 
   const weekSuccessPct = totalMarkedWeek > 0 ? Math.round((totalOkudumWeek / totalMarkedWeek) * 100) : 0;
 
-  // 4. Sınırlandırılmış Orijinal RoTaKip Ölçüleri ve Daraltılmış Dış Margin (10px)
-  const nameColWidth = 145;
+  const seasonKey = getWeekSeasonKey(dates);
+  const seasonMonthName = getWeekSeasonMonthName(dates);
+  let grandAmountTotal = 0;
+  const userSeasonAmounts = {};
+  const userAllTimeAmounts = {};
+  for (const u of users) {
+    const uId = u._id.toString();
+    userSeasonAmounts[uId] = sumUserAmounts(allStatuses, uId, seasonKey);
+    userAllTimeAmounts[uId] = sumUserAmounts(allStatuses, uId);
+    grandAmountTotal += userSeasonAmounts[uId];
+  }
+
+  // 4. Sınırlandırılmış Orijinal RoTaKip Ölçüleri (name/day sütunları sabit)
+  // Dikey ölçü: public #trackerTable th/td padding 10px + iki satırlı hücreler
+  const nameColWidth = 148;
   const dayColWidth = 64;
+  const amountColWidth = 90;
   const streakColWidth = 88;
-  const rowHeight = 52;
-  const headerHeight = 54;
-  const statsRowHeight = 44;
-  const margin = 10; // Kenarlardaki boşluk sıkılaştırıldı (10px)
+  const rowHeight = 64;
+  const headerHeight = 62;
+  const statsRowHeight = 62;
+  const margin = 10;
 
   const userCount = Math.max(users.length, 1);
-  const width = margin * 2 + nameColWidth + (dayColWidth * 7) + streakColWidth;
+  const width = margin * 2 + nameColWidth + (dayColWidth * 7) + amountColWidth + streakColWidth;
   const height = margin * 2 + headerHeight + statsRowHeight + (userCount * rowHeight);
 
   const canvas = createCanvas(width, height);
@@ -341,18 +447,21 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   // --- 5. BAŞLIK SATIRI ÇİZİMİ ---
   const headerY = margin;
 
-  // Sütun 0: "Kullanıcılar" (145px)
+  // Sütun 0: "{Ay} Sezonu" (public col-season)
   ctx.fillStyle = '#f7f7f7';
   ctx.fillRect(margin, headerY, nameColWidth, headerHeight);
   ctx.strokeStyle = '#c7c7c7';
   ctx.lineWidth = 1;
   ctx.strokeRect(margin, headerY, nameColWidth, headerHeight);
 
-  ctx.fillStyle = '#333333';
-  ctx.font = `600 14px ${FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Kullanıcılar', margin + nameColWidth / 2, headerY + headerHeight / 2);
+  ctx.fillStyle = '#333333';
+  ctx.font = `600 15px ${FONT_FAMILY}`;
+  ctx.fillText(seasonMonthName, margin + nameColWidth / 2, headerY + 21);
+  ctx.fillStyle = '#222222';
+  ctx.font = `500 14px ${FONT_FAMILY}`;
+  ctx.fillText('Sezonu', margin + nameColWidth / 2, headerY + 42);
 
   // Gün Sütunları
   dates.forEach((dStr, idx) => {
@@ -371,45 +480,55 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
     const monthStr = MONTH_NAMES_TR[d.getUTCMonth()];
     const dayName = DAY_NAMES_TR[d.getUTCDay()];
 
-    // Gün & Ay (Sayı kısmı aya göre daha büyük)
+    // Gün & Ay — public .date-day / .date-month
     if (isToday) {
       ctx.fillStyle = '#505050';
-      ctx.font = `500 12.5px ${FONT_FAMILY}`;
-      ctx.fillText('Bugün', x + dayColWidth / 2, headerY + 18);
+      ctx.font = `600 14px ${FONT_FAMILY}`;
+      ctx.fillText('Bugün', x + dayColWidth / 2, headerY + 21);
     } else {
       const dayStr = `${dayNum}`;
       const monthStrText = ` ${monthStr}`;
 
-      ctx.font = `500 13px ${FONT_FAMILY}`;
+      ctx.font = `600 14px ${FONT_FAMILY}`;
       const dayW = ctx.measureText(dayStr).width;
-      ctx.font = `500 11px ${FONT_FAMILY}`;
+      ctx.font = `500 12px ${FONT_FAMILY}`;
       const monthW = ctx.measureText(monthStrText).width;
 
       const totalW = dayW + monthW;
       const startX = x + (dayColWidth - totalW) / 2;
 
       ctx.textAlign = 'left';
-      // Sayı kısmı (13px)
-      ctx.fillStyle = '#333333';
-      ctx.font = `500 13px ${FONT_FAMILY}`;
-      ctx.fillText(dayStr, startX, headerY + 18);
+      ctx.fillStyle = '#505050';
+      ctx.font = `600 14px ${FONT_FAMILY}`;
+      ctx.fillText(dayStr, startX, headerY + 21);
 
-      // Ay kısmı (11px)
-      ctx.fillStyle = '#666666';
-      ctx.font = `500 11px ${FONT_FAMILY}`;
-      ctx.fillText(monthStrText, startX + dayW, headerY + 18);
+      ctx.fillStyle = '#484848';
+      ctx.font = `500 12px ${FONT_FAMILY}`;
+      ctx.fillText(monthStrText, startX + dayW, headerY + 21);
 
       ctx.textAlign = 'center';
     }
 
-    // Gün adı (Mavi Renk #5b9bd5)
+    // Gün adı — public .day-of-week (#5b9bd5, 19px → 64px sütuna sığacak 16px)
     ctx.fillStyle = '#5b9bd5';
-    ctx.font = `600 14px ${FONT_FAMILY}`;
-    ctx.fillText(dayName, x + dayColWidth / 2, headerY + 38);
+    ctx.font = `600 16px ${FONT_FAMILY}`;
+    ctx.fillText(dayName, x + dayColWidth / 2, headerY + 44);
   });
 
-  // Okuma Serisi Sütun Başlığı
-  const streakX = margin + nameColWidth + (7 * dayColWidth);
+  // Toplam Okuma + Okuma Serisi sütun başlıkları
+  const amountX = margin + nameColWidth + (7 * dayColWidth);
+  const streakX = amountX + amountColWidth;
+
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(amountX, headerY, amountColWidth, headerHeight);
+  ctx.strokeStyle = '#c7c7c7';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(amountX, headerY, amountColWidth, headerHeight);
+  ctx.fillStyle = '#208a3c';
+  ctx.font = `600 14px ${FONT_FAMILY}`;
+  ctx.fillText('Toplam', amountX + amountColWidth / 2, headerY + 21);
+  ctx.fillText('Okuma', amountX + amountColWidth / 2, headerY + 42);
+
   ctx.fillStyle = '#f0f0f0';
   ctx.fillRect(streakX, headerY, streakColWidth, headerHeight);
   ctx.strokeStyle = '#c7c7c7';
@@ -417,9 +536,9 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.strokeRect(streakX, headerY, streakColWidth, headerHeight);
 
   ctx.fillStyle = '#ff1717';
-  ctx.font = `600 12px ${FONT_FAMILY}`;
-  ctx.fillText('Okuma', streakX + streakColWidth / 2, headerY + 18);
-  ctx.fillText('Serisi', streakX + streakColWidth / 2, headerY + 36);
+  ctx.font = `600 14px ${FONT_FAMILY}`;
+  ctx.fillText('Okuma', streakX + streakColWidth / 2, headerY + 21);
+  ctx.fillText('Serisi', streakX + streakColWidth / 2, headerY + 42);
 
   // --- 6. İSTATİSTİK SATIRI ÇİZİMİ ---
   const statsY = headerY + headerHeight;
@@ -430,7 +549,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.strokeRect(margin, statsY, nameColWidth, statsRowHeight);
 
   ctx.fillStyle = '#333333';
-  ctx.font = `600 13px ${FONT_FAMILY}`;
+  ctx.font = `600 15px ${FONT_FAMILY}`;
   ctx.fillText(`${users.length} kişi`, margin + nameColWidth / 2, statsY + statsRowHeight / 2);
 
   // Günlük Okuyan Sayıları (Örn: "7✔")
@@ -446,40 +565,38 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
     ctx.strokeRect(x, statsY, dayColWidth, statsRowHeight);
 
     const countStr = `${count}`;
-    ctx.font = `600 13px ${FONT_FAMILY}`;
-    const numW = ctx.measureText(countStr).width;
-    const checkSize = 10;
-    const gap = 3;
-    const totalW = numW + gap + checkSize;
-    const startX = x + (dayColWidth - totalW) / 2;
-
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#2a9d49';
-    ctx.fillText(countStr, startX, statsY + statsRowHeight / 2);
-    drawCheckmark(ctx, startX + numW + gap + checkSize / 2, statsY + statsRowHeight / 2, checkSize, '#2a9d49', 1.8);
-    ctx.textAlign = 'center';
+    drawTextWithCheck(ctx, x + dayColWidth / 2, statsY + statsRowHeight / 2, countStr, {
+      font: `600 15px ${FONT_FAMILY}`,
+      color: '#2a9d49',
+      checkSize: 11,
+      checkStroke: 1.8
+    });
   });
 
-  // Haftalık Başarı Oranı (Örn: "%57✔")
+  // Sezon toplamı (tüm kullanıcılar) — public .stats-footer-amount .col-read
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(amountX, statsY, amountColWidth, statsRowHeight);
+  ctx.strokeStyle = '#c7c7c7';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(amountX, statsY, amountColWidth, statsRowHeight);
+  drawTextWithCheck(ctx, amountX + amountColWidth / 2, statsY + statsRowHeight / 2, `${grandAmountTotal}`, {
+    font: `600 16px ${FONT_FAMILY}`,
+    color: '#208a3c',
+    checkSize: 13,
+    checkStroke: 2.1
+  });
+
+  // Haftalık Başarı Oranı (public formatWeekReadSuccessText: "%57", tik yok)
   ctx.fillStyle = '#f0f0f0';
   ctx.fillRect(streakX, statsY, streakColWidth, statsRowHeight);
   ctx.strokeStyle = '#c7c7c7';
   ctx.lineWidth = 1;
   ctx.strokeRect(streakX, statsY, streakColWidth, statsRowHeight);
 
-  const pctStr = `%${weekSuccessPct}`;
-  ctx.font = `600 13px ${FONT_FAMILY}`;
-  const numW = ctx.measureText(pctStr).width;
-  const checkSize = 11;
-  const gap = 3;
-  const totalW = numW + gap + checkSize;
-  const startX = streakX + (streakColWidth - totalW) / 2;
-
-  ctx.textAlign = 'left';
   ctx.fillStyle = '#208a3c';
-  ctx.fillText(pctStr, startX, statsY + statsRowHeight / 2);
-  drawCheckmark(ctx, startX + numW + gap + checkSize / 2, statsY + statsRowHeight / 2, checkSize, '#208a3c', 1.9);
+  ctx.font = `600 17px ${FONT_FAMILY}`;
   ctx.textAlign = 'center';
+  ctx.fillText(`%${weekSuccessPct}`, streakX + streakColWidth / 2, statsY + statsRowHeight / 2);
 
   // --- 7. KULLANICI SATIRLARI ÇİZİMİ ---
   for (let i = 0; i < users.length; i++) {
@@ -500,9 +617,9 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
     ctx.lineWidth = 1;
     ctx.strokeRect(margin, rowY, nameColWidth, rowHeight);
 
-    // Profil Resmi (15px yarıçap / 30px çap)
-    const avatarRadius = 15;
-    const avatarX = margin + 22;
+    // Profil Resmi (18px yarıçap / 36px çap)
+    const avatarRadius = 18;
+    const avatarX = margin + 25;
     const avatarY = rowY + rowHeight / 2;
 
     let imgLoaded = false;
@@ -564,24 +681,23 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
       drawDefaultAvatar(ctx, avatarX, avatarY, avatarRadius);
     }
 
-    // Kullanıcı Adı (500 13px)
-    ctx.fillStyle = '#000000';
-    ctx.font = `500 14px ${FONT_FAMILY}`;
+    // Kullanıcı adı + lig · tüm zamanlar miktarı (public .user-item-name / .user-item-meta)
+    const textX = margin + 48;
+    const maxTextWidth = nameColWidth - 54;
+    const nameY = rowY + rowHeight / 2 - 10;
+    const metaY = rowY + rowHeight / 2 + 11;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#000000';
+    ctx.font = `600 15px ${FONT_FAMILY}`;
+    const displayName = fitCanvasText(ctx, user.name || 'Kullanıcı', maxTextWidth);
+    ctx.fillText(displayName, textX, nameY);
 
-    let displayName = user.name || 'Kullanıcı';
-    const maxTextWidth = nameColWidth - 46;
-    while (displayName.length > 3 && ctx.measureText(displayName + '…').width > maxTextWidth) {
-      displayName = displayName.substring(0, displayName.length - 1);
-    }
-    if (displayName !== (user.name || 'Kullanıcı') && !displayName.endsWith('…')) {
-      displayName += '…';
-    }
-    ctx.fillText(displayName, margin + 44, avatarY);
+    const allTimeAmount = userAllTimeAmounts[uId] || 0;
 
-    // Günlük Okuma Durumları (Vektörel İkonlar)
+    // Günlük Okuma Durumları (Vektörel İkonlar; amount varsa "10 ✔")
     const userStatsMap = statMap[uId] || {};
+    const userAmounts = amountMap[uId] || {};
     ctx.textAlign = 'center';
 
     dates.forEach((dStr, idx) => {
@@ -590,14 +706,24 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
       const isToday = dStr === todayKey;
 
       if (st === 'okudum') {
-        ctx.fillStyle = 'rgb(76, 217, 100)'; // Orijinal RoTaKip Canlı Yeşil (#4cd964)
+        ctx.fillStyle = 'rgb(76, 217, 100)';
         ctx.fillRect(cellX, rowY, dayColWidth, rowHeight);
         ctx.strokeStyle = isToday ? '#5b9bd5' : '#c7c7c7';
         ctx.lineWidth = isToday ? 2 : 1;
         ctx.strokeRect(cellX, rowY, dayColWidth, rowHeight);
 
-        // İndigo Renk Vektörel Tik (Checkmark) Simgesi
-        drawCheckmark(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, 9, '#4b0082', 2.0);
+        const dayAmount = userAmounts[dStr];
+        if (dayAmount != null) {
+          drawTextWithCheck(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, `${dayAmount}`, {
+            font: `600 14px ${FONT_FAMILY}`,
+            color: '#4b0082',
+            checkColor: '#4b0082',
+            checkSize: 11,
+            checkStroke: 2.1
+          });
+        } else {
+          drawCheckmark(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, 11, '#4b0082', 2.0);
+        }
       } else if (st === 'okumadım') {
         ctx.fillStyle = 'rgb(255, 100, 60)'; // Orijinal RoTaKip Canlı Kırmızı (#ff643c)
         ctx.fillRect(cellX, rowY, dayColWidth, rowHeight);
@@ -606,7 +732,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
         ctx.strokeRect(cellX, rowY, dayColWidth, rowHeight);
 
         // Koyu Kırmızı Vektörel Çarpı (Cross) Simgesi
-        drawCross(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, 9, '#8b0000', 2.0);
+        drawCross(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, 11, '#8b0000', 2.0);
       } else {
         // Boş / İşaretlenmemiş
         ctx.fillStyle = isToday ? '#ebf3fa' : '#f8f9fa';
@@ -616,9 +742,45 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
         ctx.strokeRect(cellX, rowY, dayColWidth, rowHeight);
 
         // İndigo Moru Vektörel Eksi (Minus) Simgesi
-        drawMinus(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, 9, '#5e49b2', 2.0);
+        drawMinus(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, 10, '#5e49b2', 2.0);
       }
     });
+
+    // Lig · toplam okuma: kısaltma yok, gerekirse gün hücrelerinin üzerine tek satır taşar
+    const metaColor = 'rgba(0, 0, 0, 0.8)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = metaColor;
+    ctx.font = `13px "${FONT_MEDIUM_FAMILY}", ${FONT_FAMILY}`;
+    if (allTimeAmount > 0) {
+      const metaPrefix = `${league.name} · ${allTimeAmount}`;
+      ctx.fillText(metaPrefix, textX, metaY);
+      const prefixW = ctx.measureText(metaPrefix).width;
+      drawCheckmark(ctx, textX + prefixW + 7, metaY, 8, metaColor, 1.5);
+    } else {
+      ctx.fillText(league.name, textX, metaY);
+    }
+
+    // Toplam Okuma (sezon miktarı — public col-total-amount)
+    const seasonAmount = userSeasonAmounts[uId] || 0;
+    ctx.fillStyle = '#f3faf5';
+    ctx.fillRect(amountX, rowY, amountColWidth, rowHeight);
+    ctx.strokeStyle = '#c7c7c7';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(amountX, rowY, amountColWidth, rowHeight);
+    if (seasonAmount > 0) {
+      drawTextWithCheck(ctx, amountX + amountColWidth / 2, rowY + rowHeight / 2, `${seasonAmount}`, {
+        font: `700 17px ${FONT_FAMILY}`,
+        color: '#208a3c',
+        checkSize: 13,
+        checkStroke: 2.0
+      });
+    } else {
+      ctx.fillStyle = '#208a3c';
+      ctx.font = `600 17px ${FONT_FAMILY}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('—', amountX + amountColWidth / 2, rowY + rowHeight / 2);
+    }
 
     // Okuma Serisi (Streak)
     const streak = calculateUserStreak(userStatsMap, todayKey);
@@ -630,28 +792,28 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
 
     if (streak > 0) {
       const streakStr = `${streak}`;
-      ctx.font = `600 15px ${FONT_FAMILY}`;
+      ctx.font = `700 17px ${FONT_FAMILY}`;
       const numWidth = ctx.measureText(streakStr).width;
 
-      const starRadius = 8.5;
+      const starRadius = 9;
       const starDiameter = starRadius * 2;
       const gap = 5;
       const totalW = starDiameter + gap + numWidth;
       const startX = streakX + (streakColWidth - totalW) / 2;
 
       const starCX = startX + starRadius;
-      const textX = startX + starDiameter + gap;
+      const streakTextX = startX + starDiameter + gap;
 
       drawStar(ctx, starCX, rowY + rowHeight / 2, 5, starRadius, starRadius * 0.42);
 
       ctx.fillStyle = '#ff1717';
-      ctx.font = `600 15px ${FONT_FAMILY}`;
+      ctx.font = `700 17px ${FONT_FAMILY}`;
       ctx.textAlign = 'left';
-      ctx.fillText(streakStr, textX, rowY + rowHeight / 2);
+      ctx.fillText(streakStr, streakTextX, rowY + rowHeight / 2);
       ctx.textAlign = 'center';
     } else {
       ctx.fillStyle = '#ff1717';
-      ctx.font = `600 15px ${FONT_FAMILY}`;
+      ctx.font = `700 17px ${FONT_FAMILY}`;
       ctx.fillText('-', streakX + streakColWidth / 2, rowY + rowHeight / 2);
     }
   }
