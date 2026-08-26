@@ -573,6 +573,42 @@ async function getAllLidMappings(configKey) {
 }
 
 /**
+ * users_<readingGroupId> içindeki dolu phone alanlarını normalize edip unique dizi döner.
+ * @param {string} readingGroupId
+ * @returns {Promise<string[]>} bare telefonlar (örn. 905532148015)
+ */
+async function getReadingGroupPhones(readingGroupId) {
+  if (!dbEnabled || !db || !readingGroupId) return [];
+  const gid = String(readingGroupId).trim();
+  if (!gid) return [];
+  try {
+    const users = await db.collection(`users_${gid}`).find(
+      { phone: { $exists: true, $nin: [null, ''] } },
+      { projection: { phone: 1 } }
+    ).toArray();
+    const phones = new Set();
+    for (const u of users) {
+      const bare = String(u.phone || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+      if (/^\d{10,15}$/.test(bare)) phones.add(bare);
+    }
+    return [...phones];
+  } catch (e) {
+    console.error('❌ getReadingGroupPhones hatası:', e.message);
+    return [];
+  }
+}
+
+/**
+ * Bu configKey için lid_mappings'te kayıtlı telefon numaralarının set'ini döner.
+ * @param {string} [configKey]
+ * @returns {Promise<Set<string>>}
+ */
+async function getMappedPhonesByConfigKey(configKey) {
+  const map = await getAllLidMappings(configKey);
+  return new Set(Object.values(map).filter(Boolean).map(p => String(p).split('@')[0].split(':')[0]));
+}
+
+/**
  * Belirli bir configKey'e ait tüm LID eşleşmelerini siler.
  * Kullanıcı WhatsApp oturumunu kapattığında çağrılır.
  * @param {string} configKey - Konfigürasyon anahtarı
@@ -962,6 +998,8 @@ module.exports = {
   savePollConfig,
   saveLidMapping,
   getAllLidMappings,
+  getReadingGroupPhones,
+  getMappedPhonesByConfigKey,
   deleteLidMappingsByConfigKey,
   getReadingGroups,
   getRandomSentence,

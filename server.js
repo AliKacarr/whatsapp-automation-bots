@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getMonthlyReadingAmountTotal, getPendingCongratulations, completeCongratulation } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getMonthlyReadingAmountTotal, getPendingCongratulations, completeCongratulation } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 const { generateLeagueCongratulationImage } = require('./leagueCongratulationImage');
 
@@ -301,6 +301,29 @@ function deserializePollMessage(base64) {
 
 // LID -> Telefon numarası JID eşleşme önbelleği
 const lidToPhoneMap = new Map();
+/** Çözülemeyen LID'ler: her mesajda WA/users sync'i tekrarlamamak için */
+const unresolvedLidUntil = new Map();
+const UNRESOLVED_LID_TTL_MS = 30 * 60 * 1000;
+
+function markLidUnresolved(bareLid) {
+  if (!bareLid) return;
+  unresolvedLidUntil.set(String(bareLid), Date.now() + UNRESOLVED_LID_TTL_MS);
+}
+
+function clearLidUnresolved(bareLid) {
+  if (!bareLid) return;
+  unresolvedLidUntil.delete(String(bareLid));
+}
+
+function isLidTemporarilyUnresolved(bareLid) {
+  const until = unresolvedLidUntil.get(String(bareLid));
+  if (!until) return false;
+  if (Date.now() >= until) {
+    unresolvedLidUntil.delete(String(bareLid));
+    return false;
+  }
+  return true;
+}
 
 /**
  * Güvenli bir şekilde LID ve Telefon Numarası JID'lerini eşleştiren yardımcı fonksiyon.
@@ -324,6 +347,7 @@ function registerJidLidMapping(phoneCandidate, lidCandidate) {
   if (barePhone !== bareLid && /^\d{7,15}$/.test(barePhone)) {
     lidToPhoneMap.set(normLid, barePhone);
     lidToPhoneMap.set(bareLid, barePhone);
+    clearLidUnresolved(bareLid);
     const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : undefined;
     saveLidMapping(bareLid, barePhone, configKey);
   }
@@ -363,11 +387,14 @@ function processParticipantOrContact(item) {
   }
 }
 
-/**
- * Baileys istemcisinin dahil olduğu tüm gruplardaki katılımcıları tarayarak LID -> Phone haritasını günceller.
- */
-async function updateLidPhoneMapFromGroups() {
-  // Önce MongoDB'de önceden kalıcı kaydedilmiş tüm haritaları belleğe yükle
+function isLikelyLidValue(value) {
+  const s = String(value || '');
+  if (s.includes('@lid')) return true;
+  const bare = s.split('@')[0].split(':')[0];
+  return /^\d{13,20}$/.test(bare);
+}
+
+async function loadLidMappingsIntoMemory() {
   try {
     const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : undefined;
     const dbMap = await getAllLidMappings(configKey);
@@ -376,25 +403,107 @@ async function updateLidPhoneMapFromGroups() {
       lidToPhoneMap.set(lid, phone);
       lidToPhoneMap.set(lid + '@lid', phone);
     }
-  } catch (e) { }
+    return Object.keys(dbMap).length;
+  } catch (e) {
+    return 0;
+  }
+}
 
-  if (!sock || state.status !== 'READY') return;
-  try {
-    const groupsMap = await sock.groupFetchAllParticipating();
-    for (const gId in groupsMap) {
-      const group = groupsMap[gId];
-      if (group?.participants) {
-        for (const p of group.participants) {
-          processParticipantOrContact(p);
-        }
-      }
+/**
+ * Hedef okuma grubundaki users_ phone listesinden LID eşlemesi üretir (onWhatsApp).
+ * onlyMissing=true ise zaten mapped telefonları atlar.
+ */
+async function syncLidMappingsFromReadingGroupUsers({ onlyMissing = true } = {}) {
+  if (!sock || state.status !== 'READY' || typeof sock.onWhatsApp !== 'function') {
+    return { checked: 0, queried: 0, saved: 0 };
+  }
+
+  const readingGroupId = await getTargetReadingGroupId();
+  if (!readingGroupId) return { checked: 0, queried: 0, saved: 0 };
+
+  const phones = await getReadingGroupPhones(readingGroupId);
+  if (!phones.length) return { checked: 0, queried: 0, saved: 0 };
+
+  let toQuery = phones;
+  if (onlyMissing) {
+    const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : undefined;
+    const mapped = await getMappedPhonesByConfigKey(configKey);
+    // Bellekteki phone değerlerini de say
+    for (const phone of lidToPhoneMap.values()) {
+      const bare = String(phone || '').split('@')[0].split(':')[0];
+      if (bare) mapped.add(bare);
     }
-  } catch (e) { }
+    toQuery = phones.filter(p => !mapped.has(p));
+  }
+
+  let saved = 0;
+  const chunkSize = 20;
+  for (let i = 0; i < toQuery.length; i += chunkSize) {
+    const chunk = toQuery.slice(i, i + chunkSize);
+    try {
+      const results = await sock.onWhatsApp(...chunk);
+      for (const r of results || []) {
+        if (!r?.exists || !r.lid) continue;
+        const lidBare = String(r.lid).split('@')[0].split(':')[0];
+        const had = lidToPhoneMap.has(lidBare);
+        registerJidLidMapping(r.jid, r.lid);
+        if (!had && lidToPhoneMap.has(lidBare)) saved++;
+      }
+    } catch (e) {
+      console.warn('⚠️ onWhatsApp (users_) hatası:', e.message);
+    }
+  }
+
+  return { checked: phones.length, queried: toQuery.length, saved };
+}
+
+/**
+ * Sadece hedef WhatsApp grubunun metadata'sından LID↔phone eşlemesi (jid dolu üyeler).
+ */
+async function syncLidMappingsFromTargetWhatsAppGroup() {
+  if (!sock || state.status !== 'READY' || typeof sock.groupMetadata !== 'function') {
+    return { participants: 0, mapped: 0 };
+  }
+
+  const targetGroupId = await getTargetGroupId();
+  if (!targetGroupId) return { participants: 0, mapped: 0 };
+
+  try {
+    const meta = await sock.groupMetadata(targetGroupId);
+    const participants = meta?.participants || [];
+    let mapped = 0;
+    for (const p of participants) {
+      const beforeSize = lidToPhoneMap.size;
+      processParticipantOrContact(p);
+      if (lidToPhoneMap.size > beforeSize) mapped++;
+    }
+    return { participants: participants.length, mapped };
+  } catch (e) {
+    console.warn('⚠️ Hedef WA grubu metadata hatası:', e.message);
+    return { participants: 0, mapped: 0 };
+  }
+}
+
+/**
+ * lid_mappings'i hedef okuma grubu + hedef WA grubundan günceller.
+ * @param {{ reason?: string, onlyMissing?: boolean }} opts
+ */
+async function ensureLidMappings({ reason = 'manual', onlyMissing = true } = {}) {
+  if (reason === 'open' || reason === 'settings-save') {
+    unresolvedLidUntil.clear();
+  }
+  const loaded = await loadLidMappingsIntoMemory();
+  const fromUsers = await syncLidMappingsFromReadingGroupUsers({ onlyMissing });
+  const fromWa = await syncLidMappingsFromTargetWhatsAppGroup();
+  console.log(
+    `🔗 [lid_mappings:${reason}] bellek=${loaded}, users_ kontrol=${fromUsers.checked} sorgu=${fromUsers.queried} yeni=${fromUsers.saved}, hedefWA üye=${fromWa.participants} eşlenen=${fromWa.mapped}`
+  );
+  return { loaded, fromUsers, fromWa };
 }
 
 /**
  * JID adresini (LID veya s.whatsapp.net) temiz telefon numarasına dönüştürür.
- * (Örn: "905351234567@s.whatsapp.net" -> "905351234567", "114345098911975@lid" -> "905361234567")
+ * Çözülemez LID için null döner (LID'yi phone diye yazmaz).
  */
 async function getPhoneNumberFromJid(jid, groupId = null) {
   if (!jid) return null;
@@ -420,8 +529,15 @@ async function getPhoneNumberFromJid(jid, groupId = null) {
     return lidToPhoneMap.get(bare);
   }
 
-  // 3) Önbellekte yoksa katıldığımız gruplardaki üye listelerini çekip haritalandır
-  await updateLidPhoneMapFromGroups();
+  // Bilinen çözümsüz LID: her mesajda sync yapma
+  if ((isLikelyLidValue(jid) || isLikelyLidValue(bare)) && isLidTemporarilyUnresolved(bare)) {
+    return null;
+  }
+
+  // 3) Eksik users_ telefonları + sadece hedef WA grubu
+  if (isLikelyLidValue(jid) || isLikelyLidValue(bare)) {
+    await ensureLidMappings({ reason: 'vote-miss', onlyMissing: true });
+  }
 
   if (lidToPhoneMap.has(normalized)) {
     return lidToPhoneMap.get(normalized);
@@ -430,8 +546,11 @@ async function getPhoneNumberFromJid(jid, groupId = null) {
     return lidToPhoneMap.get(bare);
   }
 
-  // Çözülemezse bare ID'yi dön
-  return bare;
+  if (isLikelyLidValue(jid) || isLikelyLidValue(bare)) {
+    markLidUnresolved(bare);
+  }
+
+  return null;
 }
 
 /**
@@ -590,8 +709,8 @@ async function processPollVoteUpdate(pollUpdateMsg) {
     return;
   }
 
-  // Katılımcı haritasını yenile
-  await updateLidPhoneMapFromGroups();
+  // Katılımcı haritasını belleğe yükle (eksik LID çözümü getPhoneNumberFromJid içinde)
+  await loadLidMappingsIntoMemory();
 
   // Tüm olası katılımcı/oluşturucu JID kaynaklarını topla (LID, PN JID, me JID, key participant vb.)
   const jidSources = [
@@ -682,7 +801,12 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   const rawLid = (activeVoterJid || '').split('@')[0].split(':')[0];
   const pushName = pollUpdateMsg.pushName || pollUpdateMsg.verifiedBizName || (isFromMe ? (sock?.user?.name || 'Kendi Oyunuz') : null);
 
-  console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone} (JID: ${activeVoterJid}) → Seçimler:`, selectedOptionNames);
+  console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone || 'ÇÖZÜLEMEDİ'} (JID: ${activeVoterJid}) → Seçimler:`, selectedOptionNames);
+
+  if (!voterPhone) {
+    console.warn(`⚠️ Oy kaydedilmedi — LID telefon numarasına çözülemedi (JID: ${activeVoterJid})`);
+    return;
+  }
 
   const currentReadingGroupId = await getTargetReadingGroupId();
   const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
@@ -787,7 +911,10 @@ async function processReadingMessage(msg) {
   const participantJid = msg.key?.participant || msg.participant || msg.key?.remoteJid;
   const rawLid = participantJid ? (jidNormalizedUser ? jidNormalizedUser(participantJid) : participantJid).split('@')[0].split(':')[0] : null;
   const voterPhone = await getPhoneNumberFromJid(participantJid, incomingGroupId);
-  if (!voterPhone) return;
+  if (!voterPhone) {
+    console.warn(`⚠️ Okuma mesajı kaydedilmedi — LID telefon numarasına çözülemedi (JID: ${participantJid})`);
+    return;
+  }
 
   const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
   const readingGroupId = await getTargetReadingGroupId();
@@ -1108,6 +1235,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
             if (configKey) {
               await deleteLidMappingsByConfigKey(configKey);
               lidToPhoneMap.clear();
+              unresolvedLidUntil.clear();
             }
           }
           if (sock) {
@@ -1141,7 +1269,9 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
         }
 
         fetchTargetGroupInfo();
-        updateLidPhoneMapFromGroups();
+        ensureLidMappings({ reason: 'open', onlyMissing: true }).catch((e) => {
+          console.warn('⚠️ lid_mappings open sync hatası:', e.message);
+        });
         try {
           fs.writeFileSync(AUTH_FILE, JSON.stringify(state.userInfo, null, 2), 'utf-8');
         } catch (e) { }
@@ -1291,6 +1421,10 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
             for (const voterJid of voters) {
               const voterPhone = await getPhoneNumberFromJid(voterJid, key.id);
               const rawLid = (voterJid || '').split('@')[0].split(':')[0];
+              if (!voterPhone) {
+                console.warn(`⚠️ Aggregate oy atlandı — LID çözülemedi (JID: ${voterJid})`);
+                continue;
+              }
               allCurrentVoters.add(voterPhone);
               await saveVote({
                 pollId: key.id,
@@ -1375,6 +1509,12 @@ async function restartWhatsAppClient() {
   }
   if (isDBEnabled() && getDB()) {
     try { await getDB().collection(getAuthCollectionName()).deleteMany({}); } catch (e) { }
+    const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+    if (configKey) {
+      await deleteLidMappingsByConfigKey(configKey);
+      lidToPhoneMap.clear();
+      unresolvedLidUntil.clear();
+    }
   }
   if (sock) {
     try {
@@ -2233,6 +2373,9 @@ app.post('/api/poll-config', async (req, res) => {
     if (result.success) {
       if (sock && state.status === 'READY') {
         fetchTargetGroupInfo();
+        ensureLidMappings({ reason: 'settings-save', onlyMissing: true }).catch((e) => {
+          console.warn('⚠️ lid_mappings settings-save sync hatası:', e.message);
+        });
       }
       res.json(result);
     } else {
