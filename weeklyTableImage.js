@@ -15,7 +15,6 @@ if (fs.existsSync(fontRegularPath)) {
   }
 }
 
-// Medium ayrı aile adı: SemiBold dosyası Regular kopyası; 600 sahte kalınlaşıyor, 400 ise çok ince kalıyor
 let FONT_MEDIUM_FAMILY = 'Inter';
 if (fs.existsSync(fontMediumPath)) {
   try {
@@ -26,9 +25,11 @@ if (fs.existsSync(fontMediumPath)) {
   }
 }
 
-if (fs.existsSync(fontSemiBoldPath) && fontSemiBoldPath !== fontRegularPath) {
+let FONT_SEMIBOLD_FAMILY = FONT_MEDIUM_FAMILY;
+if (fs.existsSync(fontSemiBoldPath)) {
   try {
-    GlobalFonts.registerFromPath(fontSemiBoldPath, 'Inter');
+    GlobalFonts.registerFromPath(fontSemiBoldPath, 'Inter SemiBold');
+    FONT_SEMIBOLD_FAMILY = 'Inter SemiBold';
   } catch (e) {
     console.warn('⚠️ Inter-SemiBold font yüklenemedi:', e.message);
   }
@@ -55,16 +56,22 @@ const MONTH_NAMES_FULL_TR = [
 ];
 const DAY_NAMES_TR = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cts'];
 const FONT_FAMILY = 'Inter, "Segoe UI", Arial, sans-serif';
+const FONT_MEDIUM = `"${FONT_MEDIUM_FAMILY}", ${FONT_FAMILY}`;
+const FONT_SEMIBOLD = `"${FONT_SEMIBOLD_FAMILY}", ${FONT_MEDIUM}`;
 
-// WhatsApp sohbet balonu ~1600px civarına sıkıştırır. 1x tablo (~800px) bulanık görünür.
-const RENDER_SCALE = 2;
-const JPEG_QUALITY = 92;
-const THUMB_MAX_EDGE = 256;
+// WhatsApp sohbet balonu görseli küçültür; 3x + PNG metin kenarlarını keskin tutar.
+// jpegThumbnail Baileys önizlemesi için küçük JPEG kalır.
+const RENDER_SCALE = 3;
 const THUMB_JPEG_QUALITY = 82;
+const THUMB_MAX_EDGE = 256;
 const THUMB_MAX_BYTES = 64 * 1024;
 
-function encodeJpeg(canvas, quality = JPEG_QUALITY) {
+function encodeJpeg(canvas, quality = THUMB_JPEG_QUALITY) {
   return canvas.toBuffer('image/jpeg', quality);
+}
+
+function encodePng(canvas) {
+  return canvas.toBuffer('image/png');
 }
 
 function makeJpegThumbnail(sourceCanvas) {
@@ -135,7 +142,7 @@ function fitCanvasText(ctx, text, maxWidth) {
 /** Sayı + vektörel ✔, yatay ortalı (public tablodaki "10 ✔" / "1500 ✔") */
 function drawTextWithCheck(ctx, cx, cy, text, options = {}) {
   const {
-    font = `600 13px ${FONT_FAMILY}`,
+    font = `600 13px ${FONT_SEMIBOLD}`,
     color = '#2a9d49',
     checkColor = color,
     checkSize = 10,
@@ -492,10 +499,10 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#333333';
-  ctx.font = `600 15px ${FONT_FAMILY}`;
+  ctx.font = `600 15px ${FONT_SEMIBOLD}`;
   ctx.fillText(seasonMonthName, margin + nameColWidth / 2, headerY + 21);
   ctx.fillStyle = '#222222';
-  ctx.font = `500 14px ${FONT_FAMILY}`;
+  ctx.font = `500 14px ${FONT_MEDIUM}`;
   ctx.fillText('Sezonu', margin + nameColWidth / 2, headerY + 42);
 
   // Gün Sütunları
@@ -518,15 +525,15 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
     // Gün & Ay — public .date-day / .date-month
     if (isToday) {
       ctx.fillStyle = '#505050';
-      ctx.font = `600 14px ${FONT_FAMILY}`;
+      ctx.font = `600 14px ${FONT_SEMIBOLD}`;
       ctx.fillText('Bugün', x + dayColWidth / 2, headerY + 21);
     } else {
       const dayStr = `${dayNum}`;
       const monthStrText = ` ${monthStr}`;
 
-      ctx.font = `600 14px ${FONT_FAMILY}`;
+      ctx.font = `600 14px ${FONT_SEMIBOLD}`;
       const dayW = ctx.measureText(dayStr).width;
-      ctx.font = `500 12px ${FONT_FAMILY}`;
+      ctx.font = `500 12px ${FONT_MEDIUM}`;
       const monthW = ctx.measureText(monthStrText).width;
 
       const totalW = dayW + monthW;
@@ -534,11 +541,11 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
 
       ctx.textAlign = 'left';
       ctx.fillStyle = '#505050';
-      ctx.font = `600 14px ${FONT_FAMILY}`;
+      ctx.font = `600 14px ${FONT_SEMIBOLD}`;
       ctx.fillText(dayStr, startX, headerY + 21);
 
       ctx.fillStyle = '#484848';
-      ctx.font = `500 12px ${FONT_FAMILY}`;
+      ctx.font = `500 12px ${FONT_MEDIUM}`;
       ctx.fillText(monthStrText, startX + dayW, headerY + 21);
 
       ctx.textAlign = 'center';
@@ -546,7 +553,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
 
     // Gün adı — public .day-of-week (#5b9bd5, 19px → 64px sütuna sığacak 16px)
     ctx.fillStyle = '#5b9bd5';
-    ctx.font = `600 16px ${FONT_FAMILY}`;
+    ctx.font = `600 16px ${FONT_SEMIBOLD}`;
     ctx.fillText(dayName, x + dayColWidth / 2, headerY + 44);
   });
 
@@ -560,7 +567,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.lineWidth = 1;
   ctx.strokeRect(amountX, headerY, amountColWidth, headerHeight);
   ctx.fillStyle = '#208a3c';
-  ctx.font = `600 14px ${FONT_FAMILY}`;
+  ctx.font = `600 14px ${FONT_SEMIBOLD}`;
   ctx.fillText('Toplam', amountX + amountColWidth / 2, headerY + 21);
   ctx.fillText('Okuma', amountX + amountColWidth / 2, headerY + 42);
 
@@ -571,7 +578,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.strokeRect(streakX, headerY, streakColWidth, headerHeight);
 
   ctx.fillStyle = '#ff1717';
-  ctx.font = `600 14px ${FONT_FAMILY}`;
+  ctx.font = `600 14px ${FONT_SEMIBOLD}`;
   ctx.fillText('Okuma', streakX + streakColWidth / 2, headerY + 21);
   ctx.fillText('Serisi', streakX + streakColWidth / 2, headerY + 42);
 
@@ -584,7 +591,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.strokeRect(margin, statsY, nameColWidth, statsRowHeight);
 
   ctx.fillStyle = '#333333';
-  ctx.font = `600 15px ${FONT_FAMILY}`;
+  ctx.font = `600 15px ${FONT_SEMIBOLD}`;
   ctx.fillText(`${users.length} kişi`, margin + nameColWidth / 2, statsY + statsRowHeight / 2);
 
   // Günlük Okuyan Sayıları (Örn: "7✔")
@@ -601,7 +608,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
 
     const countStr = `${count}`;
     drawTextWithCheck(ctx, x + dayColWidth / 2, statsY + statsRowHeight / 2, countStr, {
-      font: `600 15px ${FONT_FAMILY}`,
+      font: `600 15px ${FONT_SEMIBOLD}`,
       color: '#2a9d49',
       checkSize: 11,
       checkStroke: 1.8
@@ -615,7 +622,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.lineWidth = 1;
   ctx.strokeRect(amountX, statsY, amountColWidth, statsRowHeight);
   drawTextWithCheck(ctx, amountX + amountColWidth / 2, statsY + statsRowHeight / 2, `${grandAmountTotal}`, {
-    font: `600 16px ${FONT_FAMILY}`,
+    font: `600 16px ${FONT_SEMIBOLD}`,
     color: '#208a3c',
     checkSize: 13,
     checkStroke: 2.1
@@ -629,7 +636,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.strokeRect(streakX, statsY, streakColWidth, statsRowHeight);
 
   ctx.fillStyle = '#208a3c';
-  ctx.font = `600 17px ${FONT_FAMILY}`;
+  ctx.font = `600 17px ${FONT_SEMIBOLD}`;
   ctx.textAlign = 'center';
   ctx.fillText(`%${weekSuccessPct}`, streakX + streakColWidth / 2, statsY + statsRowHeight / 2);
 
@@ -724,7 +731,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#000000';
-    ctx.font = `600 15px ${FONT_FAMILY}`;
+    ctx.font = `600 15px ${FONT_SEMIBOLD}`;
     const displayName = fitCanvasText(ctx, user.name || 'Kullanıcı', maxTextWidth);
     ctx.fillText(displayName, textX, nameY);
 
@@ -750,7 +757,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
         const dayAmount = userAmounts[dStr];
         if (dayAmount != null) {
           drawTextWithCheck(ctx, cellX + dayColWidth / 2, rowY + rowHeight / 2, `${dayAmount}`, {
-            font: `600 14px ${FONT_FAMILY}`,
+            font: `600 14px ${FONT_SEMIBOLD}`,
             color: '#4b0082',
             checkColor: '#4b0082',
             checkSize: 11,
@@ -786,7 +793,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = metaColor;
-    ctx.font = `13px "${FONT_MEDIUM_FAMILY}", ${FONT_FAMILY}`;
+    ctx.font = `500 13px ${FONT_MEDIUM}`;
     if (allTimeAmount > 0) {
       const metaPrefix = `${league.name} · ${allTimeAmount}`;
       ctx.fillText(metaPrefix, textX, metaY);
@@ -805,14 +812,14 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
     ctx.strokeRect(amountX, rowY, amountColWidth, rowHeight);
     if (seasonAmount > 0) {
       drawTextWithCheck(ctx, amountX + amountColWidth / 2, rowY + rowHeight / 2, `${seasonAmount}`, {
-        font: `700 17px ${FONT_FAMILY}`,
+        font: `700 17px ${FONT_SEMIBOLD}`,
         color: '#208a3c',
         checkSize: 13,
         checkStroke: 2.0
       });
     } else {
       ctx.fillStyle = '#208a3c';
-      ctx.font = `600 17px ${FONT_FAMILY}`;
+      ctx.font = `600 17px ${FONT_SEMIBOLD}`;
       ctx.textAlign = 'center';
       ctx.fillText('—', amountX + amountColWidth / 2, rowY + rowHeight / 2);
     }
@@ -827,7 +834,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
 
     if (streak > 0) {
       const streakStr = `${streak}`;
-      ctx.font = `700 17px ${FONT_FAMILY}`;
+      ctx.font = `700 17px ${FONT_SEMIBOLD}`;
       const numWidth = ctx.measureText(streakStr).width;
 
       const starRadius = 9;
@@ -842,13 +849,13 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
       drawStar(ctx, starCX, rowY + rowHeight / 2, 5, starRadius, starRadius * 0.42);
 
       ctx.fillStyle = '#ff1717';
-      ctx.font = `700 17px ${FONT_FAMILY}`;
+      ctx.font = `700 17px ${FONT_SEMIBOLD}`;
       ctx.textAlign = 'left';
       ctx.fillText(streakStr, streakTextX, rowY + rowHeight / 2);
       ctx.textAlign = 'center';
     } else {
       ctx.fillStyle = '#ff1717';
-      ctx.font = `700 17px ${FONT_FAMILY}`;
+      ctx.font = `700 17px ${FONT_SEMIBOLD}`;
       ctx.fillText('-', streakX + streakColWidth / 2, rowY + rowHeight / 2);
     }
   }
@@ -869,8 +876,8 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   }
 
   return {
-    buffer: encodeJpeg(canvas, JPEG_QUALITY),
-    mimetype: 'image/jpeg',
+    buffer: encodePng(canvas),
+    mimetype: 'image/png',
     jpegThumbnail,
     width: canvas.width,
     height: canvas.height,
