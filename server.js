@@ -2057,11 +2057,19 @@ async function sendLeagueCongratulations(options = {}) {
     }
 
     if (imagePayload?.buffer) {
-      await sock.sendMessage(targetWhatsAppJid, {
+      const imageMessage = {
         image: imagePayload.buffer,
         caption: imagePayload.caption,
         mimetype: imagePayload.mimetype || 'image/png'
-      });
+      };
+      if (imagePayload.jpegThumbnail) {
+        imageMessage.jpegThumbnail = imagePayload.jpegThumbnail;
+      }
+      if (imagePayload.width && imagePayload.height) {
+        imageMessage.width = imagePayload.width;
+        imageMessage.height = imagePayload.height;
+      }
+      await sock.sendMessage(targetWhatsAppJid, imageMessage);
     } else {
       const leagueLower = doc.league ? String(doc.league).toLocaleLowerCase('tr-TR') : 'yeni';
       const leagueMin = doc.leagueMin !== undefined && doc.leagueMin !== null ? doc.leagueMin : '';

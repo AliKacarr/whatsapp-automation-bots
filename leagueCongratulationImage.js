@@ -27,6 +27,42 @@ const TEMPLATE_DIR = path.join(__dirname, 'league-templates');
 const PARTY_POPPER_PATH = path.join(__dirname, 'assets', 'party-popper.png');
 const STAR_PATH = path.join(__dirname, 'assets', 'star.png');
 
+// WhatsApp sohbet balonu küçültür; 2x + PNG metin/çizgi kenarlarını keskin tutar.
+// (Mantıksal boyut zaten 1080 — haftalık tablodaki 3x ile benzer çıktı boyutu)
+const RENDER_SCALE = 2;
+const THUMB_JPEG_QUALITY = 82;
+const THUMB_MAX_EDGE = 256;
+const THUMB_MAX_BYTES = 64 * 1024;
+
+function encodeJpeg(canvas, quality = THUMB_JPEG_QUALITY) {
+  return canvas.toBuffer('image/jpeg', quality);
+}
+
+function encodePng(canvas) {
+  return canvas.toBuffer('image/png');
+}
+
+function makeJpegThumbnail(sourceCanvas) {
+  const scale = THUMB_MAX_EDGE / Math.max(sourceCanvas.width, sourceCanvas.height);
+  const tw = Math.max(1, Math.round(sourceCanvas.width * scale));
+  const th = Math.max(1, Math.round(sourceCanvas.height * scale));
+  const thumb = createCanvas(tw, th);
+  const tctx = thumb.getContext('2d');
+  tctx.imageSmoothingEnabled = true;
+  if (tctx.imageSmoothingQuality) tctx.imageSmoothingQuality = 'high';
+  tctx.fillStyle = '#0b0f19';
+  tctx.fillRect(0, 0, tw, th);
+  tctx.drawImage(sourceCanvas, 0, 0, tw, th);
+
+  let quality = THUMB_JPEG_QUALITY;
+  let buf = encodeJpeg(thumb, quality);
+  while (buf.length > THUMB_MAX_BYTES && quality > 70) {
+    quality -= 4;
+    buf = encodeJpeg(thumb, quality);
+  }
+  return buf.length <= THUMB_MAX_BYTES ? buf : null;
+}
+
 const LEAGUES = [
   { min: 0, max: 5, name: 'Bronz', slug: 'bronz', file: 'bronz.webp', accent: '#e2b07a' },
   { min: 5, max: 10, name: 'Gümüş', slug: 'gumus', file: 'gumus.webp', accent: '#c5c9d1' },
@@ -268,8 +304,11 @@ async function generateLeagueCongratulationImage({ name, league, leagueMin }) {
 
   const width = 1080;
   const height = 1350;
-  const canvas = createCanvas(width, height);
+  const canvas = createCanvas(Math.round(width * RENDER_SCALE), Math.round(height * RENDER_SCALE));
   const ctx = canvas.getContext('2d');
+  ctx.scale(RENDER_SCALE, RENDER_SCALE);
+  ctx.imageSmoothingEnabled = true;
+  if (ctx.imageSmoothingQuality) ctx.imageSmoothingQuality = 'high';
 
   ctx.fillStyle = '#0b0f19';
   ctx.fillRect(0, 0, width, height);
@@ -433,15 +472,25 @@ async function generateLeagueCongratulationImage({ name, league, leagueMin }) {
   }
   ctx.textAlign = 'center';
 
-  ctx.font = `500 24px ${medium}`;
+  ctx.font = `500 25px ${medium}`;
   ctx.fillStyle = 'rgba(255,255,255,0.62)';
   ctx.fillText('Toplam okuma gününüz arttıkça daha yüksek liglere yükselirsiniz.', width / 2, 1312);
 
   const caption = `Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉\n\n⚡${daysLabel} - *${displayName}* ${resolved.name.toLocaleLowerCase('tr-TR')} lige yükseldi.`;
 
+  let jpegThumbnail = null;
+  try {
+    jpegThumbnail = makeJpegThumbnail(canvas);
+  } catch (e) {
+    console.warn('⚠️ Lig kutlama jpegThumbnail üretilemedi:', e.message);
+  }
+
   return {
-    buffer: canvas.toBuffer('image/png'),
+    buffer: encodePng(canvas),
     mimetype: 'image/png',
+    jpegThumbnail,
+    width: canvas.width,
+    height: canvas.height,
     leagueName: resolved.name,
     caption
   };
