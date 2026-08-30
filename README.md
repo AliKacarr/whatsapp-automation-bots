@@ -17,7 +17,7 @@ Bu proje, WhatsApp gruplarında **otomatik anket gönderme**, **mesaj gönderme*
 - **Veri Saklama:** Kullanıcıların **anlık anket oylamaları** MongoDB veri tabanında kalıcı olarak saklanır.
 - **Haftalık Okuma Tablosu:** Her hafta grubun okuma istatistiklerini içeren tablo görseli otomatik olarak oluşturulur ve gruba gönderilir.
 - **Okuma Serisi Takibi:** Kullanıcıların kesintisiz okuma serileri (🔥 streak) hesaplanır ve haftalık raporda gösterilir.
-- **Modüler Özellik Yönetimi:** Anket gönderimi, günün sözü, haftalık tablo/rapor gönderimi, oy tespiti ve metin okuma kaydı gibi özellikleri grup bazında bağımsız olarak aktif/pasif edebilirsiniz.
+- **Modüler Özellik Yönetimi:** Anket gönderimi, rastgele vecize, haftalık tablo/rapor gönderimi, oy tespiti ve metin okuma kaydı gibi özellikleri grup bazında bağımsız olarak aktif/pasif edebilirsiniz.
 - **Çoklu Bot Desteği:** Aynı veritabanını paylaşan birden fazla bot, `CONFIG_KEY` sayesinde birbirinden bağımsız çalışır.
 - **Canlı Web Yönetim Paneli:** Arayüzden anket sonuçlarını görüntüleyebilir, grup/özellik ayarlarını düzenleyebilir ve anket gönderimini tetikleyebilirsiniz.
 
@@ -93,7 +93,7 @@ Projeyi kendi bilgisayarınızda geliştirme veya test amacıyla çalıştırmak
 Botun otomatik işlevlerini ve anket ayarlarını iki farklı şekilde güncelleyebilirsiniz:
 
 - **Yönetim Panelinden (Özellik Yönetimi & Anket Ayarları):**
-  - **Grup Ayarları > Özellik Yönetimi:** Günlük anket gönderimi, günün sözü gönderimi, haftalık okuma raporu, haftalık tablo görseli, oy tespiti ve metin okuma kaydı gibi özellikleri bağımsız olarak tek tıkla aktif/pasif edebilirsiniz.
+  - **Grup Ayarları > Özellik Yönetimi:** Günlük anket gönderimi, rastgele vecize gönderimi, haftalık okuma raporu, haftalık tablo görseli, oy tespiti ve metin okuma kaydı gibi özellikleri bağımsız olarak tek tıkla aktif/pasif edebilirsiniz.
   - **Anket Ayarları:** Anket başlığı şablonunu (`{{date}}`), anket seçeneklerini, hedef WhatsApp grubu JID bilgisini ve okuma grubu ID bilgisini arayüzden doğrudan değiştirebilirsiniz.
 - **Dosya Üzerinden (`server.js`):** `scheduleWhatsAppPollJob` fonksiyonundaki cron saat zamanlamasını (varsayılan: `0 9 * * *` - her gün 09:00 TSİ) ile `DEFAULT_POLL_OPTIONS` ve `getDailyPollTitle` fonksiyonlarını doğrudan kod içerisinden değiştirebilirsiniz.
 
@@ -105,7 +105,7 @@ Botun otomatik işlevlerini ve anket ayarlarını iki farklı şekilde güncelle
 | :--- | :--- | :--- |
 | Günlük Anket | Her gün 09:00 (TSİ) | Hedef gruba otomatik okuma anketi gönderir |
 | Motivasyon Cümlesi | Salı ve Perşembe 22:30 (TSİ) | Veritabanından rastgele bir cümle seçip gruba gönderir |
-| Haftalık Okuma Raporu | Cumartesi 22:30 (TSİ) | Okuma serisi ve istatistik özetini metin olarak gönderir |
+| Okuma Serisi Raporu | Cumartesi 22:30 (TSİ) | Okuma serisi ve istatistik özetini metin olarak gönderir |
 | Haftalık Tablo Görseli | Pazartesi 22:30 (TSİ) | Haftalık okuma tablosunu görsel olarak oluşturup gönderir |
 
 ---
@@ -184,7 +184,7 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 - `groupId`: Anketlerin gönderileceği WhatsApp grubu JID adresi
 - `readingGroupId`: RoTaKip veritabanındaki okuma grubu kodu (`users_<readingGroupId>` ve `readingstatuses_<readingGroupId>` koleksiyonlarını belirler)
 - `featurePollEnabled`: Günlük anket gönderiminin aktif/pasif durumu
-- `featureSentenceEnabled`: Günün sözü / motivasyon cümlesi gönderiminin aktif/pasif durumu
+- `featureSentenceEnabled`: Rastgele vecize / motivasyon cümlesi gönderiminin aktif/pasif durumu
 - `featureWeeklyReportEnabled`: Haftalık okuma serisi raporunun aktif/pasif durumu
 - `featureWeeklyTableEnabled`: Haftalık okuma tablosu görselinin aktif/pasif durumu
 - `featureVoteTrackingEnabled`: WhatsApp anket oylarının tespit edilip `poll_votes` koleksiyonuna kaydedilmesinin aktif/pasif durumu

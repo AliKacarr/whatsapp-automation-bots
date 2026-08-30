@@ -613,7 +613,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
 
   // Oy tespiti özelliği pasifse oyları işleme
   const _voteConfig = await getPollConfig();
-  if (_voteConfig?.features?.voteTrackingEnabled === false) return;
+  if (_voteConfig?.features?.voteTrackingEnabled !== true) return;
 
   const pollUpdate = pollUpdateMsg.message?.pollUpdateMessage;
   if (!pollUpdate) return;
@@ -890,7 +890,7 @@ async function processReadingMessage(msg) {
   if (!isDBEnabled() || !sock) return;
 
   const _cfg = await getPollConfig();
-  if (_cfg?.features?.messageReadingEnabled === false) return;
+  if (_cfg?.features?.messageReadingEnabled !== true) return;
 
   const incomingGroupId = msg.key?.remoteJid;
   const targetGroupId = await getTargetGroupId();
@@ -1366,7 +1366,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
 
       // Oy tespiti özelliği pasifse oyları işleme
       const _updateVoteConfig = await getPollConfig();
-      if (_updateVoteConfig?.features?.voteTrackingEnabled === false) return;
+      if (_updateVoteConfig?.features?.voteTrackingEnabled !== true) return;
 
       for (const item of updates) {
         const key = item.key;
@@ -1567,6 +1567,14 @@ async function sendWhatsAppPoll(options = {}) {
     ? config.options
     : DEFAULT_POLL_OPTIONS;
 
+  if (pollOptions.length < 2 || pollOptions.length > 12) {
+    return {
+      success: false,
+      status: state.status,
+      message: `Anket seçenekleri 2 ile 12 arasında olmalıdır. (Mevcut: ${pollOptions.length})`
+    };
+  }
+
   // Anket seçenekleri aynı olamaz kontrolü
   const seenPollOptions = new Set();
   const duplicatePollOptions = [];
@@ -1636,7 +1644,7 @@ async function sendWhatsAppPoll(options = {}) {
 }
 
 // ============================================================================
-// RASTGELE CÜMLE GÖNDERİMİ (Ayetler, Dualar, Hadisler, Hatırlatmalar, Vecizeler)
+// RASTGELE VECİZE GÖNDERİMİ (Ayetler, Dualar, Hadisler, Hatırlatmalar, Vecizeler)
 // ============================================================================
 
 async function sendWhatsAppSentence(options = {}) {
@@ -1670,7 +1678,7 @@ async function sendWhatsAppSentence(options = {}) {
   if (!isDBEnabled()) {
     return {
       success: false,
-      message: 'Veritabanı bağlantısı aktif değil. Cümle gönderilemedi.'
+      message: 'Veritabanı bağlantısı aktif değil. Vecize gönderilemedi.'
     };
   }
 
@@ -1679,7 +1687,7 @@ async function sendWhatsAppSentence(options = {}) {
     if (!result || !result.sentence) {
       return {
         success: false,
-        message: 'Veritabanından rastgele cümle çekilemedi.'
+        message: 'Veritabanından rastgele vecize çekilemedi.'
       };
     }
 
@@ -1688,7 +1696,7 @@ async function sendWhatsAppSentence(options = {}) {
     await sock.sendMessage(targetGroupId, { text: messageText });
 
     const sentAt = getTRDateString();
-    console.log(`✅ [Cümle Gönderildi] (${result.collection}) → "${result.sentence.substring(0, 60)}..." [Grup: ${targetGroupId}]`);
+    console.log(`✅ [Vecize Gönderildi] (${result.collection}) → "${result.sentence.substring(0, 60)}..." [Grup: ${targetGroupId}]`);
 
     return {
       success: true,
@@ -1698,7 +1706,7 @@ async function sendWhatsAppSentence(options = {}) {
       groupId: targetGroupId
     };
   } catch (err) {
-    console.error('❌ WhatsApp Cümle Gönderme Hatası:', err);
+    console.error('❌ WhatsApp Vecize Gönderme Hatası:', err);
     return {
       success: false,
       error: err.message
@@ -1744,26 +1752,26 @@ function scheduleWhatsAppPollJob() {
 }
 
 /**
- * Her Salı ve Perşembe saat 22:30 TSİ'de rastgele cümle gönderir.
+ * Her Salı ve Perşembe saat 22:30 TSİ'de rastgele vecize gönderir.
  * Cron: dakika=30, saat=22, gün=*, ay=*, haftanın günü=2,4 (Salı, Perşembe)
  */
 function scheduleSentenceJob() {
   const job = schedule.scheduleJob({ rule: '30 22 * * 2,4', tz: 'Europe/Istanbul' }, async () => {
     const config = await getPollConfig();
     if (!config?.features?.sentenceEnabled) {
-      console.log('[ZAMANLAYICI] Günün sözü gönderimi pasif (featureSentenceEnabled: false), atlandı.');
+      console.log('[ZAMANLAYICI] Rastgele vecize gönderimi pasif (featureSentenceEnabled: false), atlandı.');
       return;
     }
     const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
-    console.log(`\n[ZAMANLAYICI - ${zaman}] Rastgele cümle gönderimi başlatılıyor...`);
+    console.log(`\n[ZAMANLAYICI - ${zaman}] Rastgele vecize gönderimi başlatılıyor...`);
     try {
       const res = await sendWhatsAppSentence();
-      console.log(`[ZAMANLAYICI] Cümle Gönderim Sonucu:`, res);
+      console.log(`[ZAMANLAYICI] Vecize Gönderim Sonucu:`, res);
     } catch (error) {
-      console.error(`[ZAMANLAYICI] Cümle Gönderim Hatası:`, error);
+      console.error(`[ZAMANLAYICI] Vecize Gönderim Hatası:`, error);
     }
   });
-  console.log("✅ Cümle Zamanlayıcısı Kuruldu: Her Salı ve Perşembe saat 22:30 (TSİ)");
+  console.log("✅ Vecize Zamanlayıcısı Kuruldu: Her Salı ve Perşembe saat 22:30 (TSİ)");
   return job;
 }
 
@@ -1865,7 +1873,7 @@ function scheduleWeeklyReadingReportJob() {
       console.error(`[ZAMANLAYICI] Haftalık Rapor Gönderim Hatası:`, error);
     }
   });
-  console.log("✅ Haftalık Okuma Raporu Zamanlayıcısı Kuruldu: Her Cumartesi saat 22:30 (TSİ)");
+  console.log("✅ Okuma Serisi Raporu Zamanlayıcısı Kuruldu: Her Cumartesi saat 22:30 (TSİ)");
   return job;
 }
 
@@ -2000,7 +2008,7 @@ function scheduleWeeklyTableImageJob() {
 /**
  * pending_league_congratulations içinden bu gruba ait bekleyen kutlamaları kontrol eder.
  * Her dakikada yalnızca 1 belge işlenir; kalanlar sonraki tura bırakılır.
- * Lig şablonuna isim bindirilip WhatsApp grubuna görsel olarak gönderilir.
+ * Lig şablonuna isim bindirilip WhatsApp grubuna görsel olarak gönderir.
  */
 async function sendLeagueCongratulations(options = {}) {
   if (!isDBEnabled()) {
@@ -2285,19 +2293,19 @@ app.all(['/api/send-poll', '/api/run-poll'], async (req, res) => {
   }
 });
 
-// Manuel Cümle Gönderme Endpoint'i (Test amaçlı)
+// Manuel Vecize Gönderme Endpoint'i (Test amaçlı)
 app.all(['/api/send-sentence', '/api/run-sentence'], async (req, res) => {
   try {
     const groupId = req.query.groupId || req.body?.groupId;
     const result = await sendWhatsAppSentence({ groupId });
     res.json(result);
   } catch (error) {
-    console.error('WhatsApp manuel cümle gönderim hatası:', error);
+    console.error('WhatsApp manuel vecize gönderim hatası:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Manuel Haftalık Okuma Raporu Gönderme Endpoint'i (Test amaçlı)
+// Manuel Okuma Serisi Raporu Gönderme Endpoint'i (Test amaçlı)
 app.all(['/api/send-reading-report', '/api/run-reading-report'], async (req, res) => {
   try {
     const groupId = req.query.groupId || req.body?.groupId;

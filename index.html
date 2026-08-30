@@ -946,13 +946,13 @@
 
       <!-- Action Buttons -->
       <div class="actions-grid">
-        <button class="btn btn-primary" id="sendPollBtn" onclick="sendPoll()" disabled>
-          🚀 Günlük Anketi Şimdi Gönder
+        <button class="btn btn-primary" id="sendPollBtn" onclick="sendPoll()" disabled style="color: #fff;">
+          🚀 Anket Gönder
         </button>
 
         <div class="btn-row">
           <button class="btn btn-amber" id="sendSentenceBtn" onclick="sendSentence()" disabled>
-            💬 Günün Sözünü Gönder
+            💬 Rastgele Vecize Gönder
           </button>
           <button class="btn btn-info" id="sendTableImageBtn" onclick="sendTableImage()" disabled>
             🖼️ Haftalık Tabloyu Gönder
@@ -964,7 +964,7 @@
             🔥 Okuma Serisi Raporunu Gönder
           </button>
           <button class="btn btn-purple" id="showVotesBtn" onclick="showVotes()" disabled>
-            📈 Anket Oylarını Görüntüle
+            📈 Anketleri Görüntüle
           </button>
         </div>
 
@@ -1070,12 +1070,12 @@
             <div
               style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
               <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Günlük Anket Gönderimi</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her sabah 09:00'da anket
-                  gönderilir</div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Anket Gönderimi</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her sabah 09:00'da gruba anket
+                  gönderir</div>
               </div>
               <label class="feature-toggle">
-                <input type="checkbox" id="ftPollEnabled" checked />
+                <input type="checkbox" id="ftPollEnabled" />
                 <span class="feature-slider"></span>
               </label>
             </div>
@@ -1083,9 +1083,35 @@
             <div
               style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
               <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">💬 Günün Sözü Gönderimi</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Salı ve Perşembe 22:30'da
-                  gönderilir</div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Anketlerden Oy Tespiti</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Anketlere gelen oyları veri tabanına 
+                  kaydeder</div>
+              </div>
+              <label class="feature-toggle">
+                <input type="checkbox" id="ftVoteTrackingEnabled" />
+                <span class="feature-slider"></span>
+              </label>
+            </div>
+
+            <div
+              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📝 Mesajlardan Okuma Bilgisi Tespiti</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Mesajlardaki okuma bilgilerini veri tabanına 
+                  kaydeder</div>
+              </div>
+              <label class="feature-toggle">
+                <input type="checkbox" id="ftMessageReadingEnabled" />
+                <span class="feature-slider"></span>
+              </label>
+            </div>
+
+            <div
+              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">💬 Rastgele Vecize Gönderimi</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her hafta Salı ve Perşembe 22:30'da gruba
+                  gönderir</div>
               </div>
               <label class="feature-toggle">
                 <input type="checkbox" id="ftSentenceEnabled" checked />
@@ -1096,8 +1122,8 @@
             <div
               style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
               <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📊 Haftalık Okuma Raporu</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Cumartesi 22:30'da gönderilir
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📊 Okuma Serisi Raporu</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her Cumartesi 22:30'da gruba gönderir
                 </div>
               </div>
               <label class="feature-toggle">
@@ -1110,37 +1136,11 @@
               style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
               <div>
                 <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📋 Haftalık Tablo Görseli</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Pazartesi 22:30'da gönderilir
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her Pazartesi 22:30'da gruba gönderir
                 </div>
               </div>
               <label class="feature-toggle">
                 <input type="checkbox" id="ftWeeklyTableEnabled" checked />
-                <span class="feature-slider"></span>
-              </label>
-            </div>
-
-            <div
-              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Oy Tespiti & Kaydı</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Gelen oylar poll_votes'e
-                  kaydedilir</div>
-              </div>
-              <label class="feature-toggle">
-                <input type="checkbox" id="ftVoteTrackingEnabled" checked />
-                <span class="feature-slider"></span>
-              </label>
-            </div>
-
-            <div
-              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📝 Metin Okuma Kaydı</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">"20 sayfa" mesajları text_votes'e
-                  kaydedilir</div>
-              </div>
-              <label class="feature-toggle">
-                <input type="checkbox" id="ftMessageReadingEnabled" checked />
                 <span class="feature-slider"></span>
               </label>
             </div>
@@ -1212,8 +1212,8 @@
           </label>
           <input type="text" id="cfgTitleTemplate" class="phone-input"
             style="width: 100%; font-size: 14px; padding: 10px 12px;" placeholder="Örn: {{date}} Okuma Takibi" />
-          <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
-            💡 <code>{{date}}</code> bugünün tarihiyle değiştirilir. Örn: "16 Ağustos"
+          <div id="datePlaceholderHint" style="font-size: 11px; color: var(--text-sub); margin-top: 4px; line-height: 1.4;">
+            💡 <code>{{date}}</code> bugünün tarihiyle değiştirilir. Örn: "<span id="datePlaceholderExample"></span>"
           </div>
         </div>
 
@@ -1221,9 +1221,9 @@
         <div style="margin-bottom: 14px; text-align: left;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
             <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">
-              Anket Seçenekleri:
+              Anket Seçenekleri <span style="font-weight: 500; color: var(--text-sub);">(2–12 adet)</span>:
             </label>
-            <button class="copy-btn" style="padding: 5px 10px; font-size: 12px;" onclick="addOptionInput()">➕ Seçenek
+            <button id="addOptionBtn" class="copy-btn" style="padding: 5px 10px; font-size: 12px;" onclick="addOptionInput()">➕ Seçenek
               Ekle</button>
           </div>
           <div id="cfgOptionsList"
@@ -1247,7 +1247,7 @@
   <div class="modal-overlay" id="votesModal">
     <div class="modal-card modal-card-large">
       <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
-        <h3 style="font-size: 18px; color: #fff;">🗳️ Anket Oyları (poll_votes)</h3>
+        <h3 style="font-size: 18px; color: #fff;">🗳️ Anketler</h3>
         <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;"
           onclick="closeVotesModal()">✕ Kapat</button>
       </div>
@@ -1396,14 +1396,14 @@
         if (lastRenderedStatus !== 'WAITING_FOR_QR') {
           content.innerHTML = `
             <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-              <b>Yöntem 1:</b> WhatsApp -> <b>Bağlı Cihazlar</b> -> QR Kodu Okutun:
+              <b>Yöntem 1:</b> WhatsApp -> <b>Bağlı Cihazlar</b> -> <b>Cihaz Bağla</b> -> QR kodunu tara
             </p>
             <div class="qr-container">
               <img id="qrImg" src="${data.qrDataUrl}" alt="WhatsApp QR Code" />
             </div>
 
             <div class="pairing-box">
-              <p style="font-size: 12px; font-weight: 600; color: #fff;">Yöntem 2: Telefon Numarası İle (QR'sız 8-Haneli Kod)</p>
+              <p style="font-size: 12px; font-weight: 600; color: #fff;">Yöntem 2: WhatsApp -> Bağlı Cihazlar -> Cihaz Bağla -> Telefon numarası kullanarak bağlayın -> Kodu girin</p>
               <div class="phone-input-group">
                 <input type="text" id="phoneNumInput" class="phone-input" placeholder="5551234567" />
                 <button class="btn btn-info" style="width: auto; padding: 0 16px;" onclick="getPairingCode()">Kod Al</button>
@@ -1483,7 +1483,7 @@
         const res = await fetch('/api/send-sentence', { method: 'POST' });
         const data = await res.json();
         if (data.success) {
-          showToast('✅ Günün sözü gruba başarıyla gönderildi!');
+          showToast('✅ Rastgele vecize gruba başarıyla gönderildi!');
         } else {
           showToast('❌ Hata: ' + (data.message || data.error || 'Gönderilemedi'));
         }
@@ -1491,7 +1491,7 @@
         showToast('❌ Sunucu hatası oluştu');
       } finally {
         btn.disabled = false;
-        btn.innerText = '💬 Günün Sözünü Gönder';
+        btn.innerText = '💬 Rastgele Vecize Gönder';
       }
     }
 
@@ -1609,12 +1609,12 @@
 
           // Özellik bayraklarını toggle'lara yansit
           const features = data.config.features || {};
-          document.getElementById('ftPollEnabled').checked = features.pollEnabled !== false;
+          document.getElementById('ftPollEnabled').checked = features.pollEnabled === true;
+          document.getElementById('ftVoteTrackingEnabled').checked = features.voteTrackingEnabled === true;
+          document.getElementById('ftMessageReadingEnabled').checked = features.messageReadingEnabled === true;
           document.getElementById('ftSentenceEnabled').checked = features.sentenceEnabled !== false;
           document.getElementById('ftWeeklyReportEnabled').checked = features.weeklyReportEnabled !== false;
           document.getElementById('ftWeeklyTableEnabled').checked = features.weeklyTableEnabled !== false;
-          document.getElementById('ftVoteTrackingEnabled').checked = features.voteTrackingEnabled !== false;
-          document.getElementById('ftMessageReadingEnabled').checked = features.messageReadingEnabled !== false;
         }
       } catch (e) {
         console.error('Grup ayarlari yuklenemedi:', e);
@@ -1648,11 +1648,11 @@
         // Özellik bayraklarını toggle'lardan oku
         const features = {
           pollEnabled: document.getElementById('ftPollEnabled').checked,
+          voteTrackingEnabled: document.getElementById('ftVoteTrackingEnabled').checked,
+          messageReadingEnabled: document.getElementById('ftMessageReadingEnabled').checked,
           sentenceEnabled: document.getElementById('ftSentenceEnabled').checked,
           weeklyReportEnabled: document.getElementById('ftWeeklyReportEnabled').checked,
           weeklyTableEnabled: document.getElementById('ftWeeklyTableEnabled').checked,
-          voteTrackingEnabled: document.getElementById('ftVoteTrackingEnabled').checked,
-          messageReadingEnabled: document.getElementById('ftMessageReadingEnabled').checked,
         };
 
         const body = {
@@ -1878,9 +1878,21 @@
       closeReadingGroupPicker();
     }
 
+    function updateDatePlaceholderExample() {
+      const el = document.getElementById('datePlaceholderExample');
+      if (!el) return;
+      el.textContent = new Intl.DateTimeFormat('tr-TR', {
+        timeZone: 'Europe/Istanbul',
+        day: 'numeric',
+        month: 'long'
+      }).format(new Date());
+    }
+
     // ----------------------------------------------------
     // ANKET ŞABLONU & DİNAMİK SEÇENEK YÖNETİMİ
     // ----------------------------------------------------
+    const MIN_POLL_OPTIONS = 2;
+    const MAX_POLL_OPTIONS = 12;
     let currentConfigOptions = [];
 
     async function loadPollConfigUI(configKeyParam = null) {
@@ -1911,17 +1923,29 @@
 
       if (currentConfigOptions.length === 0) {
         container.innerHTML = '<p style="font-size:12px; color:var(--text-sub);">Henüz seçenek eklenmedi.</p>';
+        updateOptionButtonsState();
         return;
       }
 
       container.innerHTML = currentConfigOptions.map((opt, idx) => `
         <div class="option-edit-row">
           <input type="text" class="option-edit-input" style="font-size:13px; padding:7px 10px;" value="${escapeHtml(opt)}" oninput="updateOptionValue(${idx}, this.value)" onchange="updateOptionValue(${idx}, this.value)" placeholder="Seçenek ${idx + 1}" />
-          <button class="btn-icon-danger" style="font-size:13px; padding:7px 10px;" title="Sil" onclick="removeOptionInput(${idx})">🗑️</button>
+          <button class="btn-icon-danger" style="font-size:13px; padding:7px 10px;" title="Sil" ${currentConfigOptions.length <= MIN_POLL_OPTIONS ? 'disabled' : ''} onclick="removeOptionInput(${idx})">🗑️</button>
         </div>
       `).join('');
 
       validateOptionInputs();
+      updateOptionButtonsState();
+    }
+
+    function updateOptionButtonsState() {
+      const addBtn = document.getElementById('addOptionBtn');
+      if (addBtn) {
+        const atMax = currentConfigOptions.length >= MAX_POLL_OPTIONS;
+        addBtn.disabled = atMax;
+        addBtn.style.opacity = atMax ? '0.5' : '';
+        addBtn.style.cursor = atMax ? 'not-allowed' : '';
+      }
     }
 
     function validateOptionInputs() {
@@ -1954,6 +1978,10 @@
     }
 
     function addOptionInput() {
+      if (currentConfigOptions.length >= MAX_POLL_OPTIONS) {
+        showToast(`⚠️ En fazla ${MAX_POLL_OPTIONS} anket seçeneği ekleyebilirsiniz!`);
+        return;
+      }
       currentConfigOptions.push('');
       renderOptionInputs();
       const container = document.getElementById('cfgOptionsList');
@@ -1964,6 +1992,10 @@
     }
 
     function removeOptionInput(index) {
+      if (currentConfigOptions.length <= MIN_POLL_OPTIONS) {
+        showToast(`⚠️ En az ${MIN_POLL_OPTIONS} anket seçeneği olmalıdır!`);
+        return;
+      }
       currentConfigOptions.splice(index, 1);
       renderOptionInputs();
     }
@@ -1978,12 +2010,16 @@
         if (val) options.push(val);
       });
 
-      if (options.length === 0) {
-        showToast('⚠️ En az 1 geçerli anket seçeneği girmelisiniz!');
+      if (options.length < MIN_POLL_OPTIONS) {
+        showToast(`⚠️ En az ${MIN_POLL_OPTIONS} geçerli anket seçeneği girmelisiniz!`);
+        return;
+      }
+      if (options.length > MAX_POLL_OPTIONS) {
+        showToast(`⚠️ En fazla ${MAX_POLL_OPTIONS} anket seçeneği ekleyebilirsiniz!`);
         return;
       }
 
-      // Anket oyları / seçenekleri aynı olamaz kontrolü
+      // Anket seçenekleri aynı olamaz kontrolü
       const seen = new Set();
       const duplicates = [];
       options.forEach(opt => {
@@ -2067,7 +2103,7 @@
     }
 
     // ----------------------------------------------------
-    // ANKET OYLARI MODALI (poll_votes)
+    // ANKETLER MODALI
     // ----------------------------------------------------
     // Anket tarihi: "2026-08-21 10:33:59" → "2026-08-21 10:33"
     function formatPollDateShort(createdAt) {
@@ -2133,7 +2169,7 @@
         let html = `
           <div class="vote-summary-card">
             <div>
-              <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(poll.title || 'Anket Oyları')}</div>
+              <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(poll.title || 'Anketler')}</div>
             </div>
             <div style="text-align:right;">
               <div style="font-size:20px; font-weight:800; color:var(--accent-emerald);">${data.voteCount || 0}</div>
@@ -2273,6 +2309,7 @@
 
     // Polling every 3 seconds
     setInterval(checkStatus, 3000);
+    updateDatePlaceholderExample();
     checkStatus();
   </script>
 </body>
