@@ -392,6 +392,7 @@ async function getPollConfig(passedConfigKey = null) {
         featureSentenceEnabled: true,
         featureWeeklyReportEnabled: true,
         featureWeeklyTableEnabled: true,
+        featureLeagueCongratulationEnabled: true,
         updatedAt: getTRDateString()
       };
       await db.collection('poll_config').updateOne(
@@ -409,7 +410,8 @@ async function getPollConfig(passedConfigKey = null) {
           messageReadingEnabled: false,
           sentenceEnabled: true,
           weeklyReportEnabled: true,
-          weeklyTableEnabled: true
+          weeklyTableEnabled: true,
+          leagueCongratulationEnabled: true
         }
       };
     }
@@ -428,7 +430,8 @@ async function getPollConfig(passedConfigKey = null) {
         messageReadingEnabled: doc.featureMessageReadingEnabled === true,
         sentenceEnabled: doc.featureSentenceEnabled !== false,
         weeklyReportEnabled: doc.featureWeeklyReportEnabled !== false,
-        weeklyTableEnabled: doc.featureWeeklyTableEnabled !== false
+        weeklyTableEnabled: doc.featureWeeklyTableEnabled !== false,
+        leagueCongratulationEnabled: doc.featureLeagueCongratulationEnabled !== false
       }
     };
   } catch (err) {
@@ -440,7 +443,7 @@ async function getPollConfig(passedConfigKey = null) {
 /**
  * Anket şablon ayarlarını MongoDB'ye kaydeder.
  * @param {Object} configData - { titleTemplate, options, groupId, readingGroupId, configKey, features }
- * features: { pollEnabled, voteTrackingEnabled, messageReadingEnabled, sentenceEnabled, weeklyReportEnabled, weeklyTableEnabled }
+ * features: { pollEnabled, voteTrackingEnabled, messageReadingEnabled, sentenceEnabled, weeklyReportEnabled, weeklyTableEnabled, leagueCongratulationEnabled }
  */
 async function savePollConfig(configData) {
   if (!dbEnabled || !db) return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
@@ -507,6 +510,7 @@ async function savePollConfig(configData) {
     if (typeof features.sentenceEnabled === 'boolean') setFields.featureSentenceEnabled = features.sentenceEnabled;
     if (typeof features.weeklyReportEnabled === 'boolean') setFields.featureWeeklyReportEnabled = features.weeklyReportEnabled;
     if (typeof features.weeklyTableEnabled === 'boolean') setFields.featureWeeklyTableEnabled = features.weeklyTableEnabled;
+    if (typeof features.leagueCongratulationEnabled === 'boolean') setFields.featureLeagueCongratulationEnabled = features.leagueCongratulationEnabled;
 
     await db.collection('poll_config').updateOne(
       { _id: configKey },

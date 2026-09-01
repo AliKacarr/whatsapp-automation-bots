@@ -1145,6 +1145,19 @@
               </label>
             </div>
 
+            <div
+              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🏆 Lig Kutlama Görselleri</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Lig atlayan üyeler için kutlama görseli gruba gönderir
+                </div>
+              </div>
+              <label class="feature-toggle">
+                <input type="checkbox" id="ftLeagueCongratulationEnabled" checked />
+                <span class="feature-slider"></span>
+              </label>
+            </div>
+
           </div>
         </div>
 
@@ -1615,6 +1628,7 @@
           document.getElementById('ftSentenceEnabled').checked = features.sentenceEnabled !== false;
           document.getElementById('ftWeeklyReportEnabled').checked = features.weeklyReportEnabled !== false;
           document.getElementById('ftWeeklyTableEnabled').checked = features.weeklyTableEnabled !== false;
+          document.getElementById('ftLeagueCongratulationEnabled').checked = features.leagueCongratulationEnabled !== false;
         }
       } catch (e) {
         console.error('Grup ayarlari yuklenemedi:', e);
@@ -1653,6 +1667,7 @@
           sentenceEnabled: document.getElementById('ftSentenceEnabled').checked,
           weeklyReportEnabled: document.getElementById('ftWeeklyReportEnabled').checked,
           weeklyTableEnabled: document.getElementById('ftWeeklyTableEnabled').checked,
+          leagueCongratulationEnabled: document.getElementById('ftLeagueCongratulationEnabled').checked,
         };
 
         const body = {
