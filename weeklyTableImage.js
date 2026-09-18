@@ -143,7 +143,7 @@ function fitCanvasText(ctx, text, maxWidth) {
 function drawTextWithCheck(ctx, cx, cy, text, options = {}) {
   const {
     font = `600 13px ${FONT_SEMIBOLD}`,
-    color = '#2a9d49',
+    color = '#208a3c',
     checkColor = color,
     checkSize = 10,
     checkStroke = 1.8,
@@ -452,13 +452,18 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   const seasonKey = getWeekSeasonKey(dates);
   const seasonMonthName = getWeekSeasonMonthName(dates);
   let grandAmountTotal = 0;
+  let grandStreakTotal = 0;
   const userSeasonAmounts = {};
   const userAllTimeAmounts = {};
+  const userStreaks = {};
   for (const u of users) {
     const uId = u._id.toString();
     userSeasonAmounts[uId] = sumUserAmounts(allStatuses, uId, seasonKey);
     userAllTimeAmounts[uId] = sumUserAmounts(allStatuses, uId);
     grandAmountTotal += userSeasonAmounts[uId];
+    const streak = calculateUserStreak(statMap[uId] || {}, todayKey);
+    userStreaks[uId] = streak;
+    grandStreakTotal += streak;
   }
 
   // 4. Sınırlandırılmış Orijinal RoTaKip Ölçüleri (name/day sütunları sabit)
@@ -489,7 +494,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   // --- 5. BAŞLIK SATIRI ÇİZİMİ ---
   const headerY = margin;
 
-  // Sütun 0: "{Ay} Sezonu" (public col-season)
+  // Sütun 0: "X Kişi" (public .col-user-count)
   ctx.fillStyle = '#f7f7f7';
   ctx.fillRect(margin, headerY, nameColWidth, headerHeight);
   ctx.strokeStyle = '#c7c7c7';
@@ -500,10 +505,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#333333';
   ctx.font = `600 15px ${FONT_SEMIBOLD}`;
-  ctx.fillText(seasonMonthName, margin + nameColWidth / 2, headerY + 21);
-  ctx.fillStyle = '#222222';
-  ctx.font = `500 14px ${FONT_MEDIUM}`;
-  ctx.fillText('Sezonu', margin + nameColWidth / 2, headerY + 42);
+  ctx.fillText(`${users.length} Kişi`, margin + nameColWidth / 2, headerY + headerHeight / 2);
 
   // Gün Sütunları
   dates.forEach((dStr, idx) => {
@@ -557,7 +559,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
     ctx.fillText(dayName, x + dayColWidth / 2, headerY + 44);
   });
 
-  // Toplam Okuma + Okuma Serisi sütun başlıkları
+  // "{Ay} Okuması" + Okuma Serisi sütun başlıkları (public .col-total-amount / .col-season-month)
   const amountX = margin + nameColWidth + (7 * dayColWidth);
   const streakX = amountX + amountColWidth;
 
@@ -567,9 +569,10 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.lineWidth = 1;
   ctx.strokeRect(amountX, headerY, amountColWidth, headerHeight);
   ctx.fillStyle = '#208a3c';
+  ctx.font = `600 15px ${FONT_SEMIBOLD}`;
+  ctx.fillText(seasonMonthName, amountX + amountColWidth / 2, headerY + 21);
   ctx.font = `600 14px ${FONT_SEMIBOLD}`;
-  ctx.fillText('Toplam', amountX + amountColWidth / 2, headerY + 21);
-  ctx.fillText('Okuma', amountX + amountColWidth / 2, headerY + 42);
+  ctx.fillText('Okuması', amountX + amountColWidth / 2, headerY + 42);
 
   ctx.fillStyle = '#f0f0f0';
   ctx.fillRect(streakX, headerY, streakColWidth, headerHeight);
@@ -585,14 +588,20 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   // --- 6. İSTATİSTİK SATIRI ÇİZİMİ ---
   const statsY = headerY + headerHeight;
 
-  // X kişi
+  // Haftalık başarı oranı — public #tfoot-total-read (%75✔)
   ctx.fillStyle = '#f7f7f7';
   ctx.fillRect(margin, statsY, nameColWidth, statsRowHeight);
+  ctx.strokeStyle = '#c7c7c7';
+  ctx.lineWidth = 1;
   ctx.strokeRect(margin, statsY, nameColWidth, statsRowHeight);
 
-  ctx.fillStyle = '#333333';
-  ctx.font = `600 15px ${FONT_SEMIBOLD}`;
-  ctx.fillText(`${users.length} kişi`, margin + nameColWidth / 2, statsY + statsRowHeight / 2);
+  drawTextWithCheck(ctx, margin + nameColWidth / 2, statsY + statsRowHeight / 2, `%${weekSuccessPct}`, {
+    font: `700 16px ${FONT_SEMIBOLD}`,
+    color: '#208a3c',
+    checkSize: 13,
+    checkStroke: 2.1,
+    gap: 1
+  });
 
   // Günlük Okuyan Sayıları (Örn: "7✔")
   dates.forEach((dStr, idx) => {
@@ -609,7 +618,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
     const countStr = `${count}`;
     drawTextWithCheck(ctx, x + dayColWidth / 2, statsY + statsRowHeight / 2, countStr, {
       font: `600 15px ${FONT_SEMIBOLD}`,
-      color: '#2a9d49',
+      color: '#208a3c',
       checkSize: 11,
       checkStroke: 1.8
     });
@@ -622,23 +631,48 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   ctx.lineWidth = 1;
   ctx.strokeRect(amountX, statsY, amountColWidth, statsRowHeight);
   drawTextWithCheck(ctx, amountX + amountColWidth / 2, statsY + statsRowHeight / 2, `${grandAmountTotal}`, {
-    font: `600 16px ${FONT_SEMIBOLD}`,
+    font: `700 16px ${FONT_SEMIBOLD}`,
     color: '#208a3c',
     checkSize: 13,
     checkStroke: 2.1
   });
 
-  // Haftalık Başarı Oranı (public formatWeekReadSuccessText: "%57", tik yok)
-  ctx.fillStyle = '#f0f0f0';
+  // Okuma serisi toplamı — public #tfoot-total-streak (⭐ N)
+  ctx.fillStyle = '#f5f5f5';
   ctx.fillRect(streakX, statsY, streakColWidth, statsRowHeight);
   ctx.strokeStyle = '#c7c7c7';
   ctx.lineWidth = 1;
   ctx.strokeRect(streakX, statsY, streakColWidth, statsRowHeight);
 
-  ctx.fillStyle = '#208a3c';
-  ctx.font = `600 17px ${FONT_SEMIBOLD}`;
-  ctx.textAlign = 'center';
-  ctx.fillText(`%${weekSuccessPct}`, streakX + streakColWidth / 2, statsY + statsRowHeight / 2);
+  if (grandStreakTotal > 0) {
+    const streakStr = `${grandStreakTotal}`;
+    ctx.font = `700 17px ${FONT_SEMIBOLD}`;
+    const numWidth = ctx.measureText(streakStr).width;
+
+    const starRadius = 9;
+    const starDiameter = starRadius * 2;
+    const gap = 5;
+    const totalW = starDiameter + gap + numWidth;
+    const startX = streakX + (streakColWidth - totalW) / 2;
+
+    const starCX = startX + starRadius;
+    const streakTextX = startX + starDiameter + gap;
+
+    drawStar(ctx, starCX, statsY + statsRowHeight / 2, 5, starRadius, starRadius * 0.42);
+
+    ctx.fillStyle = '#ff1717';
+    ctx.font = `700 17px ${FONT_SEMIBOLD}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(streakStr, streakTextX, statsY + statsRowHeight / 2);
+    ctx.textAlign = 'center';
+  } else {
+    ctx.fillStyle = '#ff1717';
+    ctx.font = `700 17px ${FONT_SEMIBOLD}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('-', streakX + streakColWidth / 2, statsY + statsRowHeight / 2);
+  }
 
   // --- 7. KULLANICI SATIRLARI ÇİZİMİ ---
   for (let i = 0; i < users.length; i++) {
@@ -821,11 +855,11 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
       ctx.fillStyle = '#208a3c';
       ctx.font = `600 17px ${FONT_SEMIBOLD}`;
       ctx.textAlign = 'center';
-      ctx.fillText('—', amountX + amountColWidth / 2, rowY + rowHeight / 2);
+      ctx.fillText('-', amountX + amountColWidth / 2, rowY + rowHeight / 2);
     }
 
     // Okuma Serisi (Streak)
-    const streak = calculateUserStreak(userStatsMap, todayKey);
+    const streak = userStreaks[uId] || 0;
     ctx.fillStyle = '#f5f5f5';
     ctx.fillRect(streakX, rowY, streakColWidth, rowHeight);
     ctx.strokeStyle = '#c7c7c7';
