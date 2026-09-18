@@ -173,6 +173,7 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
   "featurePollEnabled": true,
   "featureSentenceEnabled": true,
   "featureWeeklyReportEnabled": true,
+  "featureWeeklyReportQuoteEnabled": true,
   "featureWeeklyTableEnabled": true,
   "featureVoteTrackingEnabled": true,
   "featureMessageReadingEnabled": true,
@@ -186,7 +187,9 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 - `featurePollEnabled`: Günlük anket gönderiminin aktif/pasif durumu
 - `featureSentenceEnabled`: Rastgele vecize / motivasyon cümlesi gönderiminin aktif/pasif durumu
 - `featureWeeklyReportEnabled`: Haftalık okuma serisi raporunun aktif/pasif durumu
+- `featureWeeklyReportQuoteEnabled`: Okuma serisi raporunun sonuna eklenen rastgele hatırlatma sözünün aktif/pasif durumu
 - `featureWeeklyTableEnabled`: Haftalık okuma tablosu görselinin aktif/pasif durumu
+- `featureLeagueCongratulationEnabled`: Lig atlama kutlama görsellerinin aktif/pasif durumu
 - `featureVoteTrackingEnabled`: WhatsApp anket oylarının tespit edilip `poll_votes` koleksiyonuna kaydedilmesinin aktif/pasif durumu
 - `featureMessageReadingEnabled`: Grup metin mesajlarından sayfa okuma bilgisinin `text_votes` koleksiyonuna kaydedilmesinin aktif/pasif durumu
 

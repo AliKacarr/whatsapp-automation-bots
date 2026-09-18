@@ -391,6 +391,7 @@ async function getPollConfig(passedConfigKey = null) {
         featureMessageReadingEnabled: false,
         featureSentenceEnabled: true,
         featureWeeklyReportEnabled: true,
+        featureWeeklyReportQuoteEnabled: true,
         featureWeeklyTableEnabled: true,
         featureLeagueCongratulationEnabled: true,
         updatedAt: getTRDateString()
@@ -410,6 +411,7 @@ async function getPollConfig(passedConfigKey = null) {
           messageReadingEnabled: false,
           sentenceEnabled: true,
           weeklyReportEnabled: true,
+          weeklyReportQuoteEnabled: true,
           weeklyTableEnabled: true,
           leagueCongratulationEnabled: true
         }
@@ -430,6 +432,7 @@ async function getPollConfig(passedConfigKey = null) {
         messageReadingEnabled: doc.featureMessageReadingEnabled === true,
         sentenceEnabled: doc.featureSentenceEnabled !== false,
         weeklyReportEnabled: doc.featureWeeklyReportEnabled !== false,
+        weeklyReportQuoteEnabled: doc.featureWeeklyReportQuoteEnabled !== false,
         weeklyTableEnabled: doc.featureWeeklyTableEnabled !== false,
         leagueCongratulationEnabled: doc.featureLeagueCongratulationEnabled !== false
       }
@@ -509,6 +512,7 @@ async function savePollConfig(configData) {
     if (typeof features.messageReadingEnabled === 'boolean') setFields.featureMessageReadingEnabled = features.messageReadingEnabled;
     if (typeof features.sentenceEnabled === 'boolean') setFields.featureSentenceEnabled = features.sentenceEnabled;
     if (typeof features.weeklyReportEnabled === 'boolean') setFields.featureWeeklyReportEnabled = features.weeklyReportEnabled;
+    if (typeof features.weeklyReportQuoteEnabled === 'boolean') setFields.featureWeeklyReportQuoteEnabled = features.weeklyReportQuoteEnabled;
     if (typeof features.weeklyTableEnabled === 'boolean') setFields.featureWeeklyTableEnabled = features.weeklyTableEnabled;
     if (typeof features.leagueCongratulationEnabled === 'boolean') setFields.featureLeagueCongratulationEnabled = features.leagueCongratulationEnabled;
 
@@ -633,22 +637,139 @@ async function deleteLidMappingsByConfigKey(configKey) {
 }
 
 /**
- * RoTaKip usergroups koleksiyonundan tüm okuma gruplarını getirir.
+ * RoTaKip usergroups koleksiyonundan tüm okuma gruplarını getirir (private dahil).
  * Grup Ayarları UI'ında okuma grubu seçimi için kullanılır.
- * @returns {Array} Gruplar: [{ groupName, groupId, groupImage, description }]
+ * @returns {Array} Gruplar: [{ groupName, groupId, groupImage, description, visibility }]
  */
 async function getReadingGroups() {
   if (!dbEnabled || !db) return [];
   try {
     const groups = await db.collection('usergroups')
-      .find({ visibility: { $ne: 'private' } })
+      .find({})
       .sort({ groupName: 1 })
-      .project({ groupName: 1, groupId: 1, groupImage: 1, description: 1, _id: 0 })
+      .project({ groupName: 1, groupId: 1, groupImage: 1, description: 1, visibility: 1, _id: 0 })
       .toArray();
     return groups;
   } catch (e) {
     console.error('❌ getReadingGroups hatası:', e.message);
     return [];
+  }
+}
+
+/**
+ * users_<readingGroupId> içinde authority=admin kullanıcısını kullanıcı adı + şifre ile doğrular.
+ * @returns {Promise<{success:boolean, username?:string, message?:string}>}
+ */
+async function verifyReadingGroupAdmin(readingGroupId, username, password) {
+  if (!dbEnabled || !db) {
+    return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  }
+  const gid = String(readingGroupId || '').trim();
+  const uname = String(username || '').trim();
+  const pass = String(password || '');
+  if (!gid) return { success: false, message: 'Okuma grubu gerekli.' };
+  if (!uname || !pass) return { success: false, message: 'Yönetici adı ve şifre gerekli.' };
+
+  try {
+    const bcrypt = require('bcryptjs');
+    const usersCollName = `users_${gid}`;
+    const admins = await db.collection(usersCollName).find({
+      authority: 'admin',
+      $or: [
+        { username: uname },
+        { username: { $regex: `^${uname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } },
+        { name: uname },
+        { name: { $regex: `^${uname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } }
+      ]
+    }).toArray();
+
+    if (!admins.length) {
+      return { success: false, message: 'Bu grup için yönetici bulunamadı veya bilgiler hatalı.' };
+    }
+
+    for (const admin of admins) {
+      const hash = admin.userpassword || admin.password || '';
+      if (!hash) continue;
+      const ok = await bcrypt.compare(pass, String(hash));
+      if (ok) {
+        return {
+          success: true,
+          username: admin.username || admin.name || uname
+        };
+      }
+    }
+    return { success: false, message: 'Yönetici adı veya şifre hatalı.' };
+  } catch (err) {
+    console.error('❌ verifyReadingGroupAdmin hatası:', err.message);
+    return { success: false, message: err.message };
+  }
+}
+
+/**
+ * Telefon düzenleme paneli için kullanıcı listesi (admin doğrulaması çağıran tarafta yapılmalı).
+ */
+async function listReadingGroupUsersForPhoneEdit(readingGroupId) {
+  if (!dbEnabled || !db || !readingGroupId) return [];
+  try {
+    const usersCollName = `users_${String(readingGroupId).trim()}`;
+    const users = await db.collection(usersCollName)
+      .find({}, { projection: { name: 1, username: 1, phone: 1, authority: 1 } })
+      .toArray();
+
+    return users
+      .map((u) => {
+        const barePhone = u.phone
+          ? String(u.phone).split('@')[0].split(':')[0].replace(/\D/g, '')
+          : '';
+        return {
+          id: u._id.toString(),
+          name: (u.name || u.username || 'Bilinmeyen').trim(),
+          phone: /^\d{10,15}$/.test(barePhone) ? barePhone : (barePhone || ''),
+          authority: u.authority || null
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' }));
+  } catch (err) {
+    console.error('❌ listReadingGroupUsersForPhoneEdit hatası:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Kullanıcı telefon numarasını günceller.
+ * @returns {Promise<{success:boolean, message?:string, phone?:string|null}>}
+ */
+async function updateReadingGroupUserPhone(readingGroupId, userId, phone) {
+  if (!dbEnabled || !db) {
+    return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  }
+  const gid = String(readingGroupId || '').trim();
+  const uid = String(userId || '').trim();
+  if (!gid) return { success: false, message: 'readingGroupId gerekli.' };
+  if (!uid) return { success: false, message: 'userId gerekli.' };
+
+  let bare = String(phone || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+  if (bare === '') {
+    bare = null;
+  } else if (!/^\d{10,15}$/.test(bare)) {
+    return { success: false, message: 'Telefon numarası 10–15 haneli olmalıdır.' };
+  }
+
+  try {
+    const { ObjectId } = require('mongodb');
+    const usersCollName = `users_${gid}`;
+    const setFields = bare === null ? { phone: '' } : { phone: bare };
+    const result = await db.collection(usersCollName).updateOne(
+      { _id: new ObjectId(uid) },
+      { $set: setFields }
+    );
+    if (result.matchedCount === 0) {
+      return { success: false, message: 'Kullanıcı bulunamadı.' };
+    }
+    return { success: true, phone: bare };
+  } catch (err) {
+    console.error('❌ updateReadingGroupUserPhone hatası:', err.message);
+    return { success: false, message: err.message };
   }
 }
 
@@ -990,6 +1111,123 @@ async function completeCongratulation(docId, userId, groupId, league) {
   }
 }
 
+// ============================================================================
+// LİG KUTLAMA TESLİMAT TERCİHİ (users_<readingGroupId>.leagueCongratulationDelivery)
+// ============================================================================
+
+const LEAGUE_CONGRATULATION_DELIVERY_VALUES = ['group', 'dm', 'none'];
+
+/**
+ * Teslimat tercihini normalize eder. Alan yoksa / geçersizse 'group'.
+ * @param {string|null|undefined} value
+ * @returns {'group'|'dm'|'none'}
+ */
+function normalizeLeagueCongratulationDelivery(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return LEAGUE_CONGRATULATION_DELIVERY_VALUES.includes(v) ? v : 'group';
+}
+
+/**
+ * users_<readingGroupId> içinden tek kullanıcıyı getirir.
+ * @param {string} readingGroupId
+ * @param {string} userId
+ * @returns {Promise<{_id:string, name:string, phone:string|null, leagueCongratulationDelivery:'group'|'dm'|'none'}|null>}
+ */
+async function getReadingGroupUser(readingGroupId, userId) {
+  if (!dbEnabled || !db || !readingGroupId || !userId) return null;
+  try {
+    const { ObjectId } = require('mongodb');
+    const usersCollName = `users_${String(readingGroupId).trim()}`;
+    const doc = await db.collection(usersCollName).findOne(
+      { _id: typeof userId === 'string' ? new ObjectId(userId) : userId },
+      { projection: { name: 1, username: 1, phone: 1, leagueCongratulationDelivery: 1 } }
+    );
+    if (!doc) return null;
+    const barePhone = doc.phone
+      ? String(doc.phone).split('@')[0].split(':')[0].replace(/\D/g, '')
+      : '';
+    return {
+      _id: doc._id.toString(),
+      name: doc.name || doc.username || 'Bilinmeyen',
+      phone: /^\d{10,15}$/.test(barePhone) ? barePhone : null,
+      leagueCongratulationDelivery: normalizeLeagueCongratulationDelivery(doc.leagueCongratulationDelivery)
+    };
+  } catch (err) {
+    console.error('❌ getReadingGroupUser hatası:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Lig kutlama teslimat ayarları paneli için üye listesi.
+ * @param {string} readingGroupId
+ * @returns {Promise<Array<{id:string, name:string, phone:string|null, delivery:'group'|'dm'|'none'}>>}
+ */
+async function listReadingGroupUsersForLeaguePrefs(readingGroupId) {
+  if (!dbEnabled || !db || !readingGroupId) return [];
+  try {
+    const usersCollName = `users_${String(readingGroupId).trim()}`;
+    const users = await db.collection(usersCollName)
+      .find({}, { projection: { name: 1, username: 1, phone: 1, leagueCongratulationDelivery: 1 } })
+      .toArray();
+
+    return users
+      .map((u) => {
+        const barePhone = u.phone
+          ? String(u.phone).split('@')[0].split(':')[0].replace(/\D/g, '')
+          : '';
+        return {
+          id: u._id.toString(),
+          name: (u.name || u.username || 'Bilinmeyen').trim(),
+          phone: /^\d{10,15}$/.test(barePhone) ? barePhone : null,
+          delivery: normalizeLeagueCongratulationDelivery(u.leagueCongratulationDelivery)
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' }));
+  } catch (err) {
+    console.error('❌ listReadingGroupUsersForLeaguePrefs hatası:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Kullanıcının lig kutlama teslimat tercihini günceller.
+ * @param {string} readingGroupId
+ * @param {string} userId
+ * @param {string} delivery - 'group' | 'dm' | 'none'
+ * @returns {Promise<{success:boolean, message?:string, delivery?:string}>}
+ */
+async function updateLeagueCongratulationDelivery(readingGroupId, userId, delivery) {
+  if (!dbEnabled || !db) {
+    return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  }
+  const gid = String(readingGroupId || '').trim();
+  const uid = String(userId || '').trim();
+  const normalized = String(delivery || '').trim().toLowerCase();
+
+  if (!gid) return { success: false, message: 'readingGroupId gerekli.' };
+  if (!uid) return { success: false, message: 'userId gerekli.' };
+  if (!LEAGUE_CONGRATULATION_DELIVERY_VALUES.includes(normalized)) {
+    return { success: false, message: 'Geçersiz delivery değeri. İzinli: group, dm, none.' };
+  }
+
+  try {
+    const { ObjectId } = require('mongodb');
+    const usersCollName = `users_${gid}`;
+    const result = await db.collection(usersCollName).updateOne(
+      { _id: new ObjectId(uid) },
+      { $set: { leagueCongratulationDelivery: normalized } }
+    );
+    if (result.matchedCount === 0) {
+      return { success: false, message: 'Kullanıcı bulunamadı.' };
+    }
+    return { success: true, delivery: normalized };
+  } catch (err) {
+    console.error('❌ updateLeagueCongratulationDelivery hatası:', err.message);
+    return { success: false, message: err.message };
+  }
+}
+
 module.exports = {
   connectDB,
   isDBEnabled,
@@ -1013,5 +1251,13 @@ module.exports = {
   calculateReadingStreaks,
   getMonthlyReadingAmountTotal,
   getPendingCongratulations,
-  completeCongratulation
+  completeCongratulation,
+  normalizeLeagueCongratulationDelivery,
+  getReadingGroupUser,
+  listReadingGroupUsersForLeaguePrefs,
+  updateLeagueCongratulationDelivery,
+  LEAGUE_CONGRATULATION_DELIVERY_VALUES,
+  verifyReadingGroupAdmin,
+  listReadingGroupUsersForPhoneEdit,
+  updateReadingGroupUserPhone
 };

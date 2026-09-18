@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation } = require('./db');
+const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation, getReadingGroupUser, listReadingGroupUsersForLeaguePrefs, updateLeagueCongratulationDelivery, normalizeLeagueCongratulationDelivery, verifyReadingGroupAdmin, listReadingGroupUsersForPhoneEdit, updateReadingGroupUserPhone } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 const { generateLeagueCongratulationImage } = require('./leagueCongratulationImage');
 
@@ -1817,15 +1817,21 @@ async function sendWeeklyReadingReport(options = {}) {
       msg1 += 'Henüz aktif okuma serisi olan kullanıcı yok.';
     }
 
-    // Mesaj 2: Art arda okumayanlar + rastgele hatırlatma
-    const randomReminder = reminderAlternatives[Math.floor(Math.random() * reminderAlternatives.length)];
+    // Mesaj 2: Art arda okumayanlar + (opsiyonel) rastgele hatırlatma sözü
+    const config = await getPollConfig();
+    const quoteEnabled = config?.features?.weeklyReportQuoteEnabled !== false;
+    const randomReminder = quoteEnabled
+      ? reminderAlternatives[Math.floor(Math.random() * reminderAlternatives.length)]
+      : null;
     let msg2 = '*Art arda okumayanlar:*\n';
     if (nonReaders.length > 0) {
       msg2 += nonReaders.map(r => `${r.name} (${r.streak} gün)`).join(',\n');
     } else {
       msg2 += 'Art arda okumayan kullanıcı yok, tebrikler! 🎉';
     }
-    msg2 += '\n\n' + randomReminder;
+    if (randomReminder) {
+      msg2 += '\n\n' + randomReminder;
+    }
 
     // İki mesajı gruba gönder
     await sock.sendMessage(targetGroupId, { text: msg1 });
@@ -1976,7 +1982,7 @@ function scheduleWeeklyTableImageJob() {
 /**
  * pending_league_congratulations içinden bu gruba ait bekleyen kutlamaları kontrol eder.
  * Her dakikada yalnızca 1 belge işlenir; kalanlar sonraki tura bırakılır.
- * Lig şablonuna isim bindirilip WhatsApp grubuna görsel olarak gönderir.
+ * Kullanıcının leagueCongratulationDelivery tercihine göre gruba / kişiye özel gönderir veya atlar.
  */
 async function sendLeagueCongratulations(options = {}) {
   if (!isDBEnabled()) {
@@ -2007,11 +2013,6 @@ async function sendLeagueCongratulations(options = {}) {
       return { success: true, sent: 0, remaining: 0, message: 'Bekleyen lig atlama kutlaması yok.' };
     }
 
-    const targetWhatsAppJid = options.groupId || await getTargetGroupId();
-    if (!targetWhatsAppJid) {
-      return { success: false, message: 'WhatsApp Grup JID belirlenemedi (poll_config kontrol edin).' };
-    }
-
     pending.sort((a, b) => {
       const minA = a.leagueMin != null ? Number(a.leagueMin) : 0;
       const minB = b.leagueMin != null ? Number(b.leagueMin) : 0;
@@ -2024,6 +2025,120 @@ async function sendLeagueCongratulations(options = {}) {
     const docIdStr = doc._id ? doc._id.toString() : null;
     if (!docIdStr) {
       return { success: false, message: 'Kutlama belgesinde _id yok.' };
+    }
+
+    // Teslimat tercihi — görsel üretiminden önce
+    const user = doc.userId
+      ? await getReadingGroupUser(targetReadingGroupId, doc.userId)
+      : null;
+    const delivery = user
+      ? user.leagueCongratulationDelivery
+      : normalizeLeagueCongratulationDelivery(null);
+
+    // none → görsel üretme, kuyruğu temizle
+    if (delivery === 'none') {
+      await completeCongratulation(docIdStr, doc.userId, doc.groupId, doc.league);
+      console.log(`🏆 [Lig Kutlaması] ${doc.name} → tercih=none, atlandı (kuyruk temizlendi). Kalan: ${remaining}`);
+      return {
+        success: true,
+        sent: 0,
+        skipped: 1,
+        remaining,
+        name: doc.name,
+        league: doc.league,
+        delivery: 'none',
+        readingGroupId: targetReadingGroupId,
+        message: 'Kullanıcı tercihi: gönderme (none).'
+      };
+    }
+
+    // dm → telefon yoksa gruba fallback yok; kuyruğu tüket
+    if (delivery === 'dm') {
+      const phone = user?.phone || null;
+      if (!phone) {
+        await completeCongratulation(docIdStr, doc.userId, doc.groupId, doc.league);
+        console.warn(`⚠️ [Lig Kutlaması] ${doc.name} → dm tercih edildi ama telefon yok; gruba fallback yok, atlandı. Kalan: ${remaining}`);
+        return {
+          success: true,
+          sent: 0,
+          skipped: 1,
+          remaining,
+          name: doc.name,
+          league: doc.league,
+          delivery: 'dm',
+          readingGroupId: targetReadingGroupId,
+          message: 'DM tercih edildi ancak telefon bulunamadı; gruba fallback yok.'
+        };
+      }
+
+      const dmJid = `${phone}@s.whatsapp.net`;
+      let imagePayload;
+      try {
+        imagePayload = await generateLeagueCongratulationImage({
+          name: doc.name,
+          league: doc.league,
+          leagueMin: doc.leagueMin
+        });
+      } catch (imgErr) {
+        console.error('❌ Lig kutlama görseli üretilemedi, metin mesajına düşülüyor:', imgErr.message);
+      }
+
+      try {
+        if (imagePayload?.buffer) {
+          const imageMessage = {
+            image: imagePayload.buffer,
+            caption: imagePayload.caption,
+            mimetype: imagePayload.mimetype || 'image/png'
+          };
+          if (imagePayload.jpegThumbnail) {
+            imageMessage.jpegThumbnail = imagePayload.jpegThumbnail;
+          }
+          if (imagePayload.width && imagePayload.height) {
+            imageMessage.width = imagePayload.width;
+            imageMessage.height = imagePayload.height;
+          }
+          await sock.sendMessage(dmJid, imageMessage);
+        } else {
+          const leagueLower = doc.league ? String(doc.league).toLocaleLowerCase('tr-TR') : 'yeni';
+          const leagueMin = doc.leagueMin !== undefined && doc.leagueMin !== null ? doc.leagueMin : '';
+          await sock.sendMessage(dmJid, {
+            text: `Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉\n\n⚡${leagueMin} gün - *${doc.name}* ${leagueLower} lige yükseldi.`
+          });
+        }
+      } catch (sendErr) {
+        await completeCongratulation(docIdStr, doc.userId, doc.groupId, doc.league);
+        console.error(`❌ [Lig Kutlaması] ${doc.name} → DM gönderimi başarısız (gruba fallback yok):`, sendErr.message);
+        return {
+          success: true,
+          sent: 0,
+          skipped: 1,
+          remaining,
+          name: doc.name,
+          league: doc.league,
+          delivery: 'dm',
+          readingGroupId: targetReadingGroupId,
+          message: `DM gönderimi başarısız: ${sendErr.message}`
+        };
+      }
+
+      await completeCongratulation(docIdStr, doc.userId, doc.groupId, doc.league);
+      console.log(`🏆 [Lig Kutlaması] ${doc.name} → ${doc.league} görseli DM gönderildi. Kalan: ${remaining} [JID: ${dmJid}]`);
+      return {
+        success: true,
+        sent: 1,
+        remaining,
+        name: doc.name,
+        league: doc.league,
+        delivery: 'dm',
+        groupId: dmJid,
+        readingGroupId: targetReadingGroupId
+      };
+    }
+
+    // group (varsayılan) → hedef WhatsApp grubuna
+    const targetWhatsAppJid = options.groupId || await getTargetGroupId();
+    if (!targetWhatsAppJid) {
+      return { success: false, message: 'WhatsApp Grup JID belirlenemedi (poll_config kontrol edin).' };
     }
 
     let imagePayload;
@@ -2068,6 +2183,7 @@ async function sendLeagueCongratulations(options = {}) {
       remaining,
       name: doc.name,
       league: doc.league,
+      delivery: 'group',
       groupId: targetWhatsAppJid,
       readingGroupId: targetReadingGroupId
     };
@@ -2082,7 +2198,9 @@ function scheduleLeagueCongratulationsJob() {
     try {
       const res = await sendLeagueCongratulations();
       if (res.sent > 0) {
-        console.log(`[LİG KUTLAMA] ${res.name} (${res.league}) görseli gönderildi. Kalan: ${res.remaining}`);
+        console.log(`[LİG KUTLAMA] ${res.name} (${res.league}) görseli gönderildi [${res.delivery || 'group'}]. Kalan: ${res.remaining}`);
+      } else if (res.skipped > 0) {
+        console.log(`[LİG KUTLAMA] ${res.name} atlandı (${res.delivery}): ${res.message || ''} Kalan: ${res.remaining}`);
       }
     } catch (error) {
       console.error('[LİG KUTLAMA] Zamanlayıcı hatası:', error.message);
@@ -2253,6 +2371,64 @@ app.get('/api/reading-groups', async (req, res) => {
   }
 });
 
+// Okuma grubu yönetici girişi (authority=admin + bcrypt şifre)
+app.post('/api/reading-group-admin-login', async (req, res) => {
+  try {
+    const readingGroupId = req.body?.readingGroupId;
+    const username = req.body?.username;
+    const password = req.body?.password;
+    const result = await verifyReadingGroupAdmin(readingGroupId, username, password);
+    if (!result.success) {
+      return res.status(401).json(result);
+    }
+    res.json({ success: true, readingGroupId, username: result.username });
+  } catch (error) {
+    console.error('Okuma grubu admin login hatası:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Üye telefon listesi (admin doğrulaması zorunlu)
+app.post('/api/reading-group-phones', async (req, res) => {
+  try {
+    const readingGroupId = req.body?.readingGroupId;
+    const username = req.body?.username;
+    const password = req.body?.password;
+    const auth = await verifyReadingGroupAdmin(readingGroupId, username, password);
+    if (!auth.success) {
+      return res.status(401).json(auth);
+    }
+    const users = await listReadingGroupUsersForPhoneEdit(readingGroupId);
+    res.json({ success: true, readingGroupId, users });
+  } catch (error) {
+    console.error('Okuma grubu telefon listesi hatası:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Üye telefon güncelle (admin doğrulaması zorunlu)
+app.put('/api/reading-group-phones/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const readingGroupId = req.body?.readingGroupId;
+    const username = req.body?.username;
+    const password = req.body?.password;
+    const phone = req.body?.phone;
+    const auth = await verifyReadingGroupAdmin(readingGroupId, username, password);
+    if (!auth.success) {
+      return res.status(401).json(auth);
+    }
+    const result = await updateReadingGroupUserPhone(readingGroupId, userId, phone);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.json({ success: true, readingGroupId, userId, phone: result.phone });
+  } catch (error) {
+    console.error('Okuma grubu telefon güncelleme hatası:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Manuel Anket Gönderme Endpoint'i (örn: GET veya POST /api/send-poll)
 app.all(['/api/send-poll', '/api/run-poll'], async (req, res) => {
   try {
@@ -2299,6 +2475,41 @@ app.all(['/api/send-league-congratulations', '/api/run-league-congratulations'],
     res.json(result);
   } catch (error) {
     console.error('Lig kutlama gönderim hatası:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Lig Kutlama Teslimat Tercihleri — üye listesi
+app.get('/api/league-congratulation-prefs', async (req, res) => {
+  try {
+    const readingGroupId = req.query.readingGroupId || (await getTargetReadingGroupId());
+    if (!readingGroupId) {
+      return res.status(400).json({ success: false, message: 'readingGroupId belirlenemedi (poll_config kontrol edin).' });
+    }
+    const users = await listReadingGroupUsersForLeaguePrefs(readingGroupId);
+    res.json({ success: true, readingGroupId, users });
+  } catch (error) {
+    console.error('Lig kutlama prefs listesi hatası:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Lig Kutlama Teslimat Tercihleri — tek kullanıcı güncelle
+app.put('/api/league-congratulation-prefs/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const delivery = req.body?.delivery;
+    const readingGroupId = req.body?.readingGroupId || req.query.readingGroupId || (await getTargetReadingGroupId());
+    if (!readingGroupId) {
+      return res.status(400).json({ success: false, message: 'readingGroupId belirlenemedi (poll_config kontrol edin).' });
+    }
+    const result = await updateLeagueCongratulationDelivery(readingGroupId, userId, delivery);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.json({ success: true, readingGroupId, userId, delivery: result.delivery });
+  } catch (error) {
+    console.error('Lig kutlama prefs güncelleme hatası:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

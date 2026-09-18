@@ -1019,26 +1019,6 @@
             readonly />
         </div>
 
-        <!-- RoTaKip Okuma Grubu -->
-        <div style="text-align: left;">
-          <label
-            style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">
-            📚 RoTaKip Okuma Grubu:
-          </label>
-          <div class="picker-row">
-            <div class="picker-display">
-              <span id="gsReadingGroupDisplay"
-                style="font-size: 13px; color: var(--text-sub); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Henüz
-                grup seçilmedi</span>
-            </div>
-            <button class="btn btn-info" style="width: auto; padding: 0 16px; white-space: nowrap; height: 44px;"
-              onclick="openReadingGroupPicker()">
-              🔍 Grup Seç
-            </button>
-          </div>
-          <input type="hidden" id="gsReadingGroupId" />
-        </div>
-
         <!-- Hedef WhatsApp Grubu -->
         <div style="text-align: left;">
           <label
@@ -1057,6 +1037,31 @@
             </button>
           </div>
           <input type="hidden" id="gsWpGroupId" />
+        </div>
+
+        <!-- RoTaKip Okuma Grubu -->
+        <div style="text-align: left;">
+          <label
+            style="font-size: 13px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">
+            📚 RoTaKip Okuma Grubu:
+          </label>
+          <div class="picker-row">
+            <div class="picker-display">
+              <span id="gsReadingGroupDisplay"
+                style="font-size: 13px; color: var(--text-sub); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Henüz
+                grup seçilmedi</span>
+            </div>
+            <button class="btn btn-info" style="width: auto; padding: 0 16px; white-space: nowrap; height: 44px;"
+              onclick="openReadingGroupPicker()">
+              🔍 Grup Seç
+            </button>
+          </div>
+          <input type="hidden" id="gsReadingGroupId" />
+          <button type="button" id="openReadingGroupPhoneBtn" class="btn btn-secondary"
+            style="display: none; width: 100%; margin-top: 10px; padding: 9px 12px; font-size: 12px; font-weight: 600;"
+            onclick="openReadingGroupPhoneModal()">
+            📱 Telefon Numaralarını Düzenle
+          </button>
         </div>
 
         <!-- Özellik Yönetimi -->
@@ -1120,16 +1125,39 @@
             </div>
 
             <div
-              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📊 Okuma Serisi Raporu</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her Cumartesi 22:30'da gruba gönderir
+              style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📊 Okuma Serisi Raporu</div>
+                  <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her Cumartesi 22:30'da gruba gönderir
+                  </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button type="button" id="ftWeeklyReportGearBtn" onclick="toggleWeeklyReportSubSettings()"
+                    title="Rapor Ayarları"
+                    style="background: transparent; border: none; width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; line-height: 1; flex-shrink: 0;">
+                    ⚙️
+                  </button>
+                  <label class="feature-toggle">
+                    <input type="checkbox" id="ftWeeklyReportEnabled" checked onchange="onWeeklyReportEnabledChange()" />
+                    <span class="feature-slider"></span>
+                  </label>
                 </div>
               </div>
-              <label class="feature-toggle">
-                <input type="checkbox" id="ftWeeklyReportEnabled" checked />
-                <span class="feature-slider"></span>
-              </label>
+              <div id="ftWeeklyReportSubSettings"
+                style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,0.1);">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div>
+                    <div style="font-size: 12px; font-weight: 600; color: #cbd5e1;">💬 Rapora Rastgele Söz Ekle</div>
+                    <div style="font-size: 10.5px; color: var(--text-sub); margin-top: 2px;">Raporun sonuna rastgele
+                      bir hatırlatma sözü ekler</div>
+                  </div>
+                  <label class="feature-toggle">
+                    <input type="checkbox" id="ftWeeklyReportQuoteEnabled" checked />
+                    <span class="feature-slider"></span>
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div
@@ -1146,16 +1174,25 @@
             </div>
 
             <div
-              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🏆 Lig Kutlama Görselleri</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Lig atlayan üyeler için kutlama görseli gruba gönderir
+              style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🏆 Lig Kutlama Görselleri</div>
+                  <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Lig atlayan üyeler için kutlama görseli gönderir
+                  </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button type="button" id="ftLeagueCongratulationGearBtn" onclick="openLeagueCongratulationPrefsModal()"
+                    title="Teslimat Ayarları"
+                    style="background: transparent; border: none; width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; line-height: 1; flex-shrink: 0;">
+                    ⚙️
+                  </button>
+                  <label class="feature-toggle">
+                    <input type="checkbox" id="ftLeagueCongratulationEnabled" checked onchange="onLeagueCongratulationEnabledChange()" />
+                    <span class="feature-slider"></span>
+                  </label>
                 </div>
               </div>
-              <label class="feature-toggle">
-                <input type="checkbox" id="ftLeagueCongratulationEnabled" checked />
-                <span class="feature-slider"></span>
-              </label>
             </div>
 
           </div>
@@ -1197,6 +1234,67 @@
       <input type="text" id="readingGroupSearch" class="phone-input" style="width: 100%; margin-bottom: 10px;"
         placeholder="Grup adı veya ID ile ara..." oninput="filterReadingGroups(this.value)" />
       <div id="readingGroupPickerList" style="max-height: 280px; overflow-y: auto; padding-right: 4px;"></div>
+    </div>
+  </div>
+
+  <!-- Okuma Grubu Yönetici Girişi -->
+  <div class="modal-overlay" id="readingGroupAdminLoginModal" style="z-index: 220;">
+    <div class="modal-card" style="max-width: 400px;">
+      <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
+        <h4 style="font-size: 15px; color: #fff;">🔐 Yönetici Girişi</h4>
+        <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
+          onclick="closeReadingGroupAdminLogin()">✕</button>
+      </div>
+      <p id="readingGroupAdminLoginHint" style="font-size: 12px; color: var(--text-sub); margin: 0 0 14px; line-height: 1.4;"></p>
+      <div style="display: flex; flex-direction: column; gap: 12px; text-align: left;">
+        <div>
+          <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">Yönetici adı</label>
+          <input type="text" id="rgAdminUsername" class="phone-input" style="width: 100%;" placeholder="Kullanıcı adı" autocomplete="username" />
+        </div>
+        <div>
+          <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">Şifre</label>
+          <input type="password" id="rgAdminPassword" class="phone-input" style="width: 100%;" placeholder="Şifre" autocomplete="current-password"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();submitReadingGroupAdminLogin();}" />
+        </div>
+        <p id="rgAdminLoginError" style="display:none; font-size: 12px; color: #f87171; margin: 0;"></p>
+        <button class="btn btn-primary" style="padding: 10px 16px;" onclick="submitReadingGroupAdminLogin()">
+          Giriş Yap
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Üye Telefonları Düzenleme Modal -->
+  <div class="modal-overlay" id="readingGroupPhoneModal" style="z-index: 210;">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
+        <div>
+          <h4 style="font-size: 15px; color: #fff; margin: 0;">📱 Telefon Numaraları</h4>
+          <p id="readingGroupPhoneModalSub" style="font-size: 11px; color: var(--text-sub); margin: 4px 0 0;"></p>
+        </div>
+        <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
+          onclick="closeReadingGroupPhoneModal()">✕</button>
+      </div>
+      <input type="text" id="readingGroupPhoneSearch" class="phone-input" style="width: 100%; margin-bottom: 10px;"
+        placeholder="İsim veya telefon ile ara..." oninput="filterReadingGroupPhones(this.value)" />
+      <div id="readingGroupPhoneList" style="max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;"></div>
+    </div>
+  </div>
+
+  <!-- Lig Kutlama Teslimat Ayarları Modal -->
+  <div class="modal-overlay" id="leagueCongratulationPrefsModal" style="z-index: 200;">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
+        <h4 style="font-size: 15px; color: #fff;">🏆 Lig Kutlama Görselleri Teslimat Ayarları</h4>
+        <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
+          onclick="closeLeagueCongratulationPrefsModal()">✕</button>
+      </div>
+      <p style="font-size: 11px; color: var(--text-sub); margin: 0 0 10px; line-height: 1.4;">
+        Grup üyelerine kutlama görsellerini nasıl göndermek istediğinizi seçin.
+      </p>
+      <input type="text" id="leaguePrefsSearch" class="phone-input" style="width: 100%; margin-bottom: 10px;"
+        placeholder="İsim ile ara..." oninput="filterLeagueCongratulationPrefs(this.value)" />
+      <div id="leaguePrefsList" style="max-height: 340px; overflow-y: auto; padding-right: 4px;"></div>
     </div>
   </div>
 
@@ -1586,6 +1684,7 @@
                 selectedReadingGroupName = found.groupName;
                 document.getElementById('gsReadingGroupDisplay').textContent = `${found.groupName} (${found.groupId})`;
               }
+              refreshReadingGroupPhoneEditor();
             });
           } else {
             selectedReadingGroupId = '';
@@ -1594,6 +1693,7 @@
             document.getElementById('gsReadingGroupDisplay').textContent = 'Henüz grup seçilmedi';
             document.getElementById('gsReadingGroupDisplay').style.fontStyle = 'italic';
             document.getElementById('gsReadingGroupDisplay').style.color = 'var(--text-sub)';
+            refreshReadingGroupPhoneEditor();
           }
 
           // WP grubu — ID'den adi bulmaya calis
@@ -1627,8 +1727,12 @@
           document.getElementById('ftMessageReadingEnabled').checked = features.messageReadingEnabled === true;
           document.getElementById('ftSentenceEnabled').checked = features.sentenceEnabled !== false;
           document.getElementById('ftWeeklyReportEnabled').checked = features.weeklyReportEnabled !== false;
+          document.getElementById('ftWeeklyReportQuoteEnabled').checked = features.weeklyReportQuoteEnabled !== false;
+          document.getElementById('ftWeeklyReportSubSettings').style.display = 'none';
+          onWeeklyReportEnabledChange();
           document.getElementById('ftWeeklyTableEnabled').checked = features.weeklyTableEnabled !== false;
           document.getElementById('ftLeagueCongratulationEnabled').checked = features.leagueCongratulationEnabled !== false;
+          onLeagueCongratulationEnabledChange();
         }
       } catch (e) {
         console.error('Grup ayarlari yuklenemedi:', e);
@@ -1637,6 +1741,151 @@
 
     function closeGroupSettingsModal() {
       document.getElementById('groupSettingsModal').style.display = 'none';
+    }
+
+    // Okuma Serisi Raporu ⚙️ ayar paneli aç/kapa (rapor pasifken devre dışı)
+    function toggleWeeklyReportSubSettings() {
+      const gearBtn = document.getElementById('ftWeeklyReportGearBtn');
+      if (gearBtn.disabled) return;
+      const sub = document.getElementById('ftWeeklyReportSubSettings');
+      sub.style.display = (sub.style.display === 'none' || !sub.style.display) ? 'block' : 'none';
+    }
+
+    // Okuma Serisi Raporu toggle'ı değişince ⚙️ ikonunu ve alt ayar panelini güncelle
+    function onWeeklyReportEnabledChange() {
+      const enabled = document.getElementById('ftWeeklyReportEnabled').checked;
+      const gearBtn = document.getElementById('ftWeeklyReportGearBtn');
+      const sub = document.getElementById('ftWeeklyReportSubSettings');
+      gearBtn.disabled = !enabled;
+      gearBtn.style.opacity = enabled ? '1' : '0.35';
+      gearBtn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+      if (!enabled) sub.style.display = 'none';
+    }
+
+    // Lig Kutlama toggle'ı değişince ⚙️ ikonunu güncelle
+    function onLeagueCongratulationEnabledChange() {
+      const enabled = document.getElementById('ftLeagueCongratulationEnabled').checked;
+      const gearBtn = document.getElementById('ftLeagueCongratulationGearBtn');
+      gearBtn.disabled = !enabled;
+      gearBtn.style.opacity = enabled ? '1' : '0.35';
+      gearBtn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+    }
+
+    let leaguePrefsCache = [];
+
+    async function openLeagueCongratulationPrefsModal() {
+      const gearBtn = document.getElementById('ftLeagueCongratulationGearBtn');
+      if (gearBtn.disabled) return;
+
+      const readingGroupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
+      if (!readingGroupId) {
+        showToast('⚠️ Önce bir okuma grubu seçin!');
+        return;
+      }
+
+      document.getElementById('leaguePrefsSearch').value = '';
+      document.getElementById('leaguePrefsList').innerHTML =
+        '<div style="text-align:center;color:var(--text-sub);padding:20px;font-size:12px;">Yükleniyor...</div>';
+      document.getElementById('leagueCongratulationPrefsModal').style.display = 'flex';
+
+      try {
+        const res = await fetch(`/api/league-congratulation-prefs?readingGroupId=${encodeURIComponent(readingGroupId)}`);
+        const data = await res.json();
+        if (!data.success) {
+          document.getElementById('leaguePrefsList').innerHTML =
+            `<div style="text-align:center;color:#f87171;padding:20px;font-size:12px;">${data.message || 'Liste alınamadı'}</div>`;
+          return;
+        }
+        leaguePrefsCache = data.users || [];
+        renderLeagueCongratulationPrefs(leaguePrefsCache);
+      } catch (e) {
+        document.getElementById('leaguePrefsList').innerHTML =
+          '<div style="text-align:center;color:#f87171;padding:20px;font-size:12px;">Sunucu hatası</div>';
+      }
+    }
+
+    function closeLeagueCongratulationPrefsModal() {
+      document.getElementById('leagueCongratulationPrefsModal').style.display = 'none';
+    }
+
+    function filterLeagueCongratulationPrefs(query) {
+      const q = (query || '').trim().toLocaleLowerCase('tr-TR');
+      if (!q) {
+        renderLeagueCongratulationPrefs(leaguePrefsCache);
+        return;
+      }
+      const filtered = leaguePrefsCache.filter(u =>
+        (u.name || '').toLocaleLowerCase('tr-TR').includes(q) ||
+        (u.phone || '').includes(q)
+      );
+      renderLeagueCongratulationPrefs(filtered);
+    }
+
+    function renderLeagueCongratulationPrefs(users) {
+      const list = document.getElementById('leaguePrefsList');
+      if (!users || users.length === 0) {
+        list.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:20px;font-size:12px;">Üye bulunamadı</div>';
+        return;
+      }
+
+      list.innerHTML = users.map(u => {
+        const hasPhone = !!u.phone;
+        const phoneHint = hasPhone
+          ? `<div style="font-size:10.5px;color:var(--text-sub);margin-top:2px;">${u.phone}</div>`
+          : `<div style="font-size:10.5px;color:#f59e0b;margin-top:2px;">Telefon numarası kayıtlı değil — özelden gönderilemez</div>`;
+        // Telefonsuz kullanıcıda dm seçili kalsa bile combobox'ta dm seçilemez; görünen tercih group/none kalır
+        let delivery = u.delivery || 'group';
+        if (delivery === 'dm' && !hasPhone) delivery = 'group';
+        const dmDisabled = hasPhone ? '' : 'disabled';
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+            <div style="min-width:0;flex:1;">
+              <div style="font-size:13px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(u.name)}</div>
+              ${phoneHint}
+            </div>
+            <select data-user-id="${u.id}" data-has-phone="${hasPhone ? '1' : '0'}" onchange="saveLeagueCongratulationDelivery(this)"
+              style="background:rgba(15,23,42,0.9);color:#e2e8f0;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:6px 8px;font-size:12px;max-width:170px;flex-shrink:0;">
+              <option value="group" ${delivery === 'group' ? 'selected' : ''}>Gruba göndersin</option>
+              <option value="dm" ${delivery === 'dm' ? 'selected' : ''} ${dmDisabled}>Özelden göndersin</option>
+              <option value="none" ${delivery === 'none' ? 'selected' : ''}>Hiç göndermesin</option>
+            </select>
+          </div>`;
+      }).join('');
+    }
+
+    async function saveLeagueCongratulationDelivery(selectEl) {
+      const userId = selectEl.getAttribute('data-user-id');
+      const delivery = selectEl.value;
+      const hasPhone = selectEl.getAttribute('data-has-phone') === '1';
+      const readingGroupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
+      const prev = (leaguePrefsCache.find(u => u.id === userId) || {}).delivery || 'group';
+      const prevSafe = (prev === 'dm' && !hasPhone) ? 'group' : prev;
+
+      if (delivery === 'dm' && !hasPhone) {
+        selectEl.value = prevSafe;
+        showToast('ℹ️ Bu üyenin telefon numarası kayıtlı değil, özelden gönderilemez.');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/league-congratulation-prefs/${encodeURIComponent(userId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ delivery, readingGroupId })
+        });
+        const data = await res.json();
+        if (!data.success) {
+          selectEl.value = prevSafe;
+          showToast('❌ ' + (data.message || 'Kaydedilemedi'));
+          return;
+        }
+        const cached = leaguePrefsCache.find(u => u.id === userId);
+        if (cached) cached.delivery = delivery;
+        showToast('✅ Tercihiniz başarıyla kaydedildi');
+      } catch (e) {
+        selectEl.value = prevSafe;
+        showToast('❌ Sunucu hatası');
+      }
     }
 
     async function saveGroupSettingsUI() {
@@ -1666,6 +1915,7 @@
           messageReadingEnabled: document.getElementById('ftMessageReadingEnabled').checked,
           sentenceEnabled: document.getElementById('ftSentenceEnabled').checked,
           weeklyReportEnabled: document.getElementById('ftWeeklyReportEnabled').checked,
+          weeklyReportQuoteEnabled: document.getElementById('ftWeeklyReportQuoteEnabled').checked,
           weeklyTableEnabled: document.getElementById('ftWeeklyTableEnabled').checked,
           leagueCongratulationEnabled: document.getElementById('ftLeagueCongratulationEnabled').checked,
         };
@@ -1792,13 +2042,45 @@
     }
 
     // ====================================================
-    // OKUMA GRUBU SECİCİ
+    // OKUMA GRUBU SECİCİ + YÖNETİCİ DOĞRULAMA + TELEFON
     // ====================================================
     let readingGroupsLimit = 10;
     let currentFilteredReadingGroups = [];
+    let pendingReadingGroupSelect = null; // { id, name }
+    let readingGroupPhoneCache = [];
 
-    async function loadReadingGroupsCache() {
-      if (readingGroupsCache.length > 0) return;
+    const ROTA_ADMIN_STORAGE_KEY = 'rotaReadingGroupAdminAuth';
+
+    function getAllReadingGroupAdminAuth() {
+      try {
+        return JSON.parse(localStorage.getItem(ROTA_ADMIN_STORAGE_KEY) || '{}') || {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function getReadingGroupAdminAuth(groupId) {
+      if (!groupId) return null;
+      const all = getAllReadingGroupAdminAuth();
+      const entry = all[groupId];
+      if (!entry || !entry.username || !entry.password) return null;
+      return entry;
+    }
+
+    function setReadingGroupAdminAuth(groupId, username, password) {
+      const all = getAllReadingGroupAdminAuth();
+      all[groupId] = { username, password, savedAt: Date.now() };
+      localStorage.setItem(ROTA_ADMIN_STORAGE_KEY, JSON.stringify(all));
+    }
+
+    function clearReadingGroupAdminAuth(groupId) {
+      const all = getAllReadingGroupAdminAuth();
+      delete all[groupId];
+      localStorage.setItem(ROTA_ADMIN_STORAGE_KEY, JSON.stringify(all));
+    }
+
+    async function loadReadingGroupsCache(force = false) {
+      if (!force && readingGroupsCache.length > 0) return;
       try {
         const res = await fetch('/api/reading-groups');
         const data = await res.json();
@@ -1820,7 +2102,7 @@
         </div>
       `;
 
-      await loadReadingGroupsCache();
+      await loadReadingGroupsCache(true);
       currentFilteredReadingGroups = readingGroupsCache;
       renderReadingGroupList(currentFilteredReadingGroups);
     }
@@ -1840,18 +2122,36 @@
       const remainingCount = groups.length - visibleGroups.length;
 
       let html = visibleGroups.map(g => {
-        let imgSrc = g.groupImage;
-        if (imgSrc && !imgSrc.startsWith('http://') && !imgSrc.startsWith('https://') && !imgSrc.startsWith('/')) {
-          imgSrc = '/' + imgSrc;
+        const isPrivate = String(g.visibility || '').toLowerCase() === 'private';
+        let imgHtml;
+        if (isPrivate) {
+          // Gizli gruplarda gerçek görsel gösterilmez
+          imgHtml = `<div style="width:36px; height:36px; border-radius:50%; background:rgba(251,191,36,0.18); border:1px solid rgba(251,191,36,0.3); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:16px;">❔</div>`;
+        } else {
+          let imgSrc = g.groupImage;
+          if (imgSrc && !imgSrc.startsWith('http://') && !imgSrc.startsWith('https://') && !imgSrc.startsWith('/')) {
+            imgSrc = '/' + imgSrc;
+          }
+          imgHtml = imgSrc
+            ? `<img src="${imgSrc}" alt="" style="width:36px; height:36px; border-radius:50%; object-fit:cover; flex-shrink:0;" onerror="this.style.display='none'">`
+            : `<div style="width:36px; height:36px; border-radius:50%; background:rgba(139,92,246,0.3); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:16px;">📚</div>`;
         }
+        const badge = isPrivate
+          ? `<span style="font-size:10px;color:#fbbf24;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.25);border-radius:999px;padding:2px 7px;margin-left:6px;">Özel Grup</span>`
+          : '';
+        const safeId = String(g.groupId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const safeName = escapeHtml(g.groupName).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const subLine = isPrivate
+          ? escapeHtml(g.groupId)
+          : `${escapeHtml(g.groupId)}${g.description ? ' · ' + escapeHtml(g.description) : ''}`;
         return `
-        <div class="group-item" style="cursor:pointer;" onclick="selectReadingGroup('${g.groupId}', '${escapeHtml(g.groupName).replace(/'/g, "\\'")}')">
-          ${imgSrc ? `<img src="${imgSrc}" alt="" style="width:36px; height:36px; border-radius:50%; object-fit:cover; flex-shrink:0;" onerror="this.style.display='none'">` : `<div style="width:36px; height:36px; border-radius:50%; background:rgba(139,92,246,0.3); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:16px;">📚</div>`}
+        <div class="group-item" style="cursor:pointer;" onclick="selectReadingGroup('${safeId}', '${safeName}')">
+          ${imgHtml}
           <div style="overflow:hidden; flex:1;">
-            <div class="group-item-name">${escapeHtml(g.groupName)}</div>
-            <div class="group-item-id">${g.groupId}${g.description ? ' · ' + escapeHtml(g.description) : ''}</div>
+            <div class="group-item-name">${escapeHtml(g.groupName)}${badge}</div>
+            <div class="group-item-id">${subLine}</div>
           </div>
-          <button class="copy-btn" onclick="event.stopPropagation(); selectReadingGroup('${g.groupId}', '${escapeHtml(g.groupName).replace(/'/g, "\\'")}')">Seç</button>
+          <button class="copy-btn" onclick="event.stopPropagation(); selectReadingGroup('${safeId}', '${safeName}')">Seç</button>
         </div>
       `;
       }).join('');
@@ -1883,6 +2183,16 @@
     }
 
     function selectReadingGroup(id, name) {
+      const auth = getReadingGroupAdminAuth(id);
+      if (!auth) {
+        pendingReadingGroupSelect = { id, name };
+        openReadingGroupAdminLogin(id, name);
+        return;
+      }
+      applyReadingGroupSelection(id, name);
+    }
+
+    function applyReadingGroupSelection(id, name) {
       selectedReadingGroupId = id;
       selectedReadingGroupName = name;
       document.getElementById('gsReadingGroupId').value = id;
@@ -1891,6 +2201,204 @@
       display.style.fontStyle = 'normal';
       display.style.color = 'var(--text-main)';
       closeReadingGroupPicker();
+      closeReadingGroupAdminLogin();
+      pendingReadingGroupSelect = null;
+      refreshReadingGroupPhoneEditor();
+    }
+
+    function openReadingGroupAdminLogin(groupId, groupName) {
+      document.getElementById('readingGroupAdminLoginHint').textContent =
+        `"${groupName}" okuma grubu yönetici bilgilerinizi girin.`;
+      document.getElementById('rgAdminUsername').value = '';
+      document.getElementById('rgAdminPassword').value = '';
+      document.getElementById('rgAdminLoginError').style.display = 'none';
+      document.getElementById('readingGroupAdminLoginModal').style.display = 'flex';
+      setTimeout(() => document.getElementById('rgAdminUsername').focus(), 50);
+    }
+
+    function closeReadingGroupAdminLogin() {
+      document.getElementById('readingGroupAdminLoginModal').style.display = 'none';
+      pendingReadingGroupSelect = null;
+    }
+
+    async function submitReadingGroupAdminLogin() {
+      const pending = pendingReadingGroupSelect;
+      if (!pending) {
+        closeReadingGroupAdminLogin();
+        return;
+      }
+      const username = document.getElementById('rgAdminUsername').value.trim();
+      const password = document.getElementById('rgAdminPassword').value;
+      const errEl = document.getElementById('rgAdminLoginError');
+
+      if (!username || !password) {
+        errEl.textContent = 'Yönetici adı ve şifre gerekli.';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/reading-group-admin-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            readingGroupId: pending.id,
+            username,
+            password
+          })
+        });
+        const data = await res.json();
+        if (!data.success) {
+          errEl.textContent = data.message || 'Giriş başarısız.';
+          errEl.style.display = 'block';
+          return;
+        }
+        setReadingGroupAdminAuth(pending.id, data.username || username, password);
+        showToast('✅ Yönetici girişi başarılı');
+        applyReadingGroupSelection(pending.id, pending.name);
+      } catch (e) {
+        errEl.textContent = 'Sunucu hatası oluştu.';
+        errEl.style.display = 'block';
+      }
+    }
+
+    function updateReadingGroupPhoneBtnVisibility() {
+      const btn = document.getElementById('openReadingGroupPhoneBtn');
+      const groupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
+      const auth = getReadingGroupAdminAuth(groupId);
+      btn.style.display = (groupId && auth) ? 'block' : 'none';
+    }
+
+    // Eski çağrı adını koru (showGroupSettings / applyReadingGroupSelection)
+    function refreshReadingGroupPhoneEditor() {
+      updateReadingGroupPhoneBtnVisibility();
+    }
+
+    async function openReadingGroupPhoneModal() {
+      const groupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
+      const auth = getReadingGroupAdminAuth(groupId);
+      if (!groupId || !auth) {
+        showToast('⚠️ Yönetici girişi gerekli');
+        updateReadingGroupPhoneBtnVisibility();
+        return;
+      }
+
+      document.getElementById('readingGroupPhoneModalSub').textContent =
+        'Grup üyelerinin WhatsApp telefon numaralarını kaydedebilirsiniz.';
+      document.getElementById('readingGroupPhoneSearch').value = '';
+      document.getElementById('readingGroupPhoneList').innerHTML =
+        '<div style="text-align:center;color:var(--text-sub);padding:20px;font-size:12px;">Yükleniyor...</div>';
+      document.getElementById('readingGroupPhoneModal').style.display = 'flex';
+
+      try {
+        const res = await fetch('/api/reading-group-phones', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            readingGroupId: groupId,
+            username: auth.username,
+            password: auth.password
+          })
+        });
+        const data = await res.json();
+        if (!data.success) {
+          if (res.status === 401) {
+            clearReadingGroupAdminAuth(groupId);
+            closeReadingGroupPhoneModal();
+            updateReadingGroupPhoneBtnVisibility();
+            showToast('⚠️ Yönetici oturumu geçersiz, yeniden giriş yapın.');
+            return;
+          }
+          document.getElementById('readingGroupPhoneList').innerHTML =
+            `<div style="text-align:center;color:#f87171;padding:20px;font-size:12px;">${data.message || 'Liste alınamadı'}</div>`;
+          return;
+        }
+        readingGroupPhoneCache = data.users || [];
+        renderReadingGroupPhoneList(readingGroupPhoneCache);
+      } catch (e) {
+        document.getElementById('readingGroupPhoneList').innerHTML =
+          '<div style="text-align:center;color:#f87171;padding:20px;font-size:12px;">Sunucu hatası</div>';
+      }
+    }
+
+    function closeReadingGroupPhoneModal() {
+      document.getElementById('readingGroupPhoneModal').style.display = 'none';
+    }
+
+    function filterReadingGroupPhones(query) {
+      const q = (query || '').trim().toLocaleLowerCase('tr-TR');
+      if (!q) {
+        renderReadingGroupPhoneList(readingGroupPhoneCache);
+        return;
+      }
+      const filtered = readingGroupPhoneCache.filter(u =>
+        (u.name || '').toLocaleLowerCase('tr-TR').includes(q) ||
+        String(u.phone || '').includes(q)
+      );
+      renderReadingGroupPhoneList(filtered);
+    }
+
+    function renderReadingGroupPhoneList(users) {
+      const listEl = document.getElementById('readingGroupPhoneList');
+      if (!users || users.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:12px;font-size:12px;">Üye bulunamadı</div>';
+        return;
+      }
+
+      listEl.innerHTML = users.map(u => `
+        <div style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.22);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:8px 10px;">
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:12px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(u.name)}</div>
+          </div>
+          <input type="text" id="rgPhoneInput_${u.id}" value="${escapeHtml(u.phone || '')}"
+            placeholder="90XXXXXXXXXX"
+            style="width:130px;flex-shrink:0;background:rgba(15,23,42,0.9);color:#e2e8f0;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:6px 8px;font-size:11px;" />
+          <button type="button" class="btn btn-secondary" style="width:auto;padding:5px 8px;font-size:11px;flex-shrink:0;"
+            onclick="saveReadingGroupUserPhone('${u.id}')">Kaydet</button>
+        </div>
+      `).join('');
+    }
+
+    async function saveReadingGroupUserPhone(userId) {
+      const groupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
+      const auth = getReadingGroupAdminAuth(groupId);
+      if (!groupId || !auth) {
+        showToast('⚠️ Yönetici girişi gerekli');
+        return;
+      }
+      const input = document.getElementById(`rgPhoneInput_${userId}`);
+      const phone = input ? input.value.trim() : '';
+
+      try {
+        const res = await fetch(`/api/reading-group-phones/${encodeURIComponent(userId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            readingGroupId: groupId,
+            username: auth.username,
+            password: auth.password,
+            phone
+          })
+        });
+        const data = await res.json();
+        if (!data.success) {
+          if (res.status === 401) {
+            clearReadingGroupAdminAuth(groupId);
+            showToast('⚠️ Yönetici oturumu geçersiz');
+            closeReadingGroupPhoneModal();
+            updateReadingGroupPhoneBtnVisibility();
+            return;
+          }
+          showToast('❌ ' + (data.message || 'Kaydedilemedi'));
+          return;
+        }
+        const cached = readingGroupPhoneCache.find(u => u.id === userId);
+        if (cached) cached.phone = data.phone || '';
+        if (input) input.value = data.phone || '';
+        showToast('✅ Telefon kaydedildi');
+      } catch (e) {
+        showToast('❌ Sunucu hatası');
+      }
     }
 
     function updateDatePlaceholderExample() {
