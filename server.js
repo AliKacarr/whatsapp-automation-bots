@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation, getReadingGroupUser, listReadingGroupUsersForLeaguePrefs, updateLeagueCongratulationDelivery, normalizeLeagueCongratulationDelivery, verifyReadingGroupAdmin, listReadingGroupUsersForPhoneEdit, updateReadingGroupUserPhone } = require('./db');
+const { setPromotionHandler, connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getPollById, listPolls, listPollVotes, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation, getReadingGroupUser, listReadingGroupUsersForLeaguePrefs, updateLeagueCongratulationDelivery, normalizeLeagueCongratulationDelivery, verifyReadingGroupAdmin, listReadingGroupUsersForPhoneEdit, updateReadingGroupUserPhone } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 const { generateLeagueCongratulationImage } = require('./leagueCongratulationImage');
 
@@ -250,6 +250,7 @@ let getAggregateVotesInPollMessage = null;
 let proto = null;
 let decryptPollVote = null;
 let jidNormalizedUser = null;
+let jidEncode = null;
 
 async function loadBaileys() {
   if (!makeWASocket) {
@@ -265,6 +266,7 @@ async function loadBaileys() {
     proto = baileys.proto;
     decryptPollVote = baileys.decryptPollVote;
     jidNormalizedUser = baileys.jidNormalizedUser;
+    jidEncode = baileys.jidEncode;
   }
 }
 
@@ -276,9 +278,28 @@ const messageStore = new Map();
  * Bir cihaz mesajı ilk seferde çözemediğinde Baileys getMessage ile bu içeriği
  * bulup güncel Signal oturumuyla yeniden gönderebilir.
  */
-function rememberSentMessage(message) {
+async function rememberSentMessage(message) {
   if (message?.key?.id && message?.message) {
     messageStore.set(message.key.id, message);
+
+    // Telefon retry isteğini süreç yeniden başladıktan sonra da gönderebilir.
+    // Bu nedenle DM içeriğini kısa süreli olarak MongoDB'de de sakla.
+    if (isDBEnabled() && getDB()) {
+      const messageData = serializePollMessage(message.message);
+      if (messageData) {
+        try {
+          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+          await getDB().collection('baileys_outgoing_messages').updateOne(
+            { _id: message.key.id },
+            { $set: { messageData, remoteJid: message.key.remoteJid, createdAt: new Date(), expiresAt } },
+            { upsert: true }
+          );
+          await getDB().collection('baileys_outgoing_messages').deleteMany({ expiresAt: { $lte: new Date() } });
+        } catch (err) {
+          console.warn(`⚠️ Gönderilen mesaj retry deposuna yazılamadı: ${err.message}`);
+        }
+      }
+    }
   }
   return message;
 }
@@ -1188,6 +1209,15 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
         // 2) Bellekte yoksa MongoDB'den yükle (bot yeniden başlatılmışsa)
         if (isDBEnabled() && getDB()) {
           try {
+            const outgoing = await getDB().collection('baileys_outgoing_messages').findOne({ _id: key.id });
+            if (outgoing?.messageData) {
+              const decoded = deserializePollMessage(outgoing.messageData);
+              if (decoded) {
+                messageStore.set(key.id, { message: decoded });
+                return decoded;
+              }
+            }
+
             const poll = await getDB().collection('polls').findOne({ pollId: key.id });
             if (poll?.messageData) {
               const decoded = deserializePollMessage(poll.messageData);
@@ -1415,60 +1445,45 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
             continue;
           }
 
-          const aggregatedVotes = getAggregateVotesInPollMessage({
-            message: pollMsg.message,
-            pollUpdates: pollUpdates
-          });
-
-          if (!aggregatedVotes || aggregatedVotes.length === 0) continue;
-
-          const allCurrentVoters = new Set();
           const currentReadingGroupId = await getTargetReadingGroupId();
           const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
 
-          for (const optionResult of aggregatedVotes) {
-            const optionName = optionResult.name;
-            const voters = optionResult.voters || [];
-
-            for (const voterJid of voters) {
-              const voterPhone = await getPhoneNumberFromJid(voterJid, key.id);
-              const rawLid = (voterJid || '').split('@')[0].split(':')[0];
-              if (!voterPhone) {
-                console.warn(`⚠️ Aggregate oy atlandı — LID çözülemedi (JID: ${voterJid})`);
-                continue;
-              }
-              allCurrentVoters.add(voterPhone);
-              await saveVote({
-                pollId: key.id,
-                voterJid: voterPhone,
-                voterPhone: voterPhone,
-                rawLid: rawLid,
-                selectedOptions: [normalizePollOptionLabel(optionName)],
-                readingGroupId: currentReadingGroupId,
-                configKey: configKey,
-                updatedAt: getTRDateString()
-              });
+          // Her güncelleme kendi oy verenini ve seçimini taşır. [] doğrudan
+          // oy geri çekmedir; diğer kullanıcıların önceki oylarıyla kıyaslanmaz.
+          for (const pollUpdate of pollUpdates) {
+            if (!pollUpdate.vote) continue;
+            const voteKey = pollUpdate.pollUpdateMessageKey;
+            if (!voteKey) continue;
+            const voterJid = voteKey.fromMe
+              ? (sock.user?.id || sock.user?.lid)
+              : (voteKey.participant || voteKey.remoteJid);
+            if (!voterJid) continue;
+            const voterPhone = await getPhoneNumberFromJid(voterJid, pollDoc.groupId || key.remoteJid);
+            if (!voterPhone) {
+              console.warn(`⚠️ Yedek oy atlandı — LID çözülemedi (JID: ${voterJid})`);
+              continue;
             }
-          }
 
-          // Oy çekme tespiti (dokümanı silmek yerine selectedOptions: [] olarak güncelle)
-          if (db) {
-            const existingVotes = await db.collection('poll_votes')
-              .find({ pollId: key.id }).toArray();
-            for (const existingVote of existingVotes) {
-              if (!allCurrentVoters.has(existingVote.voterJid) && existingVote.selectedOptions?.length > 0) {
-                await saveVote({
-                  pollId: key.id,
-                  voterJid: existingVote.voterJid,
-                  voterPhone: existingVote.voterPhone || existingVote.voterJid,
-                  pushName: existingVote.pushName,
-                  selectedOptions: [],
-                  readingGroupId: existingVote.readingGroupId || currentReadingGroupId,
-                  configKey: configKey,
-                  updatedAt: getTRDateString()
-                });
-              }
-            }
+            const aggregatedVotes = getAggregateVotesInPollMessage({
+              message: pollMsg.message,
+              pollUpdates: [pollUpdate]
+            }, sock.user?.id);
+            const selectedOptions = (aggregatedVotes || [])
+              .filter(option => option.voters?.length > 0)
+              .map(option => normalizePollOptionLabel(option.name));
+            // Seçili hash varsa fakat çözülemiyorsa bunu oy geri çekme sayma.
+            if (pollUpdate.vote.selectedOptions?.length > 0 && selectedOptions.length === 0) continue;
+
+            await saveVote({
+              pollId: key.id,
+              voterJid: voterPhone,
+              voterPhone,
+              rawLid: voterJid.split('@')[0].split(':')[0],
+              selectedOptions,
+              readingGroupId: currentReadingGroupId,
+              configKey,
+              updatedAt: getTRDateString()
+            });
           }
         } catch (err) {
           console.error('❌ [update] Anket oy işleme hatası:', err.message);
@@ -1993,10 +2008,18 @@ function scheduleWeeklyTableImageJob() {
 
 /**
  * pending_league_congratulations içinden bu gruba ait bekleyen kutlamaları kontrol eder.
- * Her dakikada yalnızca 1 belge işlenir; kalanlar sonraki tura bırakılır.
+ * Oy işlendikten sonra hemen tetiklenir; dakika taraması bağlantı hataları için yedektir.
  * Kullanıcının leagueCongratulationDelivery tercihine göre gruba / kişiye özel gönderir veya atlar.
  */
-async function sendLeagueCongratulations(options = {}) {
+// Zamanlayıcı, API ve anlık bildirim aynı gönderimi eşzamanlı yapmasın.
+let congratulationsTail = Promise.resolve();
+function sendLeagueCongratulations(options = {}) {
+  const result = congratulationsTail.then(() => sendLeagueCongratulationsOnce(options));
+  congratulationsTail = result.catch(() => {});
+  return result;
+}
+
+async function sendLeagueCongratulationsOnce(options = {}) {
   if (!isDBEnabled()) {
     return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
   }
@@ -2087,7 +2110,20 @@ async function sendLeagueCongratulations(options = {}) {
 
       try {
         if (typeof sock.getUSyncDevices === 'function') {
-          await sock.getUSyncDevices([sock.user?.id, dmJid].filter(Boolean), false, true);
+          const devices = await sock.getUSyncDevices([sock.user?.id, dmJid].filter(Boolean), false, true);
+
+          // Güncel cihazları bulmak tek başına yeterli değil: eski Signal
+          // oturumları auth deposunda duruyorsa Baileys onları tekrar kullanır.
+          // Lig DM'leri seyrek olduğu için her gönderimde tüm cihazların
+          // oturumunu zorla yenilemek güvenli ve daha dayanıklıdır.
+          if (typeof sock.assertSessions === 'function' && jidEncode) {
+            const sessionJids = [
+              jidNormalizedUser(sock.user?.id),
+              dmJid,
+              ...devices.map(device => jidEncode(device.user, 's.whatsapp.net', device.device))
+            ].filter(Boolean);
+            await sock.assertSessions([...new Set(sessionJids)], true);
+          }
         }
       } catch (deviceSyncErr) {
         console.warn(`⚠️ [Lig Kutlaması] DM cihaz listesi yenilenemedi; normal gönderim deneniyor: ${deviceSyncErr.message}`);
@@ -2119,14 +2155,14 @@ async function sendLeagueCongratulations(options = {}) {
             imageMessage.height = imagePayload.height;
           }
           const sentMessage = await sock.sendMessage(dmJid, imageMessage);
-          rememberSentMessage(sentMessage);
+          await rememberSentMessage(sentMessage);
         } else {
           const leagueLower = doc.league ? String(doc.league).toLocaleLowerCase('tr-TR') : 'yeni';
           const leagueMin = doc.leagueMin !== undefined && doc.leagueMin !== null ? doc.leagueMin : '';
           const sentMessage = await sock.sendMessage(dmJid, {
             text: `Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉\n\n⚡${leagueMin} gün - *${doc.name}* ${leagueLower} lige yükseldi.`
           });
-          rememberSentMessage(sentMessage);
+          await rememberSentMessage(sentMessage);
         }
       } catch (sendErr) {
         await completeCongratulation(docIdStr, doc.userId, doc.groupId, doc.league);
@@ -2290,6 +2326,28 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/groupAvatars', express.static(path.join(__dirname, 'groupAvatars')));
 app.use('/userAvatars', express.static(path.join(__dirname, 'userAvatars')));
 
+// Eski RoTaKip webhook adresleri artık bot sunucusuna yönlendirilmelidir.
+app.post('/api/webhook/whatsapp-poll-vote', async (req, res) => {
+  const vote = req.body?.pollVote;
+  if (!vote?.pollId || !(vote.voterPhone || vote.voterJid) || !Array.isArray(vote.selectedOptions)) {
+    return res.status(400).json({ error: 'pollVote verisi eksik' });
+  }
+  const result = await saveVote(vote);
+  if (!result) return res.status(503).json({ error: 'Oy kaydedilemedi' });
+  res.json({ success: true, message: 'Anket oyu işleme alındı' });
+});
+
+app.post('/api/webhook/whatsapp-text-vote', async (req, res) => {
+  const vote = req.body?.textVote;
+  if (!vote || !(vote.voterPhone || vote.voterJid) || !Array.isArray(vote.selectedOptions)) {
+    return res.status(400).json({ error: 'textVote verisi eksik' });
+  }
+  const date = vote.date || (vote.updatedAt && String(vote.updatedAt).split(' ')[0]) || getTRDateString().slice(0, 10);
+  const result = await saveTextVote({ ...vote, date });
+  if (!result) return res.status(503).json({ error: 'Oy kaydedilemedi' });
+  res.json({ success: true, message: 'Mesaj oyu işleme alındı' });
+});
+
 // Sağlık kontrolü endpoint'i
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
@@ -2348,6 +2406,19 @@ function schedulePing() {
 
 // Ping zamanlayıcısını başlat
 const pingJob = schedulePing();
+
+// Okuma kaydını bekletmeden kutlama gönderimini sıraya al.
+setPromotionHandler(readingGroupId => {
+  setImmediate(async () => {
+    try {
+      const target = await getTargetReadingGroupId();
+      if (readingGroupId !== target) return;
+      await sendLeagueCongratulations({ readingGroupId });
+    } catch (error) {
+      console.error('Anlık lig kutlaması hatası:', error.message);
+    }
+  });
+});
 
 // MongoDB bağlantısını kur, ardından WhatsApp istemcisini başlat
 (async () => {
@@ -2636,11 +2707,7 @@ app.get('/api/polls', async (req, res) => {
       });
     }
 
-    const polls = await getDB().collection('polls')
-      .find({ groupId: targetGroupId, configKey })
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .toArray();
+    const polls = await listPolls(targetGroupId, configKey);
 
     const formattedPolls = polls.map(p => ({
       ...p,
@@ -2673,9 +2740,7 @@ app.get('/api/poll-votes/:pollId', async (req, res) => {
     const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
 
     // Anket bu bota ait mi?
-    const pollFilter = { pollId };
-    if (configKey) pollFilter.configKey = configKey;
-    const poll = await getDB().collection('polls').findOne(pollFilter);
+    const poll = await getPollById(pollId, configKey);
     if (!poll) {
       return res.json({ success: false, message: 'Anket bulunamadı veya bu bota ait değil.' });
     }
@@ -2683,10 +2748,7 @@ app.get('/api/poll-votes/:pollId', async (req, res) => {
       poll.createdAt = getTRDateString(poll.createdAt);
     }
 
-    const votes = await getDB().collection('poll_votes')
-      .find({ pollId })
-      .sort({ updatedAt: -1 })
-      .toArray();
+    const votes = await listPollVotes(pollId);
 
     const formattedVotes = votes.map(v => ({
       ...v,

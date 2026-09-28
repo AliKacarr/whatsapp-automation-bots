@@ -6,6 +6,19 @@
 // ============================================================================
 
 const { MongoClient } = require('mongodb');
+const { randomUUID } = require('crypto');
+const { createReadingSync } = require('./readingSync');
+let readingSync = null;
+let promotionHandler = () => {};
+function setPromotionHandler(handler) { promotionHandler = handler; }
+
+async function syncSavedVote(collection, filter) {
+  try { await readingSync.processVote(collection, filter); }
+  catch (error) {
+    // Kuyrukta kalır; yeniden başlatmada veya periyodik taramada tekrar denenir.
+    console.error('WA okuma kaydı beklemede:', error.message);
+  }
+}
 
 let client = null;
 let db = null;
@@ -51,6 +64,19 @@ async function connectDB() {
 
     // Anket ayarları yoksa varsayılan şablonu veritabanına ekle
     await getPollConfig();
+    readingSync = createReadingSync({
+      db,
+      onPromotion: groupId => promotionHandler(groupId),
+      getScope: async () => {
+        const config = await getPollConfig();
+        if (!config?.configKey) return null;
+        return { $or: [
+          { configKey: config.configKey },
+          ...(config.readingGroupId ? [{ configKey: null, readingGroupId: config.readingGroupId }] : [])
+        ] };
+      }
+    });
+    readingSync.start();
     return db;
   } catch (err) {
     console.error('❌ MongoDB bağlantı hatası:', err.message);
@@ -80,7 +106,11 @@ async function ensureCollectionIndexes() {
 
   await createSafeIndex('poll_votes', { pollId: 1, voterJid: 1 }, { unique: true });
   await createSafeIndex('poll_votes', { pollId: 1 });
+  await createSafeIndex('poll_votes', { configKey: 1, syncedVersion: 1 });
+  await createSafeIndex('pending_league_congratulations', { userId: 1, groupId: 1, league: 1 }, { unique: true });
+  await createSafeIndex('pending_league_congratulations', { createdAt: 1 }, { expireAfterSeconds: 3600 });
   await createSafeIndex('text_votes', { configKey: 1, voterJid: 1, date: 1 }, { unique: true });
+  await createSafeIndex('text_votes', { configKey: 1, syncedVersion: 1 });
 }
 
 /**
@@ -161,6 +191,9 @@ async function saveTextVote(voteData) {
     }
 
     const setFields = {
+      syncVersion: randomUUID(),
+      syncStatus: 'pending',
+      syncAttempts: 0,
       voterPhone,
       selectedOptions: voteData.selectedOptions,
       readingGroupId,
@@ -174,9 +207,13 @@ async function saveTextVote(voteData) {
 
     const result = await db.collection('text_votes').updateOne(
       filter,
-      { $set: setFields },
+      {
+        $set: setFields,
+        $unset: { syncReason: 1, lastSyncError: 1, failedAt: 1, syncedVersion: 1 }
+      },
       { upsert: true }
     );
+    await syncSavedVote('text_votes', filter);
     return result;
   } catch (err) {
     console.error('❌ Metin okuma DB kayıt hatası:', err.message);
@@ -264,6 +301,9 @@ async function saveVote(voteData) {
     }
 
     const setFields = {
+      syncVersion: randomUUID(),
+      syncStatus: 'pending',
+      syncAttempts: 0,
       voterPhone: voterPhone,
       selectedOptions: voteData.selectedOptions,
       readingGroupId: readingGroupId,
@@ -279,9 +319,13 @@ async function saveVote(voteData) {
 
     const result = await db.collection('poll_votes').updateOne(
       { pollId: voteData.pollId, voterJid: voterPhone },
-      { $set: setFields },
+      {
+        $set: setFields,
+        $unset: { syncReason: 1, lastSyncError: 1, failedAt: 1, syncedVersion: 1 }
+      },
       { upsert: true }
     );
+    await syncSavedVote('poll_votes', { pollId: voteData.pollId, voterJid: voterPhone });
     const action = result.upsertedCount > 0 ? 'Yeni oy' : 'Oy güncelleme';
     // console.log(`🗳️ ${action}: ${voterPhone} → [${voteData.selectedOptions.join(', ')}] (readingGroupId: ${readingGroupId})`);
     return result;
@@ -347,6 +391,30 @@ const DEFAULT_POLL_OPTIONS = [
   '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika',
   '150 dakika', '180 dakika'
 ];
+
+async function getPollById(pollId, configKey = null) {
+  if (!dbEnabled || !db) return null;
+  const filter = { pollId };
+  if (configKey) filter.configKey = configKey;
+  return db.collection('polls').findOne(filter);
+}
+
+async function listPolls(groupId, configKey, limit = 50) {
+  if (!dbEnabled || !db) return [];
+  return db.collection('polls')
+    .find({ groupId, configKey })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+}
+
+async function listPollVotes(pollId) {
+  if (!dbEnabled || !db) return [];
+  return db.collection('poll_votes')
+    .find({ pollId })
+    .sort({ updatedAt: -1 })
+    .toArray();
+}
 
 function getPollConfigKey() {
   if (process.env.CONFIG_KEY && process.env.CONFIG_KEY.trim() !== '') {
@@ -1229,6 +1297,7 @@ async function updateLeagueCongratulationDelivery(readingGroupId, userId, delive
 }
 
 module.exports = {
+  setPromotionHandler,
   connectDB,
   isDBEnabled,
   getDB,
@@ -1237,6 +1306,9 @@ module.exports = {
   saveTextVote,
   removeVote,
   deletePoll,
+  getPollById,
+  listPolls,
+  listPollVotes,
   getTRDateString,
   getLogicalReadingDate,
   getPollConfig,
