@@ -272,6 +272,18 @@ async function loadBaileys() {
 const messageStore = new Map();
 
 /**
+ * Gönderilen mesajı Baileys'in retry akışı için saklar.
+ * Bir cihaz mesajı ilk seferde çözemediğinde Baileys getMessage ile bu içeriği
+ * bulup güncel Signal oturumuyla yeniden gönderebilir.
+ */
+function rememberSentMessage(message) {
+  if (message?.key?.id && message?.message) {
+    messageStore.set(message.key.id, message);
+  }
+  return message;
+}
+
+/**
  * Anket mesajını protobuf binary olarak serileştirip base64 string döner.
  * MongoDB'de kalıcı saklanması için kullanılır.
  */
@@ -2072,6 +2084,15 @@ async function sendLeagueCongratulations(options = {}) {
       }
 
       const dmJid = `${phone}@s.whatsapp.net`;
+
+      try {
+        if (typeof sock.getUSyncDevices === 'function') {
+          await sock.getUSyncDevices([sock.user?.id, dmJid].filter(Boolean), false, true);
+        }
+      } catch (deviceSyncErr) {
+        console.warn(`⚠️ [Lig Kutlaması] DM cihaz listesi yenilenemedi; normal gönderim deneniyor: ${deviceSyncErr.message}`);
+      }
+
       let imagePayload;
       try {
         imagePayload = await generateLeagueCongratulationImage({
@@ -2097,13 +2118,15 @@ async function sendLeagueCongratulations(options = {}) {
             imageMessage.width = imagePayload.width;
             imageMessage.height = imagePayload.height;
           }
-          await sock.sendMessage(dmJid, imageMessage);
+          const sentMessage = await sock.sendMessage(dmJid, imageMessage);
+          rememberSentMessage(sentMessage);
         } else {
           const leagueLower = doc.league ? String(doc.league).toLocaleLowerCase('tr-TR') : 'yeni';
           const leagueMin = doc.leagueMin !== undefined && doc.leagueMin !== null ? doc.leagueMin : '';
-          await sock.sendMessage(dmJid, {
+          const sentMessage = await sock.sendMessage(dmJid, {
             text: `Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉\n\n⚡${leagueMin} gün - *${doc.name}* ${leagueLower} lige yükseldi.`
           });
+          rememberSentMessage(sentMessage);
         }
       } catch (sendErr) {
         await completeCongratulation(docIdStr, doc.userId, doc.groupId, doc.league);

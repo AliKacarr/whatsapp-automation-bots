@@ -1198,12 +1198,6 @@
           </div>
         </div>
 
-        <div class="modal-actions"
-          style="margin-top: 6px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06);">
-          <button class="btn btn-primary" style="padding: 10px 26px;" onclick="saveGroupSettingsUI()">
-            💾 Kaydet
-          </button>
-        </div>
       </div>
     </div>
   </div>
@@ -1657,15 +1651,28 @@
     let selectedWpGroupName = '';
     let selectedReadingGroupId = '';
     let selectedReadingGroupName = '';
+    let groupSettingsSaveQueue = Promise.resolve();
+    let groupSettingsLoading = false;
+    let groupSettingsRevision = 0;
+
+    document.getElementById('groupSettingsModal').addEventListener('change', (event) => {
+      if (event.target.matches('input[type="checkbox"]')) saveGroupSettingsUI();
+    });
 
     async function showGroupSettings() {
       const modal = document.getElementById('groupSettingsModal');
       modal.style.display = 'flex';
+      if (groupSettingsLoading) return;
+      groupSettingsLoading = true;
+      const controls = modal.querySelector('.config-card-box');
+      controls.inert = true;
 
-      // Mevcut config'i yukle
+      // Bekleyen kayıtlar tamamlandıktan sonra ayarları yükle.
       try {
+        await groupSettingsSaveQueue;
         const res = await fetch('/api/poll-config');
         const data = await res.json();
+        if (!res.ok || !data.success) throw new Error('Ayarlar yüklenemedi');
         if (data.success && data.config) {
           document.getElementById('gsConfigKey').value = data.config.configKey || '';
 
@@ -1734,8 +1741,12 @@
           document.getElementById('ftLeagueCongratulationEnabled').checked = features.leagueCongratulationEnabled !== false;
           onLeagueCongratulationEnabledChange();
         }
+        controls.inert = false;
       } catch (e) {
         console.error('Grup ayarlari yuklenemedi:', e);
+        showToast('❌ Grup ayarları yüklenemedi. Paneli kapatıp yeniden açın.');
+      } finally {
+        groupSettingsLoading = false;
       }
     }
 
@@ -1888,24 +1899,23 @@
       }
     }
 
-    async function saveGroupSettingsUI() {
+    function saveGroupSettingsUI() {
+      if (groupSettingsLoading) return groupSettingsSaveQueue;
+      const revision = ++groupSettingsRevision;
+      groupSettingsSaveQueue = groupSettingsSaveQueue.then(() => persistGroupSettingsUI(revision));
+      return groupSettingsSaveQueue;
+    }
+
+    async function persistGroupSettingsUI(revision) {
       const readingGroupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId').value.trim();
       const groupId = selectedWpGroupId || document.getElementById('gsWpGroupId').value.trim();
       const configKey = document.getElementById('gsConfigKey').value.trim();
-
-      if (!readingGroupId) {
-        showToast('⚠️ Lütfen bir okuma grubu seçin!');
-        return;
-      }
-      if (!groupId) {
-        showToast('⚠️ Lütfen bir WhatsApp grubu seçin!');
-        return;
-      }
 
       try {
         // Mevcut config'i al, sadece groupId ve readingGroupId'yi guncelle
         const getRes = await fetch('/api/poll-config');
         const getData = await getRes.json();
+        if (!getRes.ok || !getData.success) throw new Error('Mevcut ayarlar alınamadı');
         const currentConfig = (getData.success && getData.config) ? getData.config : {};
 
         // Özellik bayraklarını toggle'lardan oku
@@ -1935,9 +1945,8 @@
           body: JSON.stringify(body)
         });
         const data = await res.json();
-        if (data.success) {
-          showToast('✅ Grup ayarları başarıyla kaydedildi!');
-          closeGroupSettingsModal();
+        if (res.ok && data.success) {
+          if (revision === groupSettingsRevision) showToast('✅ Değişiklikler kaydedildi.');
           checkStatus();
         } else {
           showToast('❌ Hata: ' + (data.message || 'Kaydedilemedi'));
@@ -2039,6 +2048,7 @@
       display.style.fontStyle = 'normal';
       display.style.color = 'var(--text-main)';
       closeWpGroupPicker();
+      saveGroupSettingsUI();
     }
 
     // ====================================================
@@ -2204,6 +2214,7 @@
       closeReadingGroupAdminLogin();
       pendingReadingGroupSelect = null;
       refreshReadingGroupPhoneEditor();
+      saveGroupSettingsUI();
     }
 
     function openReadingGroupAdminLogin(groupId, groupName) {
@@ -2610,7 +2621,7 @@
         const res = await fetch('/api/poll-config');
         const data = await res.json();
         if (!data.success || !data.config || !data.config.groupId) {
-          showToast("⚠️ Önce Grup Ayarları'nı kaydedin!");
+          showToast('⚠️ Önce Grup Ayarları panelinden WhatsApp grubunuzu seçin!');
           showGroupSettings();
           return;
         }
