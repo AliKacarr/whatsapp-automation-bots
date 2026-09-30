@@ -109,6 +109,7 @@ async function ensureCollectionIndexes() {
   await createSafeIndex('poll_votes', { configKey: 1, syncedVersion: 1 });
   await createSafeIndex('pending_league_congratulations', { userId: 1, groupId: 1, league: 1 }, { unique: true });
   await createSafeIndex('pending_league_congratulations', { createdAt: 1 }, { expireAfterSeconds: 3600 });
+  await createSafeIndex('baileys_outgoing_messages', { expiresAt: 1 }, { expireAfterSeconds: 0 });
   await createSafeIndex('text_votes', { configKey: 1, voterJid: 1, date: 1 }, { unique: true });
   await createSafeIndex('text_votes', { configKey: 1, syncedVersion: 1 });
 }

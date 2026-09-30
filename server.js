@@ -2323,6 +2323,7 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
 app.use('/groupAvatars', express.static(path.join(__dirname, 'groupAvatars')));
 app.use('/userAvatars', express.static(path.join(__dirname, 'userAvatars')));
 

@@ -4,7 +4,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>WhatsApp Anket & Analytics Dashboard</title>
+  <title>WhatsApp Otomasyon Botu</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
 
   <!-- Google Fonts: Outfit & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,6 +13,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
 
   <style>
     :root {
@@ -71,6 +73,51 @@
     .container {
       width: 100%;
       max-width: 650px;
+    }
+
+    .site-footer {
+      width: 100%;
+      max-width: 650px;
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      color: var(--text-muted);
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .social-icons {
+      display: flex;
+      justify-content: center;
+      flex-shrink: 0;
+      gap: 8px;
+    }
+
+    .social-icons a {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--card-border);
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-muted);
+      font-size: 17px;
+      text-decoration: none;
+      transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+    }
+
+    .social-icons a:hover,
+    .social-icons a:focus-visible {
+      color: #fff;
+      border-color: rgba(16, 185, 129, 0.55);
+      background: rgba(16, 185, 129, 0.18);
+      transform: translateY(-2px);
+      outline: none;
     }
 
     /* Main Dashboard Card */
@@ -990,6 +1037,16 @@
     </div>
   </div>
 
+  <footer class="site-footer">
+    <p>Çatı Katı Elazığ İlim ve Kültür Derneği © Tüm hakları saklıdır.</p>
+    <div class="social-icons">
+      <a href="https://www.instagram.com/catikatimelazig/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><i class="fab fa-instagram" aria-hidden="true"></i></a>
+      <a href="https://www.youtube.com/c/%C3%87atikatim" target="_blank" rel="noopener noreferrer" aria-label="YouTube"><i class="fab fa-youtube" aria-hidden="true"></i></a>
+      <a href="https://open.spotify.com/show/1QIENVd5g588MS1eF1ZcKi" target="_blank" rel="noopener noreferrer" aria-label="Spotify"><i class="fab fa-spotify" aria-hidden="true"></i></a>
+      <a href="https://wa.me/905539275523" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp"><i class="fab fa-whatsapp" aria-hidden="true"></i></a>
+    </div>
+  </footer>
+
   <!-- Grup Ayarlari Modal -->
   <div class="modal-overlay" id="groupSettingsModal">
     <div class="modal-card" style="max-width: 520px;">
@@ -1501,7 +1558,7 @@
         if (lastRenderedStatus !== 'WAITING_FOR_QR') {
           content.innerHTML = `
             <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-              <b>Yöntem 1:</b> WhatsApp -> <b>Bağlı Cihazlar</b> -> <b>Cihaz Bağla</b> -> QR kodunu tara
+              <b>Yöntem 1:</b> WhatsApp -> <b>Bağlı Cihazlar</b> -> <b>Cihaz Bağla</b> -> <b>QR kodunu tara</b>
             </p>
             <div class="qr-container">
               <img id="qrImg" src="${data.qrDataUrl}" alt="WhatsApp QR Code" />
