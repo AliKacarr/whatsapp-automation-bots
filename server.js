@@ -1942,10 +1942,13 @@ async function sendWeeklyTableImage(options = {}) {
 
   try {
     const targetReadingGroupId = options.readingGroupId || await getTargetReadingGroupId();
-    const tableResult = await generateWeeklyTableCanvas(getDB(), targetReadingGroupId);
+    const tableResult = await generateWeeklyTableCanvas(getDB(), targetReadingGroupId, {
+      outputFormat: 'jpeg',
+      jpegQuality: 90
+    });
     const imageBuffer = tableResult.buffer || tableResult;
     const captionText = tableResult.captionText || 'Haftalık okuma tablosu';
-    const mimetype = tableResult.mimetype || 'image/png';
+    const mimetype = tableResult.mimetype || 'image/jpeg';
 
     const imageMessage = {
       image: imageBuffer,
@@ -2134,7 +2137,9 @@ async function sendLeagueCongratulationsOnce(options = {}) {
         imagePayload = await generateLeagueCongratulationImage({
           name: doc.name,
           league: doc.league,
-          leagueMin: doc.leagueMin
+          leagueMin: doc.leagueMin,
+          outputFormat: 'jpeg',
+          jpegQuality: 90
         });
       } catch (imgErr) {
         console.error('❌ Lig kutlama görseli üretilemedi, metin mesajına düşülüyor:', imgErr.message);
@@ -2205,7 +2210,9 @@ async function sendLeagueCongratulationsOnce(options = {}) {
       imagePayload = await generateLeagueCongratulationImage({
         name: doc.name,
         league: doc.league,
-        leagueMin: doc.leagueMin
+        leagueMin: doc.leagueMin,
+        outputFormat: 'jpeg',
+        jpegQuality: 90
       });
     } catch (imgErr) {
       console.error('❌ Lig kutlama görseli üretilemedi, metin mesajına düşülüyor:', imgErr.message);

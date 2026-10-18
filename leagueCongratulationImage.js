@@ -27,9 +27,10 @@ const TEMPLATE_DIR = path.join(__dirname, 'league-templates');
 const PARTY_POPPER_PATH = path.join(__dirname, 'assets', 'party-popper.png');
 const STAR_PATH = path.join(__dirname, 'assets', 'star.png');
 
-// WhatsApp sohbet balonu küçültür; 2x + PNG metin/çizgi kenarlarını keskin tutar.
+// WhatsApp sohbet balonu küçültür; 2x render metin/çizgi kenarlarını keskin tutar.
 // (Mantıksal boyut zaten 1080 — haftalık tablodaki 3x ile benzer çıktı boyutu)
 const RENDER_SCALE = 2;
+const OUTPUT_JPEG_QUALITY = 90;
 const THUMB_JPEG_QUALITY = 82;
 const THUMB_MAX_EDGE = 256;
 const THUMB_MAX_BYTES = 64 * 1024;
@@ -286,8 +287,21 @@ function drawBadge(ctx, img, cx, cy, size, alpha = 1) {
  * Sinematik arka plan + sade isim kartı.
  * Altta 10 rozet: parlama yok, mevcut lig biraz daha büyük.
  */
-async function generateLeagueCongratulationImage({ name, league, leagueMin }) {
+async function generateLeagueCongratulationImage({
+  name,
+  league,
+  leagueMin,
+  outputFormat = 'png',
+  jpegQuality = OUTPUT_JPEG_QUALITY
+}) {
   const resolved = resolveLeague({ league, leagueMin });
+  const normalizedOutputFormat = String(outputFormat).toLowerCase() === 'jpeg'
+    || String(outputFormat).toLowerCase() === 'jpg'
+    ? 'jpeg'
+    : 'png';
+  const normalizedJpegQuality = Number.isFinite(Number(jpegQuality))
+    ? Math.max(1, Math.min(100, Number(jpegQuality)))
+    : OUTPUT_JPEG_QUALITY;
   const currentIndex = Math.max(0, LEAGUES.findIndex(l => l.slug === resolved.slug));
   const displayName = String(name || 'Okur').trim() || 'Okur';
   const days = (leagueMin !== undefined && leagueMin !== null && leagueMin !== '')
@@ -474,7 +488,7 @@ async function generateLeagueCongratulationImage({ name, league, leagueMin }) {
 
   ctx.font = `500 25px ${medium}`;
   ctx.fillStyle = 'rgba(255,255,255,0.62)';
-  ctx.fillText('Toplam okuma gününüz arttıkça daha yüksek liglere yükselirsiniz.', width / 2, 1312);
+  ctx.fillText('Toplam okuma gününüz arttıkça daha üst liglere yükselirsiniz.', width / 2, 1312);
 
   const caption = `Lig atlayan arkadaşımızı tebrik ediyoruz! 🎉🎉\n\n⚡${daysLabel} - *${displayName}* ${resolved.name.toLocaleLowerCase('tr-TR')} lige yükseldi.`;
 
@@ -486,8 +500,10 @@ async function generateLeagueCongratulationImage({ name, league, leagueMin }) {
   }
 
   return {
-    buffer: encodePng(canvas),
-    mimetype: 'image/png',
+    buffer: normalizedOutputFormat === 'jpeg'
+      ? encodeJpeg(canvas, normalizedJpegQuality)
+      : encodePng(canvas),
+    mimetype: normalizedOutputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
     jpegThumbnail,
     width: canvas.width,
     height: canvas.height,

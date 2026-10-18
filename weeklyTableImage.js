@@ -59,9 +59,10 @@ const FONT_FAMILY = 'Inter, "Segoe UI", Arial, sans-serif';
 const FONT_MEDIUM = `"${FONT_MEDIUM_FAMILY}", ${FONT_FAMILY}`;
 const FONT_SEMIBOLD = `"${FONT_SEMIBOLD_FAMILY}", ${FONT_MEDIUM}`;
 
-// WhatsApp sohbet balonu görseli küçültür; 3x + PNG metin kenarlarını keskin tutar.
+// WhatsApp sohbet balonu görseli küçültür; 3x render metin kenarlarını keskin tutar.
 // jpegThumbnail Baileys önizlemesi için küçük JPEG kalır.
 const RENDER_SCALE = 3;
+const OUTPUT_JPEG_QUALITY = 90;
 const THUMB_JPEG_QUALITY = 82;
 const THUMB_MAX_EDGE = 256;
 const THUMB_MAX_BYTES = 64 * 1024;
@@ -366,13 +367,23 @@ function drawDefaultAvatar(ctx, x, y, radius) {
 
 
 /**
- * Haftalık Okuma Tablosu Görselini Çizer ve PNG Buffer Döner
+ * Haftalık Okuma Tablosu Görselini çizer ve seçilen formatta Buffer döner.
  * @param {object} db - MongoDB veritabanı referansı
  * @param {string} [passedReadingGroupId] - Okuma grubu koleksiyon eki (örn: 'mygroupid34', 'hisarkapisi16'). Verilmezse poll_config'den çekilir.
- * @returns {Promise<Buffer>} PNG Resim Buffer'ı
+ * @param {{outputFormat?: 'png'|'jpeg'|'jpg', jpegQuality?: number}} [options]
+ * @returns {Promise<object>} Görsel ve tablo meta verileri
  */
-async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
+async function generateWeeklyTableCanvas(db, passedReadingGroupId = null, options = {}) {
   if (!db) throw new Error('Veritabanı bağlantısı aktif değil.');
+
+  const normalizedOutputFormat = String(options.outputFormat || 'png').toLowerCase() === 'jpeg'
+    || String(options.outputFormat || 'png').toLowerCase() === 'jpg'
+    ? 'jpeg'
+    : 'png';
+  const requestedJpegQuality = Number(options.jpegQuality);
+  const normalizedJpegQuality = Number.isFinite(requestedJpegQuality)
+    ? Math.max(1, Math.min(100, requestedJpegQuality))
+    : OUTPUT_JPEG_QUALITY;
 
   let readingGroupId = (passedReadingGroupId || '').trim();
   if (!readingGroupId) {
@@ -910,8 +921,10 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null) {
   }
 
   return {
-    buffer: encodePng(canvas),
-    mimetype: 'image/png',
+    buffer: normalizedOutputFormat === 'jpeg'
+      ? encodeJpeg(canvas, normalizedJpegQuality)
+      : encodePng(canvas),
+    mimetype: normalizedOutputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
     jpegThumbnail,
     width: canvas.width,
     height: canvas.height,
