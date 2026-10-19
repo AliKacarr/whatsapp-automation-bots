@@ -13,6 +13,7 @@ const {
   getMaxReadingAmount,
   validateTextVoteSelectedOptions
 } = require('./readingVoteValidation');
+const { encryptBaileysAuthValue, decryptBaileysAuthValue } = require('./security');
 
 // ============================================================================
 // LOG FİLTRESİ VE HATA YÖNETİMİ (Libsignal / Bad MAC / Noise Gürültüsünü Engelleme)
@@ -150,6 +151,12 @@ function checkRequiredEnvVars() {
   if (!process.env.CONFIG_KEY || process.env.CONFIG_KEY.trim() === '') missing.push('CONFIG_KEY');
   if (!process.env.MONGO_URI || process.env.MONGO_URI.trim() === '') missing.push('MONGO_URI');
   if (!process.env.DB_NAME || process.env.DB_NAME.trim() === '') missing.push('DB_NAME');
+  if (
+    (process.env.RENDER === 'true' || process.env.NODE_ENV === 'production' || process.env.USE_MONGO_AUTH === 'true') &&
+    (!process.env.BAILEYS_AUTH_ENCRYPTION_KEY || process.env.BAILEYS_AUTH_ENCRYPTION_KEY.length < 32)
+  ) {
+    missing.push('BAILEYS_AUTH_ENCRYPTION_KEY (en az 32 karakter)');
+  }
   return missing;
 }
 
@@ -287,18 +294,37 @@ async function rememberSentMessage(message) {
     messageStore.set(message.key.id, message);
 
     // Telefon retry isteğini süreç yeniden başladıktan sonra da gönderebilir.
-    // Bu nedenle DM içeriğini kısa süreli olarak MongoDB'de de sakla.
+    // Mesajı ilgili Baileys auth koleksiyonunda, auth kayıtlarından ayrı bir
+    // kimlik alanı ve aynı uygulama-seviyesi şifreleme ile sakla.
     if (isDBEnabled() && getDB()) {
       const messageData = serializePollMessage(message.message);
       if (messageData) {
         try {
-          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-          await getDB().collection('baileys_outgoing_messages').updateOne(
-            { _id: message.key.id },
-            { $set: { messageData, remoteJid: message.key.remoteJid, createdAt: new Date(), expiresAt } },
+          const collectionName = getAuthCollectionName();
+          const documentId = getOutgoingMessageDocumentId(message.key.id);
+          const encryptionSecret = getBaileysAuthEncryptionSecret();
+          const payload = JSON.stringify({
+            messageData,
+            remoteJid: message.key.remoteJid || null
+          });
+          const encryptedValue = encryptBaileysAuthValue(
+            payload,
+            encryptionSecret,
+            `${collectionName}:${documentId}`
+          );
+          await getDB().collection(collectionName).updateOne(
+            { _id: documentId },
+            {
+              $set: {
+                type: 'outgoing-message',
+                value: encryptedValue,
+                encrypted: true,
+                updatedAt: new Date()
+              },
+              $setOnInsert: { createdAt: new Date() }
+            },
             { upsert: true }
           );
-          await getDB().collection('baileys_outgoing_messages').deleteMany({ expiresAt: { $lte: new Date() } });
         } catch (err) {
           console.warn(`⚠️ Gönderilen mesaj retry deposuna yazılamadı: ${err.message}`);
         }
@@ -321,6 +347,18 @@ function serializePollMessage(message) {
     console.error('⚠️ Mesaj serileştirme hatası:', e.message);
     return null;
   }
+}
+
+function getOutgoingMessageDocumentId(messageId) {
+  return `outgoing-message:${String(messageId)}`;
+}
+
+function getBaileysAuthEncryptionSecret() {
+  const encryptionSecret = String(process.env.BAILEYS_AUTH_ENCRYPTION_KEY || '');
+  if (encryptionSecret.length < 32) {
+    throw new Error('BAILEYS_AUTH_ENCRYPTION_KEY en az 32 karakter olmalıdır.');
+  }
+  return encryptionSecret;
 }
 
 /**
@@ -1056,28 +1094,38 @@ async function fetchTargetGroupInfo() {
  */
 async function useMongoDBAuthState(db, collectionName = 'baileys_auth') {
   const collection = db.collection(collectionName);
+  const encryptionSecret = getBaileysAuthEncryptionSecret();
 
   const writeData = async (data, id) => {
     try {
       const serialized = JSON.stringify(data, BufferJSON ? BufferJSON.replacer : undefined);
+      const encryptedValue = encryptBaileysAuthValue(serialized, encryptionSecret, `${collectionName}:${id}`);
       await collection.updateOne(
         { _id: id },
-        { $set: { value: serialized, updatedAt: new Date() } },
+        { $set: { value: encryptedValue, encrypted: true, updatedAt: new Date() } },
         { upsert: true }
       );
     } catch (err) {
       console.error(`⚠️ MongoDB Auth verisi yazılamadı (${id}):`, err.message);
+      throw err;
     }
   };
 
   const readData = async (id) => {
+    let doc = null;
     try {
-      const doc = await collection.findOne({ _id: id });
+      doc = await collection.findOne({ _id: id });
       if (doc && doc.value) {
-        return JSON.parse(doc.value, BufferJSON ? BufferJSON.reviver : undefined);
+        const decrypted = decryptBaileysAuthValue(doc.value, encryptionSecret, `${collectionName}:${id}`);
+        const serialized = decrypted === null ? String(doc.value) : decrypted;
+        const parsed = JSON.parse(serialized, BufferJSON ? BufferJSON.reviver : undefined);
+        // Önceki sürümden kalan açık metin kayıtları ilk okumada şifreli biçime geçir.
+        if (decrypted === null) await writeData(parsed, id);
+        return parsed;
       }
     } catch (err) {
       console.error(`⚠️ MongoDB Auth verisi okunamadı (${id}):`, err.message);
+      if (doc?.encrypted || String(doc?.value || '').startsWith('enc:v1:')) throw err;
     }
     return null;
   };
@@ -1087,6 +1135,7 @@ async function useMongoDBAuthState(db, collectionName = 'baileys_auth') {
       await collection.deleteOne({ _id: id });
     } catch (err) {
       console.error(`⚠️ MongoDB Auth verisi silinemedi (${id}):`, err.message);
+      throw err;
     }
   };
 
@@ -1242,12 +1291,28 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
         const msg = messageStore.get(key.id);
         if (msg?.message) return msg.message;
 
-        // 2) Bellekte yoksa MongoDB'den yükle (bot yeniden başlatılmışsa)
+        // 2) Bellekte yoksa ilgili auth koleksiyonundan yükle
+        // (bot yeniden başlatılmışsa)
         if (isDBEnabled() && getDB()) {
           try {
-            const outgoing = await getDB().collection('baileys_outgoing_messages').findOne({ _id: key.id });
-            if (outgoing?.messageData) {
-              const decoded = deserializePollMessage(outgoing.messageData);
+            const collectionName = getAuthCollectionName();
+            const documentId = getOutgoingMessageDocumentId(key.id);
+            const outgoing = await getDB().collection(collectionName).findOne({
+              _id: documentId,
+              type: 'outgoing-message'
+            });
+            if (outgoing?.value) {
+              const encryptionSecret = getBaileysAuthEncryptionSecret();
+              const decrypted = decryptBaileysAuthValue(
+                outgoing.value,
+                encryptionSecret,
+                `${collectionName}:${documentId}`
+              );
+              if (decrypted === null) {
+                throw new Error('Gönderilen mesaj kaydı şifreli değil.');
+              }
+              const payload = JSON.parse(decrypted);
+              const decoded = deserializePollMessage(payload.messageData);
               if (decoded) {
                 messageStore.set(key.id, { message: decoded });
                 return decoded;
@@ -1557,6 +1622,9 @@ async function requestPairingCode(phoneNumber) {
   if (!cleanedNumber || cleanedNumber.length < 10) {
     throw new Error('Geçerli bir telefon numarası girin (örn: 5551234567).');
   }
+  if (cleanedNumber.length > 15) {
+    throw new Error('Telefon numarası en fazla 15 haneli olabilir.');
+  }
 
   console.log(`📲 Telefon Numarası ile Eşleşme Kodu isteniyor (${cleanedNumber})...`);
   const rawCode = await sock.requestPairingCode(cleanedNumber);
@@ -1703,7 +1771,7 @@ async function sendWhatsAppPoll(options = {}) {
     console.error('❌ WhatsApp Anket Gönderme Hatası:', err);
     return {
       success: false,
-      error: err.message
+      error: 'WhatsApp anketi gönderilemedi.'
     };
   }
 }
@@ -1774,7 +1842,7 @@ async function sendWhatsAppSentence(options = {}) {
     console.error('❌ WhatsApp Vecize Gönderme Hatası:', err);
     return {
       success: false,
-      error: err.message
+      error: 'WhatsApp mesajı gönderilemedi.'
     };
   }
 }
@@ -1919,7 +1987,7 @@ async function sendWeeklyReadingReport(options = {}) {
     console.error('❌ Haftalık okuma raporu gönderme hatası:', err);
     return {
       success: false,
-      error: err.message
+      error: 'Haftalık okuma raporu gönderilemedi.'
     };
   }
 }
@@ -2014,7 +2082,7 @@ async function sendWeeklyTableImage(options = {}) {
     console.error('❌ Haftalık tablo resmi gönderme hatası:', err);
     return {
       success: false,
-      error: err.message
+      error: 'Haftalık tablo görseli gönderilemedi.'
     };
   }
 }
@@ -2293,7 +2361,7 @@ async function sendLeagueCongratulationsOnce(options = {}) {
     };
   } catch (err) {
     console.error('❌ sendLeagueCongratulations hatası:', err);
-    return { success: false, error: err.message };
+    return { success: false, error: 'Lig kutlaması gönderilemedi.' };
   }
 }
 
@@ -2354,7 +2422,7 @@ async function getWhatsAppStatus(autoStartIfDisconnected = false) {
     },
     targetReadingGroupId: targetReadingId || null,
     lastPollSentAt: state.lastPollSentAt,
-    lastError: state.lastError,
+    lastError: state.lastError ? 'WhatsApp bağlantısı kurulamadı. Ayrıntılar sunucu günlüklerine yazıldı.' : null,
     engine: 'Baileys Engine'
   };
 }
@@ -2371,10 +2439,48 @@ const AUTH_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_ATTEMPT_LIMIT = 8;
 const dashboardSessions = new Map();
 const authAttempts = new Map();
+const readingGroupAdminGrants = new Map();
+const sensitiveActionAttempts = new Map();
 
 app.set('trust proxy', 1);
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Content-Security-Policy': "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' data: https:; connect-src 'self'"
+  });
+  if (isSecureRequest(req)) {
+    res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode >= 500 && body && typeof body === 'object' && body.error) {
+      return originalJson({ ...body, error: 'Sunucu işlemi tamamlanamadı.' });
+    }
+    return originalJson(body);
+  };
+  next();
+});
+app.use(express.json({ limit: '32kb' }));
+app.use(express.urlencoded({ extended: false, limit: '32kb' }));
+app.use((req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const fetchSite = String(req.get('Sec-Fetch-Site') || '').toLowerCase();
+  if (fetchSite === 'cross-site') {
+    return res.status(403).json({ success: false, message: 'Çapraz site isteği reddedildi.' });
+  }
+  const origin = req.get('Origin');
+  if (origin) {
+    const expectedOrigin = `${req.protocol}://${req.get('host')}`;
+    if (origin !== expectedOrigin) {
+      return res.status(403).json({ success: false, message: 'İstek kaynağı doğrulanamadı.' });
+    }
+  }
+  next();
+});
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 // Sağlık kontrolü endpoint'i
@@ -2423,6 +2529,7 @@ function setDashboardSessionCookie(req, res, username) {
   const sessionId = crypto.randomBytes(32).toString('hex');
   dashboardSessions.set(sessionId, {
     username,
+    createdAt: Date.now(),
     expiresAt: Date.now() + DASHBOARD_SESSION_TTL_MS
   });
   const secure = isSecureRequest(req) ? '; Secure' : '';
@@ -2434,7 +2541,10 @@ function setDashboardSessionCookie(req, res, username) {
 
 function clearDashboardSessionCookie(req, res) {
   const session = getDashboardSession(req);
-  if (session) dashboardSessions.delete(session.id);
+  if (session) {
+    dashboardSessions.delete(session.id);
+    readingGroupAdminGrants.delete(session.id);
+  }
   const secure = isSecureRequest(req) ? '; Secure' : '';
   res.setHeader('Set-Cookie', `${DASHBOARD_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
 }
@@ -2470,10 +2580,16 @@ function clearAuthAttempts(req) {
 const authCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [id, session] of dashboardSessions) {
-    if (session.expiresAt <= now) dashboardSessions.delete(id);
+    if (session.expiresAt <= now) {
+      dashboardSessions.delete(id);
+      readingGroupAdminGrants.delete(id);
+    }
   }
   for (const [key, attempt] of authAttempts) {
     if (attempt.resetAt <= now) authAttempts.delete(key);
+  }
+  for (const [key, attempt] of sensitiveActionAttempts) {
+    if (attempt.resetAt <= now) sensitiveActionAttempts.delete(key);
   }
 }, 10 * 60 * 1000);
 authCleanupTimer.unref();
@@ -2567,10 +2683,90 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 function requireDashboardAuth(req, res, next) {
-  if (!getDashboardSession(req)) {
+  const session = getDashboardSession(req);
+  if (!session) {
     return res.status(401).json({ success: false, code: 'AUTH_REQUIRED', message: 'Yönetim paneline erişmek için giriş yapmalısınız.' });
   }
+  req.dashboardSession = session;
   next();
+}
+
+function grantReadingGroupAdmin(req, readingGroupId, username) {
+  const sessionId = req.dashboardSession?.id;
+  if (!sessionId) return;
+  const grants = readingGroupAdminGrants.get(sessionId) || new Map();
+  grants.set(String(readingGroupId), {
+    username,
+    expiresAt: Date.now() + 30 * 60 * 1000
+  });
+  readingGroupAdminGrants.set(sessionId, grants);
+}
+
+function hasReadingGroupAdminGrant(req, readingGroupId) {
+  const sessionId = req.dashboardSession?.id;
+  const grant = sessionId ? readingGroupAdminGrants.get(sessionId)?.get(String(readingGroupId)) : null;
+  if (!grant || grant.expiresAt <= Date.now()) {
+    if (sessionId && grant) readingGroupAdminGrants.get(sessionId)?.delete(String(readingGroupId));
+    return false;
+  }
+  return true;
+}
+
+function limitSensitiveAction({ name, limit, windowMs }) {
+  return (req, res, next) => {
+    const actor = req.dashboardSession?.username || req.ip || req.socket?.remoteAddress || 'unknown';
+    const key = `${name}:${actor}`;
+    const current = sensitiveActionAttempts.get(key);
+    const now = Date.now();
+    if (!current || current.resetAt <= now) {
+      sensitiveActionAttempts.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    if (current.count >= limit) {
+      return res.status(429).json({ success: false, message: 'Bu işlem için istek sınırına ulaşıldı. Lütfen daha sonra tekrar deneyin.' });
+    }
+    current.count += 1;
+    next();
+  };
+}
+
+function requireRecentDashboardAuth(req, res, next) {
+  if (!req.dashboardSession?.createdAt || Date.now() - req.dashboardSession.createdAt > 15 * 60 * 1000) {
+    return res.status(403).json({
+      success: false,
+      code: 'REAUTH_REQUIRED',
+      message: 'Bu kritik işlem için oturumu kapatıp yeniden giriş yapmalısınız.'
+    });
+  }
+  next();
+}
+
+async function getAuthorizedTargetGroup(requestedGroupId = null) {
+  const configuredGroupId = await getTargetGroupId();
+  const requested = String(requestedGroupId || '').trim();
+  if (!configuredGroupId || !configuredGroupId.endsWith('@g.us')) {
+    return { success: false, status: 400, message: 'Geçerli bir hedef WhatsApp grubu yapılandırılmamış.' };
+  }
+  if (requested && requested !== configuredGroupId) {
+    return { success: false, status: 403, message: 'Yalnızca yapılandırılmış hedef WhatsApp grubunda işlem yapılabilir.' };
+  }
+  const participatingGroups = await getWhatsAppGroups();
+  if (!participatingGroups.some(group => group.id === configuredGroupId)) {
+    return { success: false, status: 403, message: 'Botun katılmadığı bir WhatsApp grubunda işlem yapılamaz.' };
+  }
+  return { success: true, groupId: configuredGroupId };
+}
+
+async function getAuthorizedReadingGroup(req, requestedReadingGroupId = null, requireAdminGrant = false) {
+  const configuredReadingGroupId = await getTargetReadingGroupId();
+  const requested = String(requestedReadingGroupId || configuredReadingGroupId || '').trim();
+  if (!configuredReadingGroupId || !requested || requested !== configuredReadingGroupId) {
+    return { success: false, status: 403, message: 'Bu okuma grubu mevcut CONFIG_KEY için yetkili değil.' };
+  }
+  if (requireAdminGrant && !hasReadingGroupAdminGrant(req, configuredReadingGroupId)) {
+    return { success: false, status: 401, message: 'Okuma grubu yönetici doğrulaması gerekli.' };
+  }
+  return { success: true, readingGroupId: configuredReadingGroupId };
 }
 
 app.use('/api', requireDashboardAuth);
@@ -2666,8 +2862,7 @@ setPromotionHandler(readingGroupId => {
 
 // WhatsApp API Endpoint'leri
 app.get('/api/status', async (req, res) => {
-  const autoStart = req.query.autoStart === 'true';
-  res.json(await getWhatsAppStatus(autoStart));
+  res.json(await getWhatsAppStatus(false));
 });
 
 app.get('/api/groups', async (req, res) => {
@@ -2690,15 +2885,20 @@ app.get('/api/reading-groups', async (req, res) => {
 });
 
 // Okuma grubu yönetici girişi (authority=admin + bcrypt şifre)
-app.post('/api/reading-group-admin-login', async (req, res) => {
+app.post('/api/reading-group-admin-login', limitSensitiveAction({ name: 'reading-admin-login', limit: 8, windowMs: 15 * 60 * 1000 }), async (req, res) => {
   try {
     const readingGroupId = req.body?.readingGroupId;
     const username = req.body?.username;
     const password = req.body?.password;
+    const readingGroups = await getReadingGroups();
+    if (!readingGroups.some(group => String(group.groupId) === String(readingGroupId || '').trim())) {
+      return res.status(403).json({ success: false, message: 'Geçersiz okuma grubu.' });
+    }
     const result = await verifyReadingGroupAdmin(readingGroupId, username, password);
     if (!result.success) {
       return res.status(401).json(result);
     }
+    grantReadingGroupAdmin(req, readingGroupId, result.username);
     res.json({ success: true, readingGroupId, username: result.username });
   } catch (error) {
     console.error('Okuma grubu admin login hatası:', error);
@@ -2710,14 +2910,12 @@ app.post('/api/reading-group-admin-login', async (req, res) => {
 app.post('/api/reading-group-phones', async (req, res) => {
   try {
     const readingGroupId = req.body?.readingGroupId;
-    const username = req.body?.username;
-    const password = req.body?.password;
-    const auth = await verifyReadingGroupAdmin(readingGroupId, username, password);
-    if (!auth.success) {
-      return res.status(401).json(auth);
+    const scope = await getAuthorizedReadingGroup(req, readingGroupId, true);
+    if (!scope.success) {
+      return res.status(scope.status).json(scope);
     }
-    const users = await listReadingGroupUsersForPhoneEdit(readingGroupId);
-    res.json({ success: true, readingGroupId, users });
+    const users = await listReadingGroupUsersForPhoneEdit(scope.readingGroupId);
+    res.json({ success: true, readingGroupId: scope.readingGroupId, users });
   } catch (error) {
     console.error('Okuma grubu telefon listesi hatası:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -2729,18 +2927,16 @@ app.put('/api/reading-group-phones/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
     const readingGroupId = req.body?.readingGroupId;
-    const username = req.body?.username;
-    const password = req.body?.password;
     const phone = req.body?.phone;
-    const auth = await verifyReadingGroupAdmin(readingGroupId, username, password);
-    if (!auth.success) {
-      return res.status(401).json(auth);
+    const scope = await getAuthorizedReadingGroup(req, readingGroupId, true);
+    if (!scope.success) {
+      return res.status(scope.status).json(scope);
     }
-    const result = await updateReadingGroupUserPhone(readingGroupId, userId, phone);
+    const result = await updateReadingGroupUserPhone(scope.readingGroupId, userId, phone);
     if (!result.success) {
       return res.status(400).json(result);
     }
-    res.json({ success: true, readingGroupId, userId, phone: result.phone });
+    res.json({ success: true, readingGroupId: scope.readingGroupId, userId, phone: result.phone });
   } catch (error) {
     console.error('Okuma grubu telefon güncelleme hatası:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -2801,11 +2997,12 @@ app.get('/api/text-votes', async (req, res) => {
 });
 
 // Manuel Anket Gönderme Endpoint'i (örn: GET veya POST /api/send-poll)
-app.all(['/api/send-poll', '/api/run-poll'], async (req, res) => {
+app.post(['/api/send-poll', '/api/run-poll'], limitSensitiveAction({ name: 'send-poll', limit: 5, windowMs: 60 * 1000 }), async (req, res) => {
   try {
-    const groupId = req.query.groupId || req.body?.groupId;
-    const pollTitle = req.query.pollTitle || req.body?.pollTitle;
-    const result = await sendWhatsAppPoll({ groupId, pollTitleCustom: pollTitle });
+    const target = await getAuthorizedTargetGroup(req.body?.groupId);
+    if (!target.success) return res.status(target.status).json(target);
+    const pollTitle = req.body?.pollTitle;
+    const result = await sendWhatsAppPoll({ groupId: target.groupId, pollTitleCustom: pollTitle });
     res.json(result);
   } catch (error) {
     console.error("WhatsApp manuel anket hatası:", error);
@@ -2814,10 +3011,11 @@ app.all(['/api/send-poll', '/api/run-poll'], async (req, res) => {
 });
 
 // Manuel Vecize Gönderme Endpoint'i (Test amaçlı)
-app.all(['/api/send-sentence', '/api/run-sentence'], async (req, res) => {
+app.post(['/api/send-sentence', '/api/run-sentence'], limitSensitiveAction({ name: 'send-sentence', limit: 5, windowMs: 60 * 1000 }), async (req, res) => {
   try {
-    const groupId = req.query.groupId || req.body?.groupId;
-    const result = await sendWhatsAppSentence({ groupId });
+    const target = await getAuthorizedTargetGroup(req.body?.groupId);
+    if (!target.success) return res.status(target.status).json(target);
+    const result = await sendWhatsAppSentence({ groupId: target.groupId });
     res.json(result);
   } catch (error) {
     console.error('WhatsApp manuel vecize gönderim hatası:', error);
@@ -2826,10 +3024,11 @@ app.all(['/api/send-sentence', '/api/run-sentence'], async (req, res) => {
 });
 
 // Manuel Okuma Serisi Raporu Gönderme Endpoint'i (Test amaçlı)
-app.all(['/api/send-reading-report', '/api/run-reading-report'], async (req, res) => {
+app.post(['/api/send-reading-report', '/api/run-reading-report'], limitSensitiveAction({ name: 'send-reading-report', limit: 3, windowMs: 5 * 60 * 1000 }), async (req, res) => {
   try {
-    const groupId = req.query.groupId || req.body?.groupId;
-    const result = await sendWeeklyReadingReport({ groupId });
+    const target = await getAuthorizedTargetGroup(req.body?.groupId);
+    if (!target.success) return res.status(target.status).json(target);
+    const result = await sendWeeklyReadingReport({ groupId: target.groupId });
     res.json(result);
   } catch (error) {
     console.error('WhatsApp haftalık rapor gönderim hatası:', error);
@@ -2838,11 +3037,13 @@ app.all(['/api/send-reading-report', '/api/run-reading-report'], async (req, res
 });
 
 // Manuel Lig Kutlama Kontrolü Endpoint'i
-app.all(['/api/send-league-congratulations', '/api/run-league-congratulations'], async (req, res) => {
+app.post(['/api/send-league-congratulations', '/api/run-league-congratulations'], limitSensitiveAction({ name: 'send-league-congratulations', limit: 3, windowMs: 5 * 60 * 1000 }), async (req, res) => {
   try {
-    const groupId = req.query.groupId || req.body?.groupId;
-    const readingGroupId = req.query.readingGroupId || req.body?.readingGroupId;
-    const result = await sendLeagueCongratulations({ groupId, readingGroupId });
+    const target = await getAuthorizedTargetGroup(req.body?.groupId);
+    if (!target.success) return res.status(target.status).json(target);
+    const readingScope = await getAuthorizedReadingGroup(req, req.body?.readingGroupId, false);
+    if (!readingScope.success) return res.status(readingScope.status).json(readingScope);
+    const result = await sendLeagueCongratulations({ groupId: target.groupId, readingGroupId: readingScope.readingGroupId });
     res.json(result);
   } catch (error) {
     console.error('Lig kutlama gönderim hatası:', error);
@@ -2853,12 +3054,10 @@ app.all(['/api/send-league-congratulations', '/api/run-league-congratulations'],
 // Lig Kutlama Teslimat Tercihleri — üye listesi
 app.get('/api/league-congratulation-prefs', async (req, res) => {
   try {
-    const readingGroupId = req.query.readingGroupId || (await getTargetReadingGroupId());
-    if (!readingGroupId) {
-      return res.status(400).json({ success: false, message: 'readingGroupId belirlenemedi (poll_config kontrol edin).' });
-    }
-    const users = await listReadingGroupUsersForLeaguePrefs(readingGroupId);
-    res.json({ success: true, readingGroupId, users });
+    const scope = await getAuthorizedReadingGroup(req, req.query.readingGroupId, true);
+    if (!scope.success) return res.status(scope.status).json(scope);
+    const users = await listReadingGroupUsersForLeaguePrefs(scope.readingGroupId);
+    res.json({ success: true, readingGroupId: scope.readingGroupId, users });
   } catch (error) {
     console.error('Lig kutlama prefs listesi hatası:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -2870,15 +3069,13 @@ app.put('/api/league-congratulation-prefs/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
     const delivery = req.body?.delivery;
-    const readingGroupId = req.body?.readingGroupId || req.query.readingGroupId || (await getTargetReadingGroupId());
-    if (!readingGroupId) {
-      return res.status(400).json({ success: false, message: 'readingGroupId belirlenemedi (poll_config kontrol edin).' });
-    }
-    const result = await updateLeagueCongratulationDelivery(readingGroupId, userId, delivery);
+    const scope = await getAuthorizedReadingGroup(req, req.body?.readingGroupId || req.query.readingGroupId, true);
+    if (!scope.success) return res.status(scope.status).json(scope);
+    const result = await updateLeagueCongratulationDelivery(scope.readingGroupId, userId, delivery);
     if (!result.success) {
       return res.status(400).json(result);
     }
-    res.json({ success: true, readingGroupId, userId, delivery: result.delivery });
+    res.json({ success: true, readingGroupId: scope.readingGroupId, userId, delivery: result.delivery });
   } catch (error) {
     console.error('Lig kutlama prefs güncelleme hatası:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -2886,10 +3083,11 @@ app.put('/api/league-congratulation-prefs/:userId', async (req, res) => {
 });
 
 // Manuel Haftalık Okuma Tablosu Görseli Gönderme Endpoint'i (Test amaçlı)
-app.all(['/api/send-table-image', '/api/run-table-image'], async (req, res) => {
+app.post(['/api/send-table-image', '/api/run-table-image'], limitSensitiveAction({ name: 'send-table-image', limit: 3, windowMs: 5 * 60 * 1000 }), async (req, res) => {
   try {
-    const groupId = req.query.groupId || req.body?.groupId;
-    const result = await sendWeeklyTableImage({ groupId });
+    const target = await getAuthorizedTargetGroup(req.body?.groupId);
+    if (!target.success) return res.status(target.status).json(target);
+    const result = await sendWeeklyTableImage({ groupId: target.groupId });
     res.json(result);
   } catch (error) {
     console.error('WhatsApp haftalık tablo resmi gönderim hatası:', error);
@@ -2897,7 +3095,7 @@ app.all(['/api/send-table-image', '/api/run-table-image'], async (req, res) => {
   }
 });
 
-app.all(['/api/restart', '/api/logout'], async (req, res) => {
+app.post('/api/restart', requireRecentDashboardAuth, limitSensitiveAction({ name: 'whatsapp-restart', limit: 2, windowMs: 15 * 60 * 1000 }), async (req, res) => {
   try {
     await restartWhatsAppClient();
     res.json({ success: true, message: 'WhatsApp istemcisi sıfırlandı ve yeniden başlatılıyor. Yeni QR kod oluşturuluyor...' });
@@ -2907,8 +3105,11 @@ app.all(['/api/restart', '/api/logout'], async (req, res) => {
   }
 });
 
-app.post('/api/pairing-code', async (req, res) => {
+app.post('/api/pairing-code', requireRecentDashboardAuth, limitSensitiveAction({ name: 'pairing-code', limit: 3, windowMs: 15 * 60 * 1000 }), async (req, res) => {
   try {
+    if (state.status === 'READY') {
+      return res.status(409).json({ success: false, message: 'WhatsApp hesabı zaten bağlı.' });
+    }
     const { phoneNumber } = req.body;
     if (!phoneNumber) {
       return res.status(400).json({ success: false, message: 'Telefon numarası gereklidir (Örn: 5551234567)' });
@@ -2939,6 +3140,30 @@ app.get('/api/poll-config', async (req, res) => {
 app.post('/api/poll-config', async (req, res) => {
   try {
     const { titleTemplate, options, groupId, readingGroupId, features } = req.body;
+    const currentConfig = await getPollConfig(getConfiguredUsername());
+    const requestedGroupId = String(groupId || '').trim();
+    const requestedReadingGroupId = String(readingGroupId || '').trim();
+
+    if (requestedGroupId && requestedGroupId !== String(currentConfig?.groupId || '')) {
+      if (!requestedGroupId.endsWith('@g.us')) {
+        return res.status(400).json({ success: false, message: 'Hedef yalnızca geçerli bir WhatsApp grup JID değeri olabilir.' });
+      }
+      const groups = await getWhatsAppGroups();
+      if (!groups.some(group => group.id === requestedGroupId)) {
+        return res.status(403).json({ success: false, message: 'Botun katılmadığı bir WhatsApp grubu hedef olarak seçilemez.' });
+      }
+    }
+
+    if (requestedReadingGroupId && requestedReadingGroupId !== String(currentConfig?.readingGroupId || '')) {
+      if (!hasReadingGroupAdminGrant(req, requestedReadingGroupId)) {
+        return res.status(401).json({ success: false, message: 'Yeni okuma grubu için yönetici doğrulaması gerekli.' });
+      }
+      const readingGroups = await getReadingGroups();
+      if (!readingGroups.some(group => String(group.groupId) === requestedReadingGroupId)) {
+        return res.status(403).json({ success: false, message: 'Geçersiz okuma grubu.' });
+      }
+    }
+
     const result = await savePollConfig({ titleTemplate, options, groupId, readingGroupId, configKey: getConfiguredUsername(), features });
     if (result.success) {
       if (sock && state.status === 'READY') {

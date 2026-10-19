@@ -45,12 +45,13 @@ Botunuzu Render.com üzerinde 7/24 kesintisiz çalışır hale getirmek için a�
 | :--- | :---: | :--- |
 | **`CONFIG_KEY`** | ✅ | Botunuz için rastgele benzersiz bir anahtar belirleyin. *(Örn: `okumagrubu1`)* |
 | **`MONGO_URI`** | ✅ | MongoDB bağlantı adresiniz. *(Örn: `mongodb+srv://user:pass@cluster.mongodb.net`)* |
+| **`BAILEYS_AUTH_ENCRYPTION_KEY`** | Üretimde ✅ | MongoDB'de tutulan WhatsApp oturum anahtarlarını şifreleyen, en az 32 karakterlik gizli değer |
 | **`DB_NAME`** | ✅ | Veritabanı adınız. *(Örn: `readingTracker`)* |
 | **`PING_URL`** | ❌ | Render'ın uyku moduna girmesini engellemek için health check adresi.<br>*(Örn: `https://okuma-takip-botu.onrender.com/api/health` — Dilerseniz bu URL'i [cron-job.org](https://cron-job.org/) gibi harici bir servise ekleyip her 5 dakikada bir tetikleyerek de botu uyanık tutabilirsiniz.)* |
 
 3. Değişiklikleri kaydedin. Render uygulamanızı otomatik olarak yeniden başlatacaktır.
 
-> **Not:** Bu üç zorunlu değişken tanımlanmadığında bot hiçbir WhatsApp işlemi gerçekleştirmez.
+> **Not:** Üretimde bu dört zorunlu değişken tanımlanmadığında bot hiçbir WhatsApp işlemi gerçekleştirmez. `BAILEYS_AUTH_ENCRYPTION_KEY` değerini parola yöneticisiyle üretilmiş, benzersiz bir sır olarak saklayın; kaybedilirse mevcut WhatsApp oturumu çözülemez. WhatsApp oturum anahtarları ve Baileys'in tekrar gönderim için ihtiyaç duyduğu şifreli mesaj kayıtları ilgili `baileys_auth_<CONFIG_KEY>` koleksiyonunda saklanır.
 
 #### 3. Adım: QR Kod ile WhatsApp Bağlantısı
 1. Render'ın verdiği web adresine tarayıcınızdan girin.
@@ -78,6 +79,7 @@ Projeyi kendi bilgisayarınızda geliştirme veya test amacıyla çalıştırmak
    CONFIG_KEY=okumagrubu1
    MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net
    DB_NAME=readingTracker
+   BAILEYS_AUTH_ENCRYPTION_KEY=en-az-32-karakterlik-rastgele-gizli-deger
    ```
 
 3. **Uygulamayı Başlatın:**
@@ -146,10 +148,10 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 | :--- | :--- | :--- |
 | `/` | `GET` | Web Yönetim Paneli Arayüzü |
 | `/api/status` | `GET` | Bot, konfigürasyon ve veritabanı bağlantı durumu |
-| `/api/send-poll` | `GET` / `POST` | Hedef gruba anlık anket gönderir |
-| `/api/send-sentence` | `GET` / `POST` | Hedef gruba motivasyon cümlesi gönderir |
-| `/api/send-reading-report` | `GET` / `POST` | Haftalık okuma raporu (metin) gönderir |
-| `/api/send-table-image` | `GET` / `POST` | Haftalık okuma tablosu görselini gönderir |
+| `/api/send-poll` | `POST` | Hedef gruba anlık anket gönderir |
+| `/api/send-sentence` | `POST` | Hedef gruba motivasyon cümlesi gönderir |
+| `/api/send-reading-report` | `POST` | Haftalık okuma raporu (metin) gönderir |
+| `/api/send-table-image` | `POST` | Haftalık okuma tablosu görselini gönderir |
 | `/api/polls` | `GET` | Gönderilmiş anketleri listeler |
 | `/api/poll-votes/:pollId` | `GET` | Seçilen ankete ait detaylı oy kayıtlarını getirir |
 | `/api/poll-config` | `GET` / `POST` | Anket başlığı, seçenekler, grup JID, okuma grubu ve özellik bayraklarını okur/günceller |

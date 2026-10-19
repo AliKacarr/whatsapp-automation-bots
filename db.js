@@ -119,7 +119,6 @@ async function ensureCollectionIndexes() {
   await createSafeIndex('poll_votes', { pollId: 1, configKey: 1, readingGroupId: 1, groupId: 1, updatedAt: -1 });
   await createSafeIndex('pending_league_congratulations', { userId: 1, groupId: 1, league: 1 }, { unique: true });
   await createSafeIndex('pending_league_congratulations', { createdAt: 1 }, { expireAfterSeconds: 3600 });
-  await createSafeIndex('baileys_outgoing_messages', { expiresAt: 1 }, { expireAfterSeconds: 0 });
   await createSafeIndex(DASHBOARD_AUTH_COLLECTION, { username: 1 }, {
     unique: true,
     partialFilterExpression: { username: { $type: 'string' } }
@@ -709,6 +708,13 @@ async function savePollConfig(configData) {
       ? configData.options.map(o => String(o).trim()).filter(Boolean)
       : [];
 
+    if (titleTemplate.length > 200) {
+      return { success: false, message: 'Anket başlığı şablonu en fazla 200 karakter olabilir.' };
+    }
+    if (options.some(option => option.length > 100)) {
+      return { success: false, message: 'Anket seçenekleri en fazla 100 karakter olabilir.' };
+    }
+
     if (options.length < 2) {
       return { success: false, message: 'En az 2 anket seçeneği eklemelisiniz.' };
     }
@@ -743,6 +749,13 @@ async function savePollConfig(configData) {
       ? String(configData.readingGroupId).trim()
       : null;
 
+    if (groupId && !/^[0-9-]{5,40}@g\.us$/.test(groupId)) {
+      return { success: false, message: 'Geçersiz WhatsApp grup JID değeri.' };
+    }
+    if (readingGroupId && !/^[A-Za-z0-9_-]{1,100}$/.test(readingGroupId)) {
+      return { success: false, message: 'Geçersiz okuma grubu kimliği.' };
+    }
+
     const setFields = {
       titleTemplate,
       options,
@@ -773,7 +786,7 @@ async function savePollConfig(configData) {
     return { success: true, config: { configKey, ...setFields } };
   } catch (err) {
     console.error(`❌ Anket ayarları kayıt hatası:`, err.message);
-    return { success: false, message: err.message };
+    return { success: false, message: 'Ayarlar kaydedilemedi.' };
   }
 }
 
@@ -947,7 +960,7 @@ async function verifyReadingGroupAdmin(readingGroupId, username, password) {
     return { success: false, message: 'Yönetici adı veya şifre hatalı.' };
   } catch (err) {
     console.error('❌ verifyReadingGroupAdmin hatası:', err.message);
-    return { success: false, message: err.message };
+    return { success: false, message: 'Yönetici doğrulaması tamamlanamadı.' };
   }
 }
 
@@ -1015,7 +1028,7 @@ async function updateReadingGroupUserPhone(readingGroupId, userId, phone) {
     return { success: true, phone: bare };
   } catch (err) {
     console.error('❌ updateReadingGroupUserPhone hatası:', err.message);
-    return { success: false, message: err.message };
+    return { success: false, message: 'Telefon numarası güncellenemedi.' };
   }
 }
 
@@ -1470,7 +1483,7 @@ async function updateLeagueCongratulationDelivery(readingGroupId, userId, delive
     return { success: true, delivery: normalized };
   } catch (err) {
     console.error('❌ updateLeagueCongratulationDelivery hatası:', err.message);
-    return { success: false, message: err.message };
+    return { success: false, message: 'Teslimat tercihi güncellenemedi.' };
   }
 }
 

@@ -234,7 +234,7 @@
     .group-banner-items {
       display: flex;
       align-items: center;
-      gap: 18px;
+      gap: 10px;
       flex-wrap: nowrap;
       min-width: 0;
     }
@@ -1718,6 +1718,7 @@
       try {
         await fetch('/api/auth/logout', { method: 'POST' });
       } finally {
+        readingGroupAdminGrants.clear();
         lockDashboard();
         checkDashboardAuth();
       }
@@ -1726,7 +1727,7 @@
     async function checkStatus() {
       if (!dashboardAuthenticated) return;
       try {
-        const res = await fetch('/api/status?autoStart=true');
+        const res = await fetch('/api/status');
         if (res.status === 401) {
           checkDashboardAuth();
           return;
@@ -1832,7 +1833,7 @@
               <div style="font-size: 48px; margin-bottom: 8px;">✨</div>
               <h3 style="font-size: 20px; font-weight: 700;">Bağlantı Aktif</h3>
               <p style="color: var(--text-muted); font-size: 14px; margin-top: 6px;">
-                ${data.userInfo?.pushname ? 'Bağlı Kullanıcı: <b>' + data.userInfo.pushname + '</b>' : 'WhatsApp istemcisi hazır'}
+                ${data.userInfo?.pushname ? 'Bağlı Kullanıcı: <b>' + escapeHtml(data.userInfo.pushname) + '</b>' : 'WhatsApp istemcisi hazır'}
               </p>
             </div>
           `;
@@ -1892,7 +1893,7 @@
         if (lastRenderedStatus !== errorKey) {
           content.innerHTML = `
             <p style="font-size: 14px; color: var(--text-muted); margin: 16px 0;">
-              ${data.lastError ? 'Hata: ' + data.lastError : 'Oturum kapalı. Yeniden başlatarak bağlanabilirsiniz.'}
+              ${data.lastError ? 'Hata: ' + escapeHtml(data.lastError) : 'Oturum kapalı. Yeniden başlatarak bağlanabilirsiniz.'}
             </p>
             <button class="btn btn-info" style="margin-top: 8px; width: auto;" onclick="triggerRestart(true)">
               📲 QR Kod Üret / Bağlan
@@ -2087,7 +2088,7 @@
         const data = await res.json();
         if (!data.success) {
           document.getElementById('leaguePrefsList').innerHTML =
-            `<div style="text-align:center;color:#f87171;padding:20px;font-size:12px;">${data.message || 'Liste alınamadı'}</div>`;
+            `<div style="text-align:center;color:#f87171;padding:20px;font-size:12px;">${escapeHtml(data.message || 'Liste alınamadı')}</div>`;
           return;
         }
         leaguePrefsCache = data.users || [];
@@ -2287,13 +2288,13 @@
       const visibleGroups = groups.slice(0, wpGroupsLimit);
       const remainingCount = groups.length - visibleGroups.length;
 
-      let html = visibleGroups.map(g => `
-        <div class="group-item" style="cursor:pointer;" onclick="selectWpGroup('${g.id}', '${escapeHtml(g.name).replace(/'/g, "\\'")}')">
+      let html = visibleGroups.map((g, index) => `
+        <div class="group-item wp-group-choice" data-group-index="${index}" style="cursor:pointer;">
           <div style="overflow:hidden; flex:1;">
             <div class="group-item-name">${escapeHtml(g.name)}</div>
-            <div class="group-item-id">${g.id}</div>
+            <div class="group-item-id">${escapeHtml(g.id)}</div>
           </div>
-          <button class="copy-btn" onclick="event.stopPropagation(); selectWpGroup('${g.id}', '${escapeHtml(g.name).replace(/'/g, "\\'")}')">Seç</button>
+          <button type="button" class="copy-btn">Seç</button>
         </div>
       `).join('');
 
@@ -2306,6 +2307,12 @@
       }
 
       listEl.innerHTML = html;
+      listEl.querySelectorAll('.wp-group-choice').forEach(row => {
+        row.addEventListener('click', () => {
+          const group = visibleGroups[Number(row.dataset.groupIndex)];
+          if (group) selectWpGroup(group.id, group.name);
+        });
+      });
     }
 
     function loadMoreWpGroups() {
@@ -2342,34 +2349,19 @@
     let pendingReadingGroupSelect = null; // { id, name }
     let readingGroupPhoneCache = [];
 
-    const ROTA_ADMIN_STORAGE_KEY = 'rotaReadingGroupAdminAuth';
-
-    function getAllReadingGroupAdminAuth() {
-      try {
-        return JSON.parse(localStorage.getItem(ROTA_ADMIN_STORAGE_KEY) || '{}') || {};
-      } catch (e) {
-        return {};
-      }
-    }
+    const readingGroupAdminGrants = new Map();
 
     function getReadingGroupAdminAuth(groupId) {
       if (!groupId) return null;
-      const all = getAllReadingGroupAdminAuth();
-      const entry = all[groupId];
-      if (!entry || !entry.username || !entry.password) return null;
-      return entry;
+      return readingGroupAdminGrants.get(String(groupId)) || null;
     }
 
-    function setReadingGroupAdminAuth(groupId, username, password) {
-      const all = getAllReadingGroupAdminAuth();
-      all[groupId] = { username, password, savedAt: Date.now() };
-      localStorage.setItem(ROTA_ADMIN_STORAGE_KEY, JSON.stringify(all));
+    function setReadingGroupAdminAuth(groupId, username) {
+      readingGroupAdminGrants.set(String(groupId), { username, grantedAt: Date.now() });
     }
 
     function clearReadingGroupAdminAuth(groupId) {
-      const all = getAllReadingGroupAdminAuth();
-      delete all[groupId];
-      localStorage.setItem(ROTA_ADMIN_STORAGE_KEY, JSON.stringify(all));
+      readingGroupAdminGrants.delete(String(groupId));
     }
 
     async function loadReadingGroupsCache(force = false) {
@@ -2414,37 +2406,32 @@
       const visibleGroups = groups.slice(0, readingGroupsLimit);
       const remainingCount = groups.length - visibleGroups.length;
 
-      let html = visibleGroups.map(g => {
+      let html = visibleGroups.map((g, index) => {
         const isPrivate = String(g.visibility || '').toLowerCase() === 'private';
         let imgHtml;
         if (isPrivate) {
           // Gizli gruplarda gerçek görsel gösterilmez
           imgHtml = `<div style="width:36px; height:36px; border-radius:50%; background:rgba(251,191,36,0.18); border:1px solid rgba(251,191,36,0.3); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:16px;">❔</div>`;
         } else {
-          let imgSrc = g.groupImage;
-          if (imgSrc && !imgSrc.startsWith('http://') && !imgSrc.startsWith('https://') && !imgSrc.startsWith('/')) {
-            imgSrc = '/' + imgSrc;
-          }
+          const imgSrc = getSafeGroupImageUrl(g.groupImage);
           imgHtml = imgSrc
-            ? `<img src="${imgSrc}" alt="" style="width:36px; height:36px; border-radius:50%; object-fit:cover; flex-shrink:0;" onerror="this.style.display='none'">`
+            ? `<img src="${escapeHtml(imgSrc)}" alt="" style="width:36px; height:36px; border-radius:50%; object-fit:cover; flex-shrink:0;">`
             : `<div style="width:36px; height:36px; border-radius:50%; background:rgba(139,92,246,0.3); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:16px;">📚</div>`;
         }
         const badge = isPrivate
           ? `<span style="font-size:10px;color:#fbbf24;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.25);border-radius:999px;padding:2px 7px;margin-left:6px;">Özel Grup</span>`
           : '';
-        const safeId = String(g.groupId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        const safeName = escapeHtml(g.groupName).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         const subLine = isPrivate
           ? escapeHtml(g.groupId)
           : `${escapeHtml(g.groupId)}${g.description ? ' · ' + escapeHtml(g.description) : ''}`;
         return `
-        <div class="group-item" style="cursor:pointer;" onclick="selectReadingGroup('${safeId}', '${safeName}')">
+        <div class="group-item reading-group-choice" data-group-index="${index}" style="cursor:pointer;">
           ${imgHtml}
           <div style="overflow:hidden; flex:1;">
             <div class="group-item-name">${escapeHtml(g.groupName)}${badge}</div>
             <div class="group-item-id">${subLine}</div>
           </div>
-          <button class="copy-btn" onclick="event.stopPropagation(); selectReadingGroup('${safeId}', '${safeName}')">Seç</button>
+          <button type="button" class="copy-btn">Seç</button>
         </div>
       `;
       }).join('');
@@ -2458,6 +2445,15 @@
       }
 
       listEl.innerHTML = html;
+      listEl.querySelectorAll('.reading-group-choice').forEach(row => {
+        row.addEventListener('click', () => {
+          const group = visibleGroups[Number(row.dataset.groupIndex)];
+          if (group) selectReadingGroup(group.groupId, group.groupName);
+        });
+      });
+      listEl.querySelectorAll('.reading-group-choice img').forEach(img => {
+        img.addEventListener('error', () => { img.style.display = 'none'; }, { once: true });
+      });
     }
 
     function loadMoreReadingGroups() {
@@ -2547,7 +2543,7 @@
           errEl.style.display = 'block';
           return;
         }
-        setReadingGroupAdminAuth(pending.id, data.username || username, password);
+        setReadingGroupAdminAuth(pending.id, data.username || username);
         showToast('✅ Yönetici girişi başarılı');
         applyReadingGroupSelection(pending.id, pending.name);
       } catch (e) {
@@ -2589,9 +2585,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            readingGroupId: groupId,
-            username: auth.username,
-            password: auth.password
+            readingGroupId: groupId
           })
         });
         const data = await res.json();
@@ -2604,7 +2598,7 @@
             return;
           }
           document.getElementById('readingGroupPhoneList').innerHTML =
-            `<div style="text-align:center;color:#f87171;padding:20px;font-size:12px;">${data.message || 'Liste alınamadı'}</div>`;
+            `<div style="text-align:center;color:#f87171;padding:20px;font-size:12px;">${escapeHtml(data.message || 'Liste alınamadı')}</div>`;
           return;
         }
         readingGroupPhoneCache = data.users || [];
@@ -2669,8 +2663,6 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             readingGroupId: groupId,
-            username: auth.username,
-            password: auth.password,
             phone
           })
         });
@@ -3195,10 +3187,10 @@
         if (data.success && data.code) {
           resultDiv.innerHTML = `
             <p style="font-size:12px; color:var(--text-muted); margin-top:8px;">WhatsApp'a girilecek 8-haneli kodunuz:</p>
-            <div class="pairing-code-display">${data.code}</div>
+            <div class="pairing-code-display">${escapeHtml(data.code)}</div>
           `;
         } else {
-          resultDiv.innerHTML = `<p style="font-size:12px; color:var(--accent-rose); margin-top:8px;">Hata: ${data.message || 'Kod alınamadı'}</p>`;
+          resultDiv.innerHTML = `<p style="font-size:12px; color:var(--accent-rose); margin-top:8px;">Hata: ${escapeHtml(data.message || 'Kod alınamadı')}</p>`;
         }
       } catch (e) {
         resultDiv.innerHTML = '<p style="font-size:12px; color:var(--accent-rose); margin-top:8px;">Bağlantı hatası</p>';
@@ -3211,13 +3203,21 @@
       content.innerHTML = '<div class="spinner"></div><p style="font-size: 13px; color: var(--text-muted);">Yeniden başlatılıyor...</p>';
 
       try {
-        await fetch('/api/restart', {
+        const res = await fetch('/api/restart', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ forceNewQR: forceNew })
         });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          showToast('❌ ' + (data.message || 'Yeniden başlatma işlemi reddedildi.'));
+          checkStatus();
+          return;
+        }
         showToast('🔄 Oturum sıfırlandı, yeniden başlatılıyor...');
-      } catch (e) { }
+      } catch (e) {
+        showToast('❌ Sunucuya ulaşılamadı.');
+      }
 
       setTimeout(checkStatus, 2000);
     }
@@ -3235,7 +3235,26 @@
     }
 
     function escapeHtml(str) {
-      return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function getSafeGroupImageUrl(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      try {
+        const candidate = raw.startsWith('/') ? raw : `/${raw}`;
+        const url = new URL(candidate, window.location.origin);
+        if (url.origin !== window.location.origin) return '';
+        if (!url.pathname.startsWith('/groupAvatars/')) return '';
+        return `${url.pathname}${url.search}`;
+      } catch (_) {
+        return '';
+      }
     }
 
     updateDatePlaceholderExample();
