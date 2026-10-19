@@ -143,6 +143,81 @@
       background: linear-gradient(90deg, transparent, var(--accent-emerald), var(--accent-cyan), transparent);
     }
 
+    .auth-shell {
+      width: 100%;
+      max-width: 430px;
+    }
+
+    .auth-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 30px;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      position: relative;
+      overflow: hidden;
+      text-align: center;
+    }
+
+    .auth-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent-emerald), var(--accent-cyan), transparent);
+    }
+
+    .auth-icon {
+      width: 58px;
+      height: 58px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 18px;
+      background: rgba(16, 185, 129, 0.13);
+      border: 1px solid rgba(16, 185, 129, 0.28);
+      font-size: 26px;
+    }
+
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+      margin-top: 22px;
+      text-align: left;
+    }
+
+    .auth-field label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .auth-error {
+      display: none;
+      padding: 10px 12px;
+      border: 1px solid rgba(248, 113, 113, 0.25);
+      border-radius: 10px;
+      background: rgba(239, 68, 68, 0.1);
+      color: #fca5a5;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .dashboard-account-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
     /* Target Group Banner */
     .group-banner {
       background: rgba(255, 255, 255, 0.03);
@@ -816,6 +891,20 @@
         border-radius: 18px;
       }
 
+      .auth-shell {
+        max-width: 100%;
+      }
+
+      .auth-card {
+        padding: 24px 18px;
+        border-radius: 18px;
+      }
+
+      .dashboard-account-actions {
+        width: 100%;
+        justify-content: space-between;
+      }
+
       .group-info {
         width: 100%;
       }
@@ -957,7 +1046,45 @@
 
 <body>
 
-  <div class="container">
+  <div class="auth-shell" id="authGate">
+    <div class="auth-card">
+      <div class="auth-icon" id="authIcon">🔐</div>
+      <h1 id="authTitle" style="font-size: 24px; margin-bottom: 8px;">Yönetim Paneli</h1>
+      <p id="authDescription" style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+        Kullanıcı kaydı kontrol ediliyor...
+      </p>
+
+      <div id="authLoading" style="padding: 26px 0 8px;">
+        <div class="spinner"></div>
+      </div>
+      <div id="authRetry" style="display: none; margin-top: 20px;">
+        <div id="authStatusError" class="auth-error" style="display: block; margin-bottom: 12px;"></div>
+        <button type="button" class="btn btn-secondary" onclick="checkDashboardAuth()">Tekrar Dene</button>
+      </div>
+
+      <form id="authForm" class="auth-form" style="display: none;" onsubmit="submitDashboardAuth(event)">
+        <div class="auth-field">
+          <label for="authUsername">Kullanıcı adı</label>
+          <input type="text" id="authUsername" class="phone-input" style="width: 100%;" placeholder="Kullanıcı adınızı girin" required autocomplete="username" />
+        </div>
+        <div class="auth-field">
+          <label for="authPassword">Şifre</label>
+          <input type="password" id="authPassword" class="phone-input" style="width: 100%;" minlength="8" maxlength="128" required autocomplete="current-password" />
+        </div>
+        <div class="auth-field" id="authPasswordConfirmField" style="display: none;">
+          <label for="authPasswordConfirm">Şifreyi tekrar girin</label>
+          <input type="password" id="authPasswordConfirm" class="phone-input" style="width: 100%;" minlength="8" maxlength="128" autocomplete="new-password" />
+        </div>
+        <button type="button" id="generatePasswordBtn" class="btn btn-secondary" style="display: none; padding: 9px 14px;" onclick="generateDashboardPassword()">
+          🎲 Güçlü Şifre Oluştur
+        </button>
+        <div id="authError" class="auth-error"></div>
+        <button type="submit" id="authSubmitBtn" class="btn btn-primary" style="color: #fff;">Devam Et</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="container" id="dashboardContainer" style="display: none;">
 
     <!-- Main Card -->
     <div class="main-card">
@@ -983,8 +1110,14 @@
           </div>
         </div>
 
-        <div class="badge badge-initializing" id="statusBadge">
-          🚀 Kontrol Ediliyor...
+        <div class="dashboard-account-actions">
+          <div class="badge badge-initializing" id="statusBadge">
+            🚀 Kontrol Ediliyor...
+          </div>
+          <button class="btn btn-secondary" type="button" title="Oturumu kapat" aria-label="Oturumu kapat"
+            style="width: auto; min-height: 0; padding: 7px 10px; font-size: 12px;" onclick="logoutDashboard()">
+            <i class="fas fa-right-from-bracket" aria-hidden="true"></i>
+          </button>
         </div>
       </div>
 
@@ -1031,7 +1164,7 @@
     </div>
   </div>
 
-  <footer class="site-footer">
+  <footer class="site-footer" id="siteFooter" style="display: none;">
     <p>Çatı Katı Elazığ İlim ve Kültür Derneği © Tüm hakları saklıdır.</p>
     <div class="social-icons">
       <a href="https://www.instagram.com/catikatimelazig/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><i class="fab fa-instagram" aria-hidden="true"></i></a>
@@ -1437,10 +1570,167 @@
   <script>
     let lastRenderedStatus = '';
     let currentQrDataUrl = '';
+    let dashboardAuthMode = 'login';
+    let dashboardAuthenticated = false;
+    let statusPollingTimer = null;
+    let authStatusRetryTimer = null;
+
+    function setAuthError(message) {
+      const errorEl = document.getElementById('authError');
+      if (!message) {
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+        return;
+      }
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+    }
+
+    function showDashboardAuthForm(data) {
+      clearTimeout(authStatusRetryTimer);
+      dashboardAuthMode = data.registered ? 'login' : 'register';
+      document.getElementById('authLoading').style.display = 'none';
+      document.getElementById('authForm').style.display = 'flex';
+      document.getElementById('authUsername').value = '';
+      document.getElementById('authPassword').value = '';
+      document.getElementById('authPassword').type = 'password';
+      document.getElementById('authPasswordConfirm').value = '';
+      document.getElementById('authPasswordConfirm').type = 'password';
+      document.getElementById('authPasswordConfirmField').style.display = data.registered ? 'none' : 'block';
+      document.getElementById('generatePasswordBtn').style.display = data.registered ? 'none' : 'block';
+      document.getElementById('authPassword').autocomplete = data.registered ? 'current-password' : 'new-password';
+      document.getElementById('authIcon').textContent = data.registered ? '🔐' : '👤';
+      document.getElementById('authTitle').textContent = data.registered ? 'Yönetim Paneline Giriş' : 'Yönetici Kaydı Oluştur';
+      document.getElementById('authDescription').textContent = data.registered
+        ? 'Kullanıcı adınızı ve şifrenizi girin.'
+        : 'Yönetim paneli için kullanıcı adınızı ve güçlü bir şifre girin.';
+      document.getElementById('authSubmitBtn').textContent = data.registered ? 'Giriş Yap' : 'Kaydı Oluştur';
+      setAuthError('');
+      setTimeout(() => document.getElementById('authUsername').focus(), 0);
+    }
+
+    function lockDashboard() {
+      dashboardAuthenticated = false;
+      if (statusPollingTimer) clearInterval(statusPollingTimer);
+      statusPollingTimer = null;
+      document.getElementById('dashboardContainer').style.display = 'none';
+      document.getElementById('siteFooter').style.display = 'none';
+      document.getElementById('authGate').style.display = 'block';
+    }
+
+    function unlockDashboard() {
+      dashboardAuthenticated = true;
+      document.getElementById('authGate').style.display = 'none';
+      document.getElementById('dashboardContainer').style.display = 'block';
+      document.getElementById('siteFooter').style.display = 'flex';
+      lastRenderedStatus = '';
+      checkStatus();
+      if (statusPollingTimer) clearInterval(statusPollingTimer);
+      statusPollingTimer = setInterval(checkStatus, 3000);
+    }
+
+    async function checkDashboardAuth() {
+      clearTimeout(authStatusRetryTimer);
+      lockDashboard();
+      document.getElementById('authLoading').style.display = 'block';
+      document.getElementById('authRetry').style.display = 'none';
+      document.getElementById('authForm').style.display = 'none';
+      document.getElementById('authTitle').textContent = 'Yönetim Paneli';
+      document.getElementById('authDescription').textContent = 'Kullanıcı kaydı kontrol ediliyor...';
+
+      try {
+        const res = await fetch('/api/auth/status', { cache: 'no-store' });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || 'Kullanıcı durumu kontrol edilemedi.');
+        }
+        if (data.authenticated) {
+          unlockDashboard();
+          return;
+        }
+        showDashboardAuthForm(data);
+      } catch (error) {
+        document.getElementById('authLoading').style.display = 'none';
+        document.getElementById('authRetry').style.display = 'block';
+        document.getElementById('authStatusError').textContent = error.message || 'Sunucuya bağlanılamadı.';
+        document.getElementById('authDescription').textContent = 'Kimlik doğrulama servisine şu anda ulaşılamıyor.';
+        authStatusRetryTimer = setTimeout(checkDashboardAuth, 3000);
+      }
+    }
+
+    function generateDashboardPassword() {
+      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*+-_';
+      const random = new Uint32Array(18);
+      crypto.getRandomValues(random);
+      const password = Array.from(random, value => alphabet[value % alphabet.length]).join('');
+      const passwordInput = document.getElementById('authPassword');
+      const confirmInput = document.getElementById('authPasswordConfirm');
+      passwordInput.value = password;
+      confirmInput.value = password;
+      passwordInput.type = 'text';
+      confirmInput.type = 'text';
+      setAuthError('Oluşturulan şifreyi güvenli bir yere kaydetmeyi unutmayın.');
+    }
+
+    async function submitDashboardAuth(event) {
+      event.preventDefault();
+      const username = document.getElementById('authUsername').value.trim();
+      const password = document.getElementById('authPassword').value;
+      const confirmation = document.getElementById('authPasswordConfirm').value;
+      const submitButton = document.getElementById('authSubmitBtn');
+
+      if (dashboardAuthMode === 'register' && password !== confirmation) {
+        setAuthError('Şifreler birbiriyle eşleşmiyor.');
+        return;
+      }
+      if (password.length < 8 || password.length > 128) {
+        setAuthError('Şifre 8 ile 128 karakter arasında olmalıdır.');
+        return;
+      }
+
+      submitButton.disabled = true;
+      submitButton.textContent = dashboardAuthMode === 'register' ? 'Kayıt oluşturuluyor...' : 'Giriş yapılıyor...';
+      setAuthError('');
+      try {
+        const res = await fetch(`/api/auth/${dashboardAuthMode}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          if (data.code === 'USER_EXISTS') {
+            await checkDashboardAuth();
+            return;
+          }
+          throw new Error(data.message || 'İşlem tamamlanamadı.');
+        }
+        unlockDashboard();
+      } catch (error) {
+        setAuthError(error.message || 'Bağlantı hatası oluştu.');
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = dashboardAuthMode === 'register' ? 'Kaydı Oluştur' : 'Giriş Yap';
+      }
+    }
+
+    async function logoutDashboard() {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+      } finally {
+        lockDashboard();
+        checkDashboardAuth();
+      }
+    }
 
     async function checkStatus() {
+      if (!dashboardAuthenticated) return;
       try {
         const res = await fetch('/api/status?autoStart=true');
+        if (res.status === 401) {
+          checkDashboardAuth();
+          return;
+        }
         const data = await res.json();
         renderState(data);
       } catch (err) {
@@ -2948,10 +3238,8 @@
       return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
-    // Polling every 3 seconds
-    setInterval(checkStatus, 3000);
     updateDatePlaceholderExample();
-    checkStatus();
+    checkDashboardAuth();
   </script>
 </body>
 

@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { setPromotionHandler, connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, getPollById, listPolls, listPollVotes, listTextVotes, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation, getReadingGroupUser, listReadingGroupUsersForLeaguePrefs, updateLeagueCongratulationDelivery, normalizeLeagueCongratulationDelivery, verifyReadingGroupAdmin, listReadingGroupUsersForPhoneEdit, updateReadingGroupUserPhone } = require('./db');
+const { setPromotionHandler, connectDB, isDBEnabled, getDB, getDashboardUserStatus, registerDashboardUser, verifyDashboardUser, savePoll, saveVote, saveTextVote, removeVote, getPollById, listPolls, listPollVotes, listTextVotes, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation, getReadingGroupUser, listReadingGroupUsersForLeaguePrefs, updateLeagueCongratulationDelivery, normalizeLeagueCongratulationDelivery, verifyReadingGroupAdmin, listReadingGroupUsersForPhoneEdit, updateReadingGroupUserPhone } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 const { generateLeagueCongratulationImage } = require('./leagueCongratulationImage');
 const {
@@ -2365,17 +2365,217 @@ async function getWhatsAppStatus(autoStartIfDisconnected = false) {
 
 const app = express();
 const port = process.env.PORT || 3000;
+const DASHBOARD_SESSION_COOKIE = 'dashboard_session';
+const DASHBOARD_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const AUTH_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_ATTEMPT_LIMIT = 8;
+const dashboardSessions = new Map();
+const authAttempts = new Map();
 
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
-app.use('/groupAvatars', express.static(path.join(__dirname, 'groupAvatars')));
-app.use('/userAvatars', express.static(path.join(__dirname, 'userAvatars')));
 
 // Sağlık kontrolü endpoint'i
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
 });
+
+function getConfiguredUsername() {
+  return String(process.env.CONFIG_KEY || '').trim();
+}
+
+function parseCookies(req) {
+  const cookies = {};
+  const raw = String(req.headers.cookie || '');
+  for (const part of raw.split(';')) {
+    const separatorIndex = part.indexOf('=');
+    if (separatorIndex < 0) continue;
+    const name = part.slice(0, separatorIndex).trim();
+    const value = part.slice(separatorIndex + 1).trim();
+    if (!name) continue;
+    try {
+      cookies[name] = decodeURIComponent(value);
+    } catch (_) {
+      cookies[name] = value;
+    }
+  }
+  return cookies;
+}
+
+function getDashboardSession(req) {
+  const sessionId = parseCookies(req)[DASHBOARD_SESSION_COOKIE];
+  if (!sessionId) return null;
+  const session = dashboardSessions.get(sessionId);
+  if (!session || session.expiresAt <= Date.now() || session.username !== getConfiguredUsername()) {
+    dashboardSessions.delete(sessionId);
+    return null;
+  }
+  return { id: sessionId, ...session };
+}
+
+function isSecureRequest(req) {
+  return req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+}
+
+function setDashboardSessionCookie(req, res, username) {
+  const sessionId = crypto.randomBytes(32).toString('hex');
+  dashboardSessions.set(sessionId, {
+    username,
+    expiresAt: Date.now() + DASHBOARD_SESSION_TTL_MS
+  });
+  const secure = isSecureRequest(req) ? '; Secure' : '';
+  res.setHeader(
+    'Set-Cookie',
+    `${DASHBOARD_SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(DASHBOARD_SESSION_TTL_MS / 1000)}${secure}`
+  );
+}
+
+function clearDashboardSessionCookie(req, res) {
+  const session = getDashboardSession(req);
+  if (session) dashboardSessions.delete(session.id);
+  const secure = isSecureRequest(req) ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${DASHBOARD_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
+}
+
+function getAuthAttemptKey(req) {
+  return `${req.ip || req.socket?.remoteAddress || 'unknown'}:${getConfiguredUsername()}`;
+}
+
+function isAuthRateLimited(req) {
+  const key = getAuthAttemptKey(req);
+  const current = authAttempts.get(key);
+  if (!current || current.resetAt <= Date.now()) {
+    authAttempts.delete(key);
+    return false;
+  }
+  return current.count >= AUTH_ATTEMPT_LIMIT;
+}
+
+function recordFailedAuth(req) {
+  const key = getAuthAttemptKey(req);
+  const current = authAttempts.get(key);
+  if (!current || current.resetAt <= Date.now()) {
+    authAttempts.set(key, { count: 1, resetAt: Date.now() + AUTH_ATTEMPT_WINDOW_MS });
+    return;
+  }
+  current.count += 1;
+}
+
+function clearAuthAttempts(req) {
+  authAttempts.delete(getAuthAttemptKey(req));
+}
+
+const authCleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [id, session] of dashboardSessions) {
+    if (session.expiresAt <= now) dashboardSessions.delete(id);
+  }
+  for (const [key, attempt] of authAttempts) {
+    if (attempt.resetAt <= now) authAttempts.delete(key);
+  }
+}, 10 * 60 * 1000);
+authCleanupTimer.unref();
+
+app.get('/api/auth/status', async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const username = getConfiguredUsername();
+    if (!username) {
+      return res.status(503).json({ success: false, code: 'MISSING_CONFIG_KEY', message: 'CONFIG_KEY tanımlı değil.' });
+    }
+    const status = await getDashboardUserStatus(username);
+    if (!status.success) return res.status(503).json(status);
+
+    return res.json({
+      success: true,
+      registered: status.registered,
+      authenticated: Boolean(getDashboardSession(req))
+    });
+  } catch (error) {
+    console.error('Panel kullanıcı durumu hatası:', error);
+    return res.status(500).json({ success: false, message: 'Kullanıcı durumu kontrol edilemedi.' });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    if (isAuthRateLimited(req)) {
+      return res.status(429).json({ success: false, message: 'Çok fazla deneme yapıldı. Lütfen 15 dakika sonra tekrar deneyin.' });
+    }
+
+    const username = getConfiguredUsername();
+    const submittedUsername = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '');
+    if (!username || submittedUsername !== username) {
+      recordFailedAuth(req);
+      return res.status(400).json({ success: false, message: 'Kullanıcı adı mevcut CONFIG_KEY ile aynı olmalıdır.' });
+    }
+
+    const status = await getDashboardUserStatus(username);
+    if (!status.success) return res.status(503).json(status);
+    if (status.registered) {
+      return res.status(409).json({ success: false, code: 'USER_EXISTS', message: 'Bu kullanıcı zaten kayıtlı. Lütfen giriş yapın.' });
+    }
+
+    const result = await registerDashboardUser(username, password);
+    if (!result.success) {
+      recordFailedAuth(req);
+      return res.status(result.code === 'USER_EXISTS' ? 409 : 400).json(result);
+    }
+    clearAuthAttempts(req);
+    setDashboardSessionCookie(req, res, username);
+    return res.status(201).json({ success: true, username });
+  } catch (error) {
+    console.error('Panel kullanıcı kayıt hatası:', error);
+    return res.status(500).json({ success: false, message: 'Kullanıcı kaydı oluşturulamadı.' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    if (isAuthRateLimited(req)) {
+      return res.status(429).json({ success: false, message: 'Çok fazla hatalı deneme yapıldı. Lütfen 15 dakika sonra tekrar deneyin.' });
+    }
+
+    const username = getConfiguredUsername();
+    const submittedUsername = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '');
+    if (!username || submittedUsername !== username) {
+      recordFailedAuth(req);
+      return res.status(401).json({ success: false, message: 'Kullanıcı adı veya şifre hatalı.' });
+    }
+
+    const result = await verifyDashboardUser(username, password);
+    if (!result.success) {
+      recordFailedAuth(req);
+      return res.status(401).json(result);
+    }
+    clearAuthAttempts(req);
+    setDashboardSessionCookie(req, res, username);
+    return res.json({ success: true, username });
+  } catch (error) {
+    console.error('Panel kullanıcı giriş hatası:', error);
+    return res.status(500).json({ success: false, message: 'Giriş işlemi tamamlanamadı.' });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  clearDashboardSessionCookie(req, res);
+  res.json({ success: true });
+});
+
+function requireDashboardAuth(req, res, next) {
+  if (!getDashboardSession(req)) {
+    return res.status(401).json({ success: false, code: 'AUTH_REQUIRED', message: 'Yönetim paneline erişmek için giriş yapmalısınız.' });
+  }
+  next();
+}
+
+app.use('/api', requireDashboardAuth);
+app.use('/groupAvatars', requireDashboardAuth, express.static(path.join(__dirname, 'groupAvatars')));
+app.use('/userAvatars', requireDashboardAuth, express.static(path.join(__dirname, 'userAvatars')));
 
 // Render'ı uyanık tutmak için ping sistemi
 function schedulePing() {
@@ -2728,8 +2928,7 @@ app.post('/api/pairing-code', async (req, res) => {
 // Anket şablon ayarlarını getir
 app.get('/api/poll-config', async (req, res) => {
   try {
-    const configKey = req.query.configKey || req.query.configId || null;
-    const config = await getPollConfig(configKey);
+    const config = await getPollConfig(getConfiguredUsername());
     res.json({ success: true, config, dbEnabled: isDBEnabled() });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -2739,8 +2938,8 @@ app.get('/api/poll-config', async (req, res) => {
 // Anket şablon ayarlarını kaydet / güncelle
 app.post('/api/poll-config', async (req, res) => {
   try {
-    const { titleTemplate, options, groupId, readingGroupId, configKey, configId, features } = req.body;
-    const result = await savePollConfig({ titleTemplate, options, groupId, readingGroupId, configKey: configKey || configId, features });
+    const { titleTemplate, options, groupId, readingGroupId, features } = req.body;
+    const result = await savePollConfig({ titleTemplate, options, groupId, readingGroupId, configKey: getConfiguredUsername(), features });
     if (result.success) {
       if (sock && state.status === 'READY') {
         fetchTargetGroupInfo();

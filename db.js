@@ -6,7 +6,8 @@
 // ============================================================================
 
 const { MongoClient } = require('mongodb');
-const { randomUUID } = require('crypto');
+const { randomUUID, createHash } = require('crypto');
+const bcrypt = require('bcryptjs');
 const { createReadingSync } = require('./readingSync');
 let readingSync = null;
 let promotionHandler = () => {};
@@ -29,6 +30,7 @@ async function syncSavedVote(collection, filter) {
 let client = null;
 let db = null;
 let dbEnabled = false;
+const DASHBOARD_AUTH_COLLECTION = 'auth-wob';
 
 /**
  * MONGO_URI ve DB_NAME tanımlı mı kontrol eder.
@@ -118,6 +120,14 @@ async function ensureCollectionIndexes() {
   await createSafeIndex('pending_league_congratulations', { userId: 1, groupId: 1, league: 1 }, { unique: true });
   await createSafeIndex('pending_league_congratulations', { createdAt: 1 }, { expireAfterSeconds: 3600 });
   await createSafeIndex('baileys_outgoing_messages', { expiresAt: 1 }, { expireAfterSeconds: 0 });
+  await createSafeIndex(DASHBOARD_AUTH_COLLECTION, { username: 1 }, {
+    unique: true,
+    partialFilterExpression: { username: { $type: 'string' } }
+  });
+  await createSafeIndex(DASHBOARD_AUTH_COLLECTION, { configKey: 1 }, {
+    unique: true,
+    partialFilterExpression: { configKey: { $type: 'string' } }
+  });
   // text_votes artık WhatsApp grubu ve okuma grubuna göre de ayrılır.
   // Önce yeni unique indeksin hazır olduğundan emin ol; oluşturma başarısızsa
   // eski korumayı kaldırma ve uygulamayı benzersiz indeks olmadan bırakma.
@@ -153,6 +163,102 @@ async function ensureCollectionIndexes() {
   } catch (err) {
     console.warn('⚠️ Eski text_votes nedenleri güncellenemedi:', err.message);
   }
+}
+
+function normalizeDashboardUsername(username) {
+  return String(username || '').trim();
+}
+
+function normalizeDashboardPasswordForBcrypt(password) {
+  return createHash('sha256').update(String(password || ''), 'utf8').digest('hex');
+}
+
+/**
+ * CONFIG_KEY ile eşleşen yönetim paneli kullanıcısının mevcut olup olmadığını döndürür.
+ */
+async function getDashboardUserStatus(configKey = getPollConfigKey()) {
+  if (!dbEnabled || !db) {
+    return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  }
+
+  const username = normalizeDashboardUsername(configKey);
+  if (!username) {
+    return { success: false, message: 'CONFIG_KEY çevre değişkeni tanımlanmamış.' };
+  }
+
+  const user = await db.collection(DASHBOARD_AUTH_COLLECTION).findOne(
+    { $or: [{ _id: username }, { username }, { configKey: username }] },
+    { projection: { _id: 1 } }
+  );
+  return { success: true, username, registered: Boolean(user) };
+}
+
+/**
+ * İlk kurulumda CONFIG_KEY kullanıcısını güvenli parola özetiyle oluşturur.
+ * _id alanının CONFIG_KEY olması eşzamanlı iki kaydın oluşmasını da engeller.
+ */
+async function registerDashboardUser(configKey, password) {
+  if (!dbEnabled || !db) {
+    return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  }
+
+  const username = normalizeDashboardUsername(configKey);
+  const pass = String(password || '');
+  if (!username) return { success: false, message: 'CONFIG_KEY çevre değişkeni tanımlanmamış.' };
+  if (pass.length < 8 || pass.length > 128) {
+    return { success: false, message: 'Şifre 8 ile 128 karakter arasında olmalıdır.' };
+  }
+
+  const passwordHash = await bcrypt.hash(normalizeDashboardPasswordForBcrypt(pass), 12);
+  try {
+    await db.collection(DASHBOARD_AUTH_COLLECTION).insertOne({
+      _id: username,
+      username,
+      configKey: username,
+      passwordHash,
+      passwordHashVersion: 1,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    return { success: true, username };
+  } catch (error) {
+    if (error?.code === 11000) {
+      return { success: false, code: 'USER_EXISTS', message: 'Bu CONFIG_KEY için kullanıcı zaten kayıtlı.' };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Yönetim paneli kullanıcısını CONFIG_KEY ve bcrypt parola özeti ile doğrular.
+ */
+async function verifyDashboardUser(configKey, password) {
+  if (!dbEnabled || !db) {
+    return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  }
+
+  const username = normalizeDashboardUsername(configKey);
+  const pass = String(password || '');
+  if (!username || !pass) return { success: false, message: 'Kullanıcı adı ve şifre gereklidir.' };
+
+  const user = await db.collection(DASHBOARD_AUTH_COLLECTION).findOne({
+    $or: [{ _id: username }, { username }, { configKey: username }]
+  });
+  if (!user?.passwordHash) {
+    return { success: false, message: 'Kullanıcı adı veya şifre hatalı.' };
+  }
+
+  const bcryptInput = user.passwordHashVersion === 1
+    ? normalizeDashboardPasswordForBcrypt(pass)
+    : pass;
+  const valid = await bcrypt.compare(bcryptInput, String(user.passwordHash));
+  if (!valid) return { success: false, message: 'Kullanıcı adı veya şifre hatalı.' };
+
+  await db.collection(DASHBOARD_AUTH_COLLECTION).updateOne(
+    { _id: user._id },
+    { $set: { lastLoginAt: new Date(), updatedAt: new Date() } }
+  );
+  return { success: true, username };
 }
 
 /**
@@ -1373,6 +1479,9 @@ module.exports = {
   connectDB,
   isDBEnabled,
   getDB,
+  getDashboardUserStatus,
+  registerDashboardUser,
+  verifyDashboardUser,
   savePoll,
   saveVote,
   saveTextVote,

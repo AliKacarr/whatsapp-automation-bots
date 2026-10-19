@@ -157,10 +157,34 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 | `/api/pairing-code` | `POST` | Telefon numarası ile 8 haneli oturum kodu üretir |
 | `/api/restart` | `POST` | Oturumu ve istemciyi yeniden başlatır |
 | `/api/health` | `GET` | Sunucu canlılık (health check) endpoint'i |
+| `/api/auth/status` | `GET` | Mevcut `CONFIG_KEY` kullanıcısının kayıt ve oturum durumunu getirir |
+| `/api/auth/register` | `POST` | İlk kurulumda `CONFIG_KEY` kullanıcısını oluşturur |
+| `/api/auth/login` | `POST` | Yönetim paneli oturumunu açar |
+| `/api/auth/logout` | `POST` | Yönetim paneli oturumunu kapatır |
+
+`/api/health` ve `/api/auth/*` dışındaki tüm API uçları geçerli bir yönetim paneli oturumu gerektirir.
 
 ---
 
 ## Veritabanı Şeması (MongoDB)
+
+#### `auth-wob` Koleksiyonu (Yönetim Paneli Kullanıcıları)
+```json
+{
+  "_id": "mygroupid34",
+  "username": "mygroupid34",
+  "configKey": "mygroupid34",
+  "passwordHash": "$2b$12$...",
+  "passwordHashVersion": 1,
+  "createdAt": { "$date": "2026-10-19T10:00:00.000Z" },
+  "updatedAt": { "$date": "2026-10-19T10:00:00.000Z" },
+  "lastLoginAt": { "$date": "2026-10-19T10:05:00.000Z" }
+}
+```
+
+- `_id`, `username` ve `configKey`, çalışmakta olan botun `CONFIG_KEY` değeriyle aynıdır.
+- Şifre açık metin olarak saklanmaz; bcrypt özeti `passwordHash` alanına yazılır.
+- İlk site açılışında kayıt yoksa kayıt formu, kayıt varsa giriş formu gösterilir. Formdaki kullanıcı adı sunucuda `.env` dosyasındaki `CONFIG_KEY` ile karşılaştırılır ve istemciye otomatik doldurulmaz.
 
 #### `poll_config` Koleksiyonu (Bot Konfigürasyonu, Özellik Bayrakları & Anket Şablon Ayarları)
 ```json
