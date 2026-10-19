@@ -1,4 +1,9 @@
 // WhatsApp oylarından okuma durumuna dönüşüm; RoTaKip sunucusundan bağımsızdır.
+const {
+  validateTextVoteSelectedOptions,
+  isValidIsoDate
+} = require('./readingVoteValidation');
+
 function trDate(value = new Date()) {
   return new Date(new Date(value).getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
@@ -222,8 +227,12 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
     const phone = formatPhoneNumber(rawPhone);
     if (!phone) return false;
 
-    // İlgili anketi (poll) bul
-    const poll = await db.collection("polls").findOne({ pollId: voteDoc.pollId });
+    // İlgili anketi aynı bot, okuma grubu ve WhatsApp grubu kapsamında bul.
+    const pollFilter = { pollId: voteDoc.pollId };
+    if (voteDoc.configKey) pollFilter.configKey = voteDoc.configKey;
+    if (voteDoc.readingGroupId) pollFilter.readingGroupId = voteDoc.readingGroupId;
+    if (voteDoc.groupId) pollFilter.groupId = voteDoc.groupId;
+    const poll = await db.collection("polls").findOne(pollFilter);
 
     // Tarih tespiti öncelik sırası:
     // 1. Anket Başlığı (poll.title) -> Örn: "4 Ağustos" -> "2026-08-04"
@@ -257,8 +266,9 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
     // Oy verilmiş mi kontrol et (selectedOptions dizisi dolu mu?)
     const hasVoted = Array.isArray(voteDoc.selectedOptions) && voteDoc.selectedOptions.length > 0;
 
-    // Hedef okuma grubu tespiti (voteDoc.readingGroupId veya poll.groupId)
-    const targetGroupId = voteDoc.readingGroupId || poll?.groupId;
+    // Hedef okuma grubu tespiti. poll.groupId WhatsApp grup JID'sidir;
+    // readingstatuses koleksiyonu için yalnızca readingGroupId kullanılabilir.
+    const targetGroupId = voteDoc.readingGroupId || poll?.readingGroupId;
 
     if (targetGroupId) {
       // Doğrudan ilgili gruptan işlem yap
@@ -325,51 +335,61 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
     }
   }
 
-  /** text_votes / poll_votes ortak: telefona göre kullanıcı bul; yoksa pushName ↔ name */
+  /** text_votes: telefona göre kullanıcı bul; yoksa yalnızca benzersiz pushName ↔ name eşleşmesini kabul et */
   async function findUserForWhatsAppVote(usersCollection, phone, pushName) {
     if (phone) {
       const byPhone = await usersCollection.findOne({ phone });
-      if (byPhone) return byPhone;
+      if (byPhone) return { user: byPhone, matchedBy: 'phone' };
     }
     const nameHint = pushName != null ? String(pushName).trim() : '';
-    if (!nameHint) return null;
-    const byName = await usersCollection.findOne({
+    if (!nameHint) return { user: null, reason: 'user_not_found' };
+    const byName = await usersCollection.find({
       name: { $regex: `^${nameHint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' }
-    });
-    return byName || null;
+    }).limit(2).toArray();
+    if (byName.length === 1) return { user: byName[0], matchedBy: 'unique_push_name' };
+    if (byName.length > 1) return { user: null, reason: 'ambiguous_push_name' };
+    return { user: null, reason: 'user_not_found' };
   }
 
   function resolveTextVoteDate(voteDoc) {
-    if (voteDoc && voteDoc.date && /^\d{4}-\d{2}-\d{2}$/.test(String(voteDoc.date).trim())) {
+    if (voteDoc && isValidIsoDate(voteDoc.date)) {
       return String(voteDoc.date).trim();
     }
     if (voteDoc && voteDoc.updatedAt) {
       const part = String(voteDoc.updatedAt).split(' ')[0];
-      if (/^\d{4}-\d{2}-\d{2}$/.test(part)) return part;
+      if (isValidIsoDate(part)) return part;
     }
-    return trDate();
+    return null;
   }
 
   // text_votes dokümanını readingstatuses_<groupId> ile senkronize et
   async function syncTextVoteToReadingStatus(voteDoc) {
-    if (!voteDoc) return false;
+    if (!voteDoc) return { success: false, reason: 'vote_not_found' };
 
     const rawPhone = voteDoc.voterPhone || voteDoc.voterJid || '';
     const phone = formatPhoneNumber(rawPhone);
     const pushName = voteDoc.pushName || '';
     const dateStr = resolveTextVoteDate(voteDoc);
-    const hasVoted = Array.isArray(voteDoc.selectedOptions) && voteDoc.selectedOptions.length > 0;
+    if (!dateStr) return { success: false, reason: 'invalid_date' };
+
+    const selection = validateTextVoteSelectedOptions(voteDoc.selectedOptions);
+    if (!selection.valid) {
+      return { success: false, reason: selection.reason };
+    }
+    const normalizedSelectedOptions = selection.selectedOptions;
+    const hasVoted = !selection.clear;
     const targetGroupId = voteDoc.readingGroupId != null
       ? String(voteDoc.readingGroupId).trim()
       : '';
 
     async function applyToGroup(groupId, groupName) {
       const { users, readingStatuses } = getGroupCollections(groupId);
-      const user = await findUserForWhatsAppVote(users, phone, pushName);
+      const userMatch = await findUserForWhatsAppVote(users, phone, pushName);
+      const user = userMatch.user;
 
       if (!user) {
-        console.warn(`⚠️ WA mesaj: kullanıcı yok ${phone || pushName || '—'} ${groupId}`);
-        return false;
+        console.warn(`⚠️ WA mesaj: ${userMatch.reason} ${phone || pushName || '—'} ${groupId}`);
+        return { success: false, reason: userMatch.reason };
       }
 
       const userId = user._id.toString();
@@ -378,9 +398,9 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
           readingStatuses,
           userId,
           dateStr,
-          voteDoc.selectedOptions
+          normalizedSelectedOptions
         );
-        console.log(`✅ WA mesaj: ${user.name} ${dateStr} ${waSyncAmountLabel(voteDoc.selectedOptions)} ${groupId}`);
+        console.log(`✅ WA mesaj: ${user.name} ${dateStr} ${waSyncAmountLabel(normalizedSelectedOptions)} ${groupId}`);
         await checkAndQueueLeaguePromotion(
           user,
           groupId,
@@ -405,7 +425,7 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
           console.log(`🗑️ WA mesaj: ${user.name} ${dateStr} silindi ${groupId}`);
         }
       }
-      return true;
+      return { success: true, matchedBy: userMatch.matchedBy };
     }
 
     if (targetGroupId) {
@@ -414,10 +434,15 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
     } else {
       const groups = await db.collection("usergroups").find({}).toArray();
       let matched = false;
+      let unmatchedReason = 'user_not_found';
       for (const group of groups) {
-        if (await applyToGroup(group.groupId, group.groupName)) matched = true;
+        const outcome = await applyToGroup(group.groupId, group.groupName);
+        if (outcome.success) matched = true;
+        else if (outcome.reason === 'ambiguous_push_name') unmatchedReason = outcome.reason;
       }
-      return matched;
+      return matched
+        ? { success: true }
+        : { success: false, reason: unmatchedReason };
     }
   }
 
@@ -434,18 +459,22 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
   async function consume(collectionName, filter) {
     const collection = db.collection(collectionName);
     const vote = await collection.findOne(filter);
-    if (!vote) return;
-    let processed;
+    if (!vote) return { status: 'not_found' };
+    let outcome;
     if (collectionName === 'poll_votes') {
-      processed = await syncPollVoteToReadingStatus(vote);
+      const processed = await syncPollVoteToReadingStatus(vote);
+      outcome = {
+        success: processed,
+        reason: 'user_not_found_or_invalid_vote'
+      };
     } else {
-      processed = await syncTextVoteToReadingStatus(vote);
+      outcome = await syncTextVoteToReadingStatus(vote);
     }
     const version = vote.syncVersion == null
       ? { syncVersion: { $exists: false }, updatedAt: vote.updatedAt, selectedOptions: vote.selectedOptions }
       : { syncVersion: vote.syncVersion };
 
-    if (!processed) {
+    if (!outcome.success) {
       const syncedVersion = vote.syncVersion || `legacy:${vote._id}`;
       await collection.updateOne(
         { _id: vote._id, ...version },
@@ -455,11 +484,11 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
             syncedVersion,
             syncedAt: new Date(),
             syncStatus: 'ignored',
-            syncReason: 'user_not_found_or_invalid_vote'
+            syncReason: outcome.reason
           }
         }
       );
-      return;
+      return { status: 'ignored', reason: outcome.reason };
     }
 
     if (collectionName === 'poll_votes') {
@@ -477,10 +506,22 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
           $unset: { syncReason: 1, lastSyncError: 1, failedAt: 1 }
         }
       );
-      return;
+      return { status: 'synced' };
     }
 
-    await collection.deleteOne({ _id: vote._id, ...version });
+    await collection.updateOne(
+      { _id: vote._id, ...version },
+      {
+        $set: {
+          syncedVersion: vote.syncVersion || `legacy:${vote._id}`,
+          syncedAt: new Date(),
+          syncStatus: 'synced',
+          syncAttempts: 0
+        },
+        $unset: { syncReason: 1, lastSyncError: 1, failedAt: 1 }
+      }
+    );
+    return { status: 'synced' };
   }
 
   async function recordSyncFailure(collectionName, filter, error) {

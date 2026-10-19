@@ -212,6 +212,8 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
   "voterPhone": "905351234567",
   "selectedOptions": [ "15 dakika" ],
   "readingGroupId": "mygroupid34",
+  "groupId": "120363000000000000@g.us",
+  "configKey": "mygroupid34",
   "pushName": "Ahmet",
   "updatedAt": "2026-08-11 10:02:02"
 }
@@ -224,6 +226,7 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
   "voterPhone": "905351234567",
   "selectedOptions": [ "20" ],
   "readingGroupId": "mygroupid34",
+  "groupId": "120363000000000000@g.us",
   "configKey": "mygroupid34",
   "date": "2026-08-21",
   "pushName": "Ahmet",
@@ -233,7 +236,11 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 
 - `date`: Mantıksal okuma günü (`YYYY-MM-DD`). TSİ 00:00–02:00 arası bir önceki güne yazılır; mesaj `dün` ile başlıyorsa bir gün daha geri alınır.
 - Kabul edilen formatlar: `20`, `20 sayfa`, `20 syf`, `20 dk`, `20 dakika`, `dün 15 sayfa` (fazla kelime geçersiz).
-- Aynı `configKey` + `voterJid` + `date` için upsert (yeniden mesaj = güncelleme); başarıda mesaja ✔️ reaction bırakılır.
+- Aynı `configKey` + `readingGroupId` + `groupId` + `voterJid` + `date` için upsert (yeniden mesaj = güncelleme); başarıda mesaja ✔️ reaction bırakılır.
+- `0`, `00`, `000` ve `iptal` aynı iptal işlemi olarak değerlendirilir.
+- Okuma miktarı varsayılan olarak en fazla `99999` olabilir; `MAX_READING_AMOUNT` ile değiştirilebilir. Sınırı aşan mesaj uygulanmaz ve mesaja ❌ reaksiyonu bırakılır.
+- Başarılı ve başarısız senkronizasyon kayıtları `text_votes` içinde `syncStatus` alanıyla saklanır ve paneldeki **Mesajlardaki Okumaları Görüntüle** bölümünden izlenebilir.
+- Anket ve mesaj okuma panellerinde yalnızca botun mevcut `CONFIG_KEY`, `readingGroupId` ve hedef WhatsApp `groupId` değerleriyle tam eşleşen kayıtlar gösterilir.
 
 #### `lid_mappings` Koleksiyonu (LID - Telefon Numarası Eşleşmeleri)
 ```json

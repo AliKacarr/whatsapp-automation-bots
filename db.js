@@ -13,10 +13,16 @@ let promotionHandler = () => {};
 function setPromotionHandler(handler) { promotionHandler = handler; }
 
 async function syncSavedVote(collection, filter) {
-  try { await readingSync.processVote(collection, filter); }
+  if (!readingSync) {
+    return { status: 'pending', reason: 'sync_not_ready' };
+  }
+  try {
+    return await readingSync.processVote(collection, filter);
+  }
   catch (error) {
     // Kuyrukta kalır; yeniden başlatmada veya periyodik taramada tekrar denenir.
     console.error('WA okuma kaydı beklemede:', error.message);
+    return { status: 'pending', reason: 'sync_error', error: error.message };
   }
 }
 
@@ -69,11 +75,11 @@ async function connectDB() {
       onPromotion: groupId => promotionHandler(groupId),
       getScope: async () => {
         const config = await getPollConfig();
-        if (!config?.configKey) return null;
-        return { $or: [
-          { configKey: config.configKey },
-          ...(config.readingGroupId ? [{ configKey: null, readingGroupId: config.readingGroupId }] : [])
-        ] };
+        const configKey = String(config?.configKey || '').trim();
+        const readingGroupId = String(config?.readingGroupId || '').trim();
+        const groupId = String(config?.groupId || '').trim();
+        if (!configKey || !readingGroupId || !groupId) return null;
+        return { configKey, readingGroupId, groupId };
       }
     });
     readingSync.start();
@@ -102,16 +108,51 @@ async function ensureCollectionIndexes() {
 
   // polls: time-series (timeField: createdAt) — unique desteklenmez; sadece sorgular için pollId indeksi
   await createSafeIndex('polls', { pollId: 1 });
+  await createSafeIndex('polls', { groupId: 1, configKey: 1, readingGroupId: 1, createdAt: -1 });
   // createdAt zaten time-series timeField; ek indeks gerekmez
 
   await createSafeIndex('poll_votes', { pollId: 1, voterJid: 1 }, { unique: true });
   await createSafeIndex('poll_votes', { pollId: 1 });
   await createSafeIndex('poll_votes', { configKey: 1, syncedVersion: 1 });
+  await createSafeIndex('poll_votes', { pollId: 1, configKey: 1, readingGroupId: 1, groupId: 1, updatedAt: -1 });
   await createSafeIndex('pending_league_congratulations', { userId: 1, groupId: 1, league: 1 }, { unique: true });
   await createSafeIndex('pending_league_congratulations', { createdAt: 1 }, { expireAfterSeconds: 3600 });
   await createSafeIndex('baileys_outgoing_messages', { expiresAt: 1 }, { expireAfterSeconds: 0 });
-  await createSafeIndex('text_votes', { configKey: 1, voterJid: 1, date: 1 }, { unique: true });
+  // text_votes artık WhatsApp grubu ve okuma grubuna göre de ayrılır.
+  // Önce yeni unique indeksin hazır olduğundan emin ol; oluşturma başarısızsa
+  // eski korumayı kaldırma ve uygulamayı benzersiz indeks olmadan bırakma.
+  let scopedTextVoteUniqueIndexReady = false;
+  try {
+    await db.collection('text_votes').createIndex(
+      { configKey: 1, readingGroupId: 1, groupId: 1, voterJid: 1, date: 1 },
+      { unique: true }
+    );
+    scopedTextVoteUniqueIndexReady = true;
+  } catch (err) {
+    console.warn('⚠️ Grup kapsamlı text_votes unique indeksi oluşturulamadı:', err.message);
+  }
+  if (scopedTextVoteUniqueIndexReady) {
+    try {
+      await db.collection('text_votes').dropIndex('configKey_1_voterJid_1_date_1');
+    } catch (err) {
+      if (err?.codeName !== 'IndexNotFound' && err?.code !== 27) {
+        console.warn('⚠️ Eski text_votes unique indeksi kaldırılamadı:', err.message);
+      }
+    }
+  }
   await createSafeIndex('text_votes', { configKey: 1, syncedVersion: 1 });
+  await createSafeIndex('text_votes', { readingGroupId: 1, date: -1, updatedAt: -1 });
+  await createSafeIndex('text_votes', { configKey: 1, readingGroupId: 1, groupId: 1, date: -1, updatedAt: -1 });
+
+  // Eski sürüm bu birleşik nedeni yalnızca kullanıcı eşleşmediğinde yazıyordu.
+  try {
+    await db.collection('text_votes').updateMany(
+      { syncReason: 'user_not_found_or_invalid_vote' },
+      { $set: { syncReason: 'user_not_found' } }
+    );
+  } catch (err) {
+    console.warn('⚠️ Eski text_votes nedenleri güncellenemedi:', err.message);
+  }
 }
 
 /**
@@ -161,8 +202,8 @@ function getLogicalReadingDate(messageTime = new Date(), isYesterday = false) {
 
 /**
  * Metin mesajından parse edilen okuma kaydını text_votes koleksiyonuna yazar (upsert).
- * Aynı configKey + voterJid + date → güncelleme.
- * @param {Object} voteData - { voterJid, voterPhone, rawLid, selectedOptions, pushName, readingGroupId, configKey, date, updatedAt }
+ * Aynı configKey + readingGroupId + groupId + voterJid + date → güncelleme.
+ * @param {Object} voteData - { voterJid, voterPhone, rawLid, selectedOptions, pushName, readingGroupId, groupId, configKey, date, updatedAt }
  */
 async function saveTextVote(voteData) {
   if (!dbEnabled || !db) return null;
@@ -173,22 +214,29 @@ async function saveTextVote(voteData) {
     const date = voteData.date;
     if (!date || !voterPhone) return null;
 
+    let readingGroupId = voteData.readingGroupId;
+    let groupId = voteData.groupId;
+    if (!readingGroupId || !groupId) {
+      const config = await getPollConfig();
+      readingGroupId = readingGroupId || config?.readingGroupId || null;
+      groupId = groupId || config?.groupId || null;
+    }
+    readingGroupId = readingGroupId ? String(readingGroupId).trim() : null;
+    groupId = groupId ? String(groupId).trim() : null;
+    if (!readingGroupId || !groupId) return null;
+
     // Eski LID kaydı varsa ve telefon çözüldüyse temizle
     if (voteData.rawLid && voteData.rawLid !== voterPhone && /^\d{10,15}$/.test(voterPhone)) {
       try {
         const lidFilter = {
           date,
+          readingGroupId,
+          groupId,
           $or: [{ voterJid: voteData.rawLid }, { voterPhone: voteData.rawLid }]
         };
         if (configKey) lidFilter.configKey = configKey;
         await db.collection('text_votes').deleteMany(lidFilter);
       } catch (cleanErr) { }
-    }
-
-    let readingGroupId = voteData.readingGroupId;
-    if (!readingGroupId) {
-      const config = await getPollConfig();
-      readingGroupId = config?.readingGroupId || null;
     }
 
     const setFields = {
@@ -198,12 +246,13 @@ async function saveTextVote(voteData) {
       voterPhone,
       selectedOptions: voteData.selectedOptions,
       readingGroupId,
+      groupId,
       updatedAt: getTRDateString(voteData.updatedAt)
     };
     if (voteData.pushName) setFields.pushName = voteData.pushName;
     if (configKey) setFields.configKey = configKey;
 
-    const filter = { voterJid: voterPhone, date };
+    const filter = { voterJid: voterPhone, date, readingGroupId, groupId };
     if (configKey) filter.configKey = configKey;
 
     const result = await db.collection('text_votes').updateOne(
@@ -214,8 +263,15 @@ async function saveTextVote(voteData) {
       },
       { upsert: true }
     );
-    await syncSavedVote('text_votes', filter);
-    return result;
+    const syncResult = await syncSavedVote('text_votes', {
+      ...filter,
+      syncVersion: setFields.syncVersion
+    });
+    return {
+      saved: true,
+      writeResult: result,
+      syncResult
+    };
   } catch (err) {
     console.error('❌ Metin okuma DB kayıt hatası:', err.message);
     return null;
@@ -226,7 +282,7 @@ async function saveTextVote(voteData) {
  * Anket oluşturulduğunda veritabanına kaydeder.
  * polls time-series olduğu için updateOne/upsert kullanılamaz → insertOne.
  * Aynı pollId varsa önce deleteMany, sonra insertOne (messageData güncellemesi için).
- * @param {Object} pollData - { pollId, groupId, title, options, createdAt, configKey, messageData }
+ * @param {Object} pollData - { pollId, groupId, title, options, createdAt, configKey, readingGroupId, messageData }
  */
 async function savePoll(pollData) {
   if (!dbEnabled || !db) return null;
@@ -260,6 +316,12 @@ async function savePoll(pollData) {
     else if (Array.isArray(existing?.options)) doc.options = existing.options;
     if (pollData.configKey) doc.configKey = pollData.configKey;
     else if (existing?.configKey) doc.configKey = existing.configKey;
+    let readingGroupId = pollData.readingGroupId || existing?.readingGroupId || null;
+    if (!readingGroupId) {
+      const config = await getPollConfig(pollData.configKey || existing?.configKey || null);
+      readingGroupId = config?.readingGroupId || null;
+    }
+    if (readingGroupId) doc.readingGroupId = String(readingGroupId).trim();
     if (pollData.messageData) doc.messageData = pollData.messageData;
     else if (existing?.messageData) doc.messageData = existing.messageData;
 
@@ -277,7 +339,7 @@ async function savePoll(pollData) {
 /**
  * Oy geldiğinde veritabanına kaydeder (upsert).
  * Aynı kullanıcı aynı ankete tekrar oy verirse günceller.
- * @param {Object} voteData - { pollId, voterJid, voterPhone, rawLid, selectedOptions, pushName, readingGroupId, configKey, updatedAt }
+ * @param {Object} voteData - { pollId, voterJid, voterPhone, rawLid, selectedOptions, pushName, readingGroupId, groupId, configKey, updatedAt }
  */
 async function saveVote(voteData) {
   if (!dbEnabled || !db) return null;
@@ -296,10 +358,15 @@ async function saveVote(voteData) {
     }
 
     let readingGroupId = voteData.readingGroupId;
-    if (!readingGroupId) {
+    let groupId = voteData.groupId;
+    if (!readingGroupId || !groupId) {
       const config = await getPollConfig();
-      readingGroupId = config?.readingGroupId || null;
+      readingGroupId = readingGroupId || config?.readingGroupId || null;
+      groupId = groupId || config?.groupId || null;
     }
+    readingGroupId = readingGroupId ? String(readingGroupId).trim() : null;
+    groupId = groupId ? String(groupId).trim() : null;
+    if (!readingGroupId || !groupId) return null;
 
     const setFields = {
       syncVersion: randomUUID(),
@@ -308,6 +375,7 @@ async function saveVote(voteData) {
       voterPhone: voterPhone,
       selectedOptions: voteData.selectedOptions,
       readingGroupId: readingGroupId,
+      groupId: groupId,
       updatedAt: getTRDateString(voteData.updatedAt)
     };
     if (voteData.pushName) {
@@ -361,59 +429,62 @@ async function removeVote(pollId, voterJid) {
   }
 }
 
-/**
- * Anketi polls koleksiyonundan siler (time-series → deleteMany).
- * İlişkili poll_votes kayıtlarını da temizler.
- */
-async function deletePoll(pollId) {
-  if (!dbEnabled || !db) return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
-  if (!pollId) return { success: false, message: 'pollId gerekli.' };
-
-  try {
-    const configKey = getPollConfigKey();
-    const filter = { pollId };
-    if (configKey) filter.configKey = configKey;
-
-    const pollResult = await db.collection('polls').deleteMany(filter);
-    if (pollResult.deletedCount === 0) {
-      return { success: false, message: 'Anket bulunamadı veya bu bota ait değil.' };
-    }
-
-    await db.collection('poll_votes').deleteMany({ pollId });
-    return { success: true, deletedCount: pollResult.deletedCount };
-  } catch (err) {
-    console.error('❌ Anket silme hatası:', err.message);
-    return { success: false, message: err.message };
-  }
-}
-
 const DEFAULT_POLL_OPTIONS = [
   '5 dakika', '10 dakika', '15 dakika', '20 dakika', '30 dakika',
   '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika',
   '150 dakika', '180 dakika'
 ];
 
-async function getPollById(pollId, configKey = null) {
+async function getPollById(pollId, configKey, readingGroupId, groupId) {
   if (!dbEnabled || !db) return null;
-  const filter = { pollId };
-  if (configKey) filter.configKey = configKey;
-  return db.collection('polls').findOne(filter);
+  return db.collection('polls').findOne({ pollId, configKey, readingGroupId, groupId });
 }
 
-async function listPolls(groupId, configKey, limit = 50) {
+async function listPolls(groupId, configKey, readingGroupId, limit = 50) {
   if (!dbEnabled || !db) return [];
   return db.collection('polls')
-    .find({ groupId, configKey })
+    .find({ groupId, configKey, readingGroupId })
     .sort({ createdAt: -1 })
     .limit(limit)
     .toArray();
 }
 
-async function listPollVotes(pollId) {
+async function listPollVotes(pollId, configKey, readingGroupId, groupId) {
   if (!dbEnabled || !db) return [];
   return db.collection('poll_votes')
-    .find({ pollId })
+    .find({ pollId, configKey, readingGroupId, groupId })
     .sort({ updatedAt: -1 })
+    .toArray();
+}
+
+async function listTextVotes(readingGroupId, configKey, groupId, limit = 500) {
+  if (!dbEnabled || !db) return [];
+  const gid = String(readingGroupId || '').trim();
+  const key = String(configKey || '').trim();
+  const wpGroupId = String(groupId || '').trim();
+  if (!gid || !key || !wpGroupId) return [];
+
+  return db.collection('text_votes')
+    .find({ readingGroupId: gid, configKey: key, groupId: wpGroupId }, {
+      projection: {
+        voterJid: 1,
+        voterPhone: 1,
+        pushName: 1,
+        selectedOptions: 1,
+        readingGroupId: 1,
+        groupId: 1,
+        configKey: 1,
+        date: 1,
+        updatedAt: 1,
+        syncedAt: 1,
+        syncStatus: 1,
+        syncReason: 1,
+        syncAttempts: 1,
+        lastSyncError: 1
+      }
+    })
+    .sort({ date: -1, updatedAt: -1 })
+    .limit(limit)
     .toArray();
 }
 
@@ -1306,10 +1377,10 @@ module.exports = {
   saveVote,
   saveTextVote,
   removeVote,
-  deletePoll,
   getPollById,
   listPolls,
   listPollVotes,
+  listTextVotes,
   getTRDateString,
   getLogicalReadingDate,
   getPollConfig,

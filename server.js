@@ -6,9 +6,13 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { setPromotionHandler, connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, deletePoll, getPollById, listPolls, listPollVotes, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation, getReadingGroupUser, listReadingGroupUsersForLeaguePrefs, updateLeagueCongratulationDelivery, normalizeLeagueCongratulationDelivery, verifyReadingGroupAdmin, listReadingGroupUsersForPhoneEdit, updateReadingGroupUserPhone } = require('./db');
+const { setPromotionHandler, connectDB, isDBEnabled, getDB, savePoll, saveVote, saveTextVote, removeVote, getPollById, listPolls, listPollVotes, listTextVotes, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation, getReadingGroupUser, listReadingGroupUsersForLeaguePrefs, updateLeagueCongratulationDelivery, normalizeLeagueCongratulationDelivery, verifyReadingGroupAdmin, listReadingGroupUsersForPhoneEdit, updateReadingGroupUserPhone } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 const { generateLeagueCongratulationImage } = require('./leagueCongratulationImage');
+const {
+  getMaxReadingAmount,
+  validateTextVoteSelectedOptions
+} = require('./readingVoteValidation');
 
 // ============================================================================
 // LOG FİLTRESİ VE HATA YÖNETİMİ (Libsignal / Bad MAC / Noise Gürültüsünü Engelleme)
@@ -841,7 +845,9 @@ async function processPollVoteUpdate(pollUpdateMsg) {
     return;
   }
 
-  const currentReadingGroupId = await getTargetReadingGroupId();
+  // Oy, ayarlar sonradan değişmiş olsa bile anket oluşturulurken seçili olan
+  // okuma grubuna yazılmalı.
+  const currentReadingGroupId = pollDoc.readingGroupId || (await getTargetReadingGroupId());
   const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
 
   await saveVote({
@@ -852,6 +858,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
     pushName: pushName,
     selectedOptions: selectedOptionNames,
     readingGroupId: currentReadingGroupId,
+    groupId: currentGroupId,
     configKey: configKey,
     updatedAt: getTRDateString()
   });
@@ -866,6 +873,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
 /** Metin okuma: "20" | "20 sayfa" | "0" | "iptal" | "dün 15 sayfa" vb. */
 const READING_MESSAGE_REGEX = /^(dün\s+)?(\d+)(?:\s+(?:sayfa|syf|dk|dakika))?$/;
 const READING_CANCEL_REGEX = /^(dün\s+)?iptal$/;
+const MAX_READING_AMOUNT = getMaxReadingAmount();
 
 /**
  * Anket seçenek metnini kayda hazırlar.
@@ -907,17 +915,27 @@ function parseReadingMessage(rawText) {
 
   const match = normalized.match(READING_MESSAGE_REGEX);
   if (!match) return null;
-  const pages = match[2];
+  const selection = validateTextVoteSelectedOptions([match[2]], {
+    maxAmount: MAX_READING_AMOUNT
+  });
+  if (!selection.valid) {
+    return {
+      pages: match[2],
+      isYesterday: Boolean(match[1]),
+      clear: false,
+      invalidReason: selection.reason
+    };
+  }
   return {
-    pages,
+    pages: selection.clear ? '0' : selection.selectedOptions[0],
     isYesterday: Boolean(match[1]),
-    clear: pages === '0'
+    clear: selection.clear
   };
 }
 
 /**
  * Hedef gruptaki metin mesajlarından sayfa okuma bilgisini yakalar,
- * text_votes'a kaydeder ve başarılıysa ✔️ reaction bırakır.
+ * text_votes'a kaydeder; başarılıysa ✔️, üst sınırı aşıyorsa ❌ reaction bırakır.
  */
 async function processReadingMessage(msg) {
   if (!isDBEnabled() || !sock) return;
@@ -941,6 +959,16 @@ async function processReadingMessage(msg) {
   const parsed = parseReadingMessage(text);
   if (!parsed) return;
 
+  if (parsed.invalidReason) {
+    try {
+      await sock.sendMessage(incomingGroupId, {
+        react: { text: '❌', key: msg.key }
+      });
+    } catch (reactErr) {
+      console.error('⚠️ Geçersiz okuma mesajı reaction hatası:', reactErr.message);
+    }
+  }
+
   const participantJid = msg.key?.participant || msg.participant || msg.key?.remoteJid;
   const rawLid = participantJid ? (jidNormalizedUser ? jidNormalizedUser(participantJid) : participantJid).split('@')[0].split(':')[0] : null;
   const voterPhone = await getPhoneNumberFromJid(participantJid, incomingGroupId);
@@ -961,12 +989,20 @@ async function processReadingMessage(msg) {
     selectedOptions,
     pushName: msg.pushName || undefined,
     readingGroupId,
+    groupId: incomingGroupId,
     configKey,
     date,
     updatedAt: getTRDateString()
   });
 
-  if (!result) return;
+  if (!result?.saved) return;
+  if (parsed.invalidReason) return;
+  if (result.syncResult?.status !== 'synced') {
+    console.warn(
+      `⚠️ Okuma mesajı kaydedildi ancak uygulanmadı: ${result.syncResult?.reason || parsed.invalidReason || 'pending'}`
+    );
+    return;
+  }
 
   try {
     await sock.sendMessage(incomingGroupId, {
@@ -1445,7 +1481,8 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
             continue;
           }
 
-          const currentReadingGroupId = await getTargetReadingGroupId();
+          // Güncel ayar yerine öncelikle anketin oluşturulduğu okuma grubunu kullan.
+          const currentReadingGroupId = pollDoc.readingGroupId || (await getTargetReadingGroupId());
           const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
 
           // Her güncelleme kendi oy verenini ve seçimini taşır. [] doğrudan
@@ -1481,6 +1518,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
               rawLid: voterJid.split('@')[0].split(':')[0],
               selectedOptions,
               readingGroupId: currentReadingGroupId,
+              groupId: pollDoc.groupId || key.remoteJid,
               configKey,
               updatedAt: getTRDateString()
             });
@@ -2334,28 +2372,6 @@ app.use('/assets', express.static(path.join(__dirname, 'assets')));
 app.use('/groupAvatars', express.static(path.join(__dirname, 'groupAvatars')));
 app.use('/userAvatars', express.static(path.join(__dirname, 'userAvatars')));
 
-// Eski RoTaKip webhook adresleri artık bot sunucusuna yönlendirilmelidir.
-app.post('/api/webhook/whatsapp-poll-vote', async (req, res) => {
-  const vote = req.body?.pollVote;
-  if (!vote?.pollId || !(vote.voterPhone || vote.voterJid) || !Array.isArray(vote.selectedOptions)) {
-    return res.status(400).json({ error: 'pollVote verisi eksik' });
-  }
-  const result = await saveVote(vote);
-  if (!result) return res.status(503).json({ error: 'Oy kaydedilemedi' });
-  res.json({ success: true, message: 'Anket oyu işleme alındı' });
-});
-
-app.post('/api/webhook/whatsapp-text-vote', async (req, res) => {
-  const vote = req.body?.textVote;
-  if (!vote || !(vote.voterPhone || vote.voterJid) || !Array.isArray(vote.selectedOptions)) {
-    return res.status(400).json({ error: 'textVote verisi eksik' });
-  }
-  const date = vote.date || (vote.updatedAt && String(vote.updatedAt).split(' ')[0]) || getTRDateString().slice(0, 10);
-  const result = await saveTextVote({ ...vote, date });
-  if (!result) return res.status(503).json({ error: 'Oy kaydedilemedi' });
-  res.json({ success: true, message: 'Mesaj oyu işleme alındı' });
-});
-
 // Sağlık kontrolü endpoint'i
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
@@ -2531,6 +2547,59 @@ app.put('/api/reading-group-phones/:userId', async (req, res) => {
   }
 });
 
+// Bu botun okuma grubuna ait mesaj okuma kayıtlarını getirir.
+app.get('/api/text-votes', async (req, res) => {
+  try {
+    if (!isDBEnabled() || !getDB()) {
+      return res.status(503).json({ success: false, message: 'Veritabanı bağlantısı aktif değil.' });
+    }
+
+    const config = await getPollConfig();
+    const readingGroupId = String(config?.readingGroupId || '').trim();
+    const groupId = String(config?.groupId || '').trim();
+    if (!readingGroupId) {
+      return res.status(400).json({ success: false, message: 'Hedef okuma grubu ayarlanmamış.' });
+    }
+    if (!groupId) {
+      return res.status(400).json({ success: false, message: 'Hedef WhatsApp grubu ayarlanmamış.' });
+    }
+
+    const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+    if (!configKey) {
+      return res.status(400).json({ success: false, message: 'CONFIG_KEY tanımlı değil.' });
+    }
+    const requestedLimit = Number(req.query?.limit);
+    const limit = Number.isSafeInteger(requestedLimit)
+      ? Math.max(1, Math.min(1000, requestedLimit))
+      : 500;
+    const votes = await listTextVotes(readingGroupId, configKey, groupId, limit);
+    const formattedVotes = votes.map(vote => ({
+      ...vote,
+      _id: vote._id ? String(vote._id) : null,
+      updatedAt: vote.updatedAt ? getTRDateString(vote.updatedAt) : null,
+      syncedAt: vote.syncedAt ? getTRDateString(vote.syncedAt) : null
+    }));
+
+    const statusCounts = formattedVotes.reduce((counts, vote) => {
+      const status = vote.syncStatus || 'pending';
+      counts[status] = (counts[status] || 0) + 1;
+      return counts;
+    }, {});
+
+    return res.json({
+      success: true,
+      readingGroupId,
+      groupId,
+      count: formattedVotes.length,
+      statusCounts,
+      votes: formattedVotes
+    });
+  } catch (error) {
+    console.error('Metin okuma kayıtları listelenemedi:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Manuel Anket Gönderme Endpoint'i (örn: GET veya POST /api/send-poll)
 app.all(['/api/send-poll', '/api/run-poll'], async (req, res) => {
   try {
@@ -2694,12 +2763,15 @@ app.post('/api/poll-config', async (req, res) => {
 
 // Bu bota ait anketleri listele (configKey + groupId)
 app.get('/api/polls', async (req, res) => {
-  if (!isDBEnabled() || !getDB()) {
-    return res.json({ success: false, message: 'Veritabanı bağlantısı aktif değil.' });
-  }
   try {
+    if (!isDBEnabled() || !getDB()) {
+      return res.status(503).json({ success: false, message: 'Veritabanı bağlantısı aktif değil.' });
+    }
+
     const targetGroupId = await getTargetGroupId();
     const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+    const config = await getPollConfig();
+    const readingGroupId = String(config?.readingGroupId || '').trim();
     if (!targetGroupId) {
       return res.json({
         success: false,
@@ -2714,8 +2786,11 @@ app.get('/api/polls', async (req, res) => {
         polls: []
       });
     }
+    if (!readingGroupId) {
+      return res.json({ success: false, message: 'Hedef okuma grubu ayarlanmamış.', polls: [] });
+    }
 
-    const polls = await listPolls(targetGroupId, configKey);
+    const polls = await listPolls(targetGroupId, configKey, readingGroupId);
 
     const formattedPolls = polls.map(p => ({
       ...p,
@@ -2728,27 +2803,24 @@ app.get('/api/polls', async (req, res) => {
   }
 });
 
-// Anketi polls koleksiyonundan sil (ilişkili oylar da silinir)
-app.delete('/api/polls/:pollId', async (req, res) => {
-  try {
-    const result = await deletePoll(req.params.pollId);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
 // Belirli bir ankete ait tüm oyları getir
 app.get('/api/poll-votes/:pollId', async (req, res) => {
-  if (!isDBEnabled() || !getDB()) {
-    return res.json({ success: false, message: 'Veritabanı bağlantısı aktif değil.' });
-  }
   try {
+    if (!isDBEnabled() || !getDB()) {
+      return res.status(503).json({ success: false, message: 'Veritabanı bağlantısı aktif değil.' });
+    }
+
     const { pollId } = req.params;
     const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+    const config = await getPollConfig();
+    const readingGroupId = String(config?.readingGroupId || '').trim();
+    const groupId = String(config?.groupId || '').trim();
+    if (!configKey || !readingGroupId || !groupId) {
+      return res.status(400).json({ success: false, message: 'CONFIG_KEY, hedef okuma grubu veya hedef WhatsApp grubu ayarlanmamış.' });
+    }
 
     // Anket bu bota ait mi?
-    const poll = await getPollById(pollId, configKey);
+    const poll = await getPollById(pollId, configKey, readingGroupId, groupId);
     if (!poll) {
       return res.json({ success: false, message: 'Anket bulunamadı veya bu bota ait değil.' });
     }
@@ -2756,7 +2828,7 @@ app.get('/api/poll-votes/:pollId', async (req, res) => {
       poll.createdAt = getTRDateString(poll.createdAt);
     }
 
-    const votes = await listPollVotes(pollId);
+    const votes = await listPollVotes(pollId, configKey, readingGroupId, groupId);
 
     const formattedVotes = votes.map(v => ({
       ...v,

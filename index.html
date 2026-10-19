@@ -430,8 +430,12 @@
       transform: translateY(-2px);
     }
 
-    .modal-card-large {
-      max-width: 680px;
+    #votesModal .modal-card {
+      max-width: 550px;
+    }
+
+    #textVotesModal .modal-card {
+      max-width: 550px;
     }
 
     .config-card-box {
@@ -524,7 +528,7 @@
       padding: 3px 8px;
       border-radius: 6px;
       font-size: 11px;
-      color: var(--text-muted);
+      color: #e9f2ff;
     }
 
     .select-input {
@@ -571,7 +575,7 @@
     }
 
     .vote-list-table th {
-      color: var(--text-sub);
+      color: var(--text-main);
       font-weight: 600;
       text-transform: uppercase;
       font-size: 10px;
@@ -888,8 +892,7 @@
         justify-content: stretch;
       }
 
-      .modal-card,
-      .modal-card-large {
+      .modal-card {
         max-width: 100% !important;
         width: 100%;
         height: 100vh;
@@ -998,28 +1001,19 @@
         </button>
 
         <div class="btn-row">
-          <button class="btn btn-amber" id="sendSentenceBtn" onclick="sendSentence()" disabled>
-            💬 Rastgele Vecize Gönder
+          <button class="btn btn-info" id="showVotesBtn" onclick="showVotes()">
+            📈 Anket Oylarını Görüntüle
           </button>
-          <button class="btn btn-info" id="sendTableImageBtn" onclick="sendTableImage()" disabled>
-            🖼️ Haftalık Tabloyu Gönder
-          </button>
-        </div>
-
-        <div class="btn-row">
-          <button class="btn btn-rose" id="sendReadingReportBtn" onclick="sendReadingReport()" disabled>
-            🔥 Okuma Serisi Raporunu Gönder
-          </button>
-          <button class="btn btn-purple" id="showVotesBtn" onclick="showVotes()" disabled>
-            📈 Anketleri Görüntüle
+          <button class="btn btn-info" id="showTextVotesBtn" onclick="showTextVotes()">
+            💬 Mesajlardaki Okumaları Görüntüle
           </button>
         </div>
 
         <div class="btn-row">
-          <button class="btn btn-secondary" id="showGroupsBtn" onclick="showGroupSettings()">
+          <button class="btn btn-purple" id="showGroupsBtn" onclick="showGroupSettings()">
             ⚙️ Grup Ayarları
           </button>
-          <button class="btn btn-secondary" id="showPollsBtn" onclick="showPolls()">
+          <button class="btn btn-purple" id="showPollsBtn" onclick="showPolls()">
             🗳️ Anket Ayarları
           </button>
         </div>
@@ -1407,7 +1401,7 @@
 
   <!-- Poll Votes Modal -->
   <div class="modal-overlay" id="votesModal">
-    <div class="modal-card modal-card-large">
+    <div class="modal-card">
       <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
         <h3 style="font-size: 18px; color: #fff;">🗳️ Anketler</h3>
         <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;"
@@ -1419,12 +1413,21 @@
           onchange="loadSelectedPollVotes(this.value)">
           <option value="">Anketler Yükleniyor...</option>
         </select>
-        <button class="btn btn-secondary" id="deletePollBtn" title="Anketi sil"
-          style="width: auto; padding: 10px 14px; font-size: 16px; flex-shrink: 0; color: #f87171;"
-          onclick="deleteSelectedPoll()">🗑️</button>
       </div>
 
       <div id="votesContentArea" style="max-height: 340px; overflow-y: auto; padding-right: 4px;"></div>
+    </div>
+  </div>
+
+  <!-- Text Votes Modal -->
+  <div class="modal-overlay" id="textVotesModal">
+    <div class="modal-card">
+      <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
+        <h3 style="font-size: 18px; color: #fff; margin: 0;">💬 Mesajlardaki Okumalar</h3>
+        <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;"
+          onclick="closeTextVotesModal()">✕ Kapat</button>
+      </div>
+      <div id="textVotesContentArea" style="max-height: 430px; overflow-y: auto; padding-right: 4px;"></div>
     </div>
   </div>
 
@@ -1460,10 +1463,6 @@
 
       const actionButtons = [
         document.getElementById('sendPollBtn'),
-        document.getElementById('sendSentenceBtn'),
-        document.getElementById('sendTableImageBtn'),
-        document.getElementById('sendReadingReportBtn'),
-        document.getElementById('showVotesBtn'),
       ];
       const isReady = (data.status === 'READY');
       actionButtons.forEach(btn => {
@@ -1633,69 +1632,6 @@
         sendBtn.disabled = false;
         sendBtn.innerText = '📊 Anketi Şimdi Gönder';
         checkStatus();
-      }
-    }
-
-    async function sendSentence() {
-      const btn = document.getElementById('sendSentenceBtn');
-      btn.disabled = true;
-      btn.innerText = '⏳ Gönderiliyor...';
-
-      try {
-        const res = await fetch('/api/send-sentence', { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-          showToast('✅ Rastgele vecize gruba başarıyla gönderildi!');
-        } else {
-          showToast('❌ Hata: ' + (data.message || data.error || 'Gönderilemedi'));
-        }
-      } catch (err) {
-        showToast('❌ Sunucu hatası oluştu');
-      } finally {
-        btn.disabled = false;
-        btn.innerText = '💬 Rastgele Vecize Gönder';
-      }
-    }
-
-    async function sendTableImage() {
-      const btn = document.getElementById('sendTableImageBtn');
-      btn.disabled = true;
-      btn.innerText = '⏳ Gönderiliyor...';
-
-      try {
-        const res = await fetch('/api/send-table-image', { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-          showToast('✅ Haftalık okuma tablosu görseli gruba gönderildi!');
-        } else {
-          showToast('❌ Hata: ' + (data.message || data.error || 'Gönderilemedi'));
-        }
-      } catch (err) {
-        showToast('❌ Sunucu hatası oluştu');
-      } finally {
-        btn.disabled = false;
-        btn.innerText = '🖼️ Haftalık Tabloyu Gönder';
-      }
-    }
-
-    async function sendReadingReport() {
-      const btn = document.getElementById('sendReadingReportBtn');
-      btn.disabled = true;
-      btn.innerText = '⏳ Gönderiliyor...';
-
-      try {
-        const res = await fetch('/api/send-reading-report', { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-          showToast('✅ Okuma serisi raporu gruba başarıyla gönderildi!');
-        } else {
-          showToast('❌ Hata: ' + (data.message || data.error || 'Gönderilemedi'));
-        }
-      } catch (err) {
-        showToast('❌ Sunucu hatası oluştu');
-      } finally {
-        btn.disabled = false;
-        btn.innerText = '🔥 Okuma Serisini Gönder';
       }
     }
 
@@ -2717,10 +2653,12 @@
 
         if (!data.success || !data.polls || data.polls.length === 0) {
           dropdown.innerHTML = '<option value="">(Kayıtlı anket bulunamadı)</option>';
+          dropdown.disabled = true;
           contentArea.innerHTML = `<p style="font-size:13px; color:var(--text-muted); text-align:center; padding:20px 0;">${escapeHtml(data.message || 'Kayıtlı anket yok.')}</p>`;
           return;
         }
 
+        dropdown.disabled = false;
         dropdown.innerHTML = data.polls.map(p => `
           <option value="${escapeHtml(p.pollId)}" ${targetPollId === p.pollId ? 'selected' : ''}>
             ${escapeHtml(p.title)} (${escapeHtml(formatPollDateShort(p.createdAt))})
@@ -2803,32 +2741,144 @@
       }
     }
 
-    async function deleteSelectedPoll() {
-      const dropdown = document.getElementById('pollSelectDropdown');
-      const pollId = dropdown.value;
-      if (!pollId) {
-        showToast('⚠️ Silinecek anket seçilmedi.');
-        return;
-      }
-      const label = dropdown.options[dropdown.selectedIndex]?.text || pollId;
-      if (!confirm(`Bu anketi silmek istediğinize emin misiniz?\n\n${label}`)) return;
+    function closeVotesModal() {
+      document.getElementById('votesModal').style.display = 'none';
+    }
 
+    // ----------------------------------------------------
+    // METİN OKUMALARI MODALI (text_votes)
+    // ----------------------------------------------------
+    let textVotesDataCache = null;
+    let textVotesSelectedDate = '';
+
+    async function showTextVotes() {
+      const modal = document.getElementById('textVotesModal');
+      const contentArea = document.getElementById('textVotesContentArea');
+      modal.style.display = 'flex';
+      contentArea.innerHTML = '<div class="spinner"></div><p style="font-size:12px; color:var(--text-muted); text-align:center;">Okuma kayıtları yükleniyor...</p>';
+
+      await loadTextVotes();
+    }
+
+    async function loadTextVotes() {
+      const contentArea = document.getElementById('textVotesContentArea');
+      contentArea.innerHTML = '<div class="spinner"></div><p style="font-size:12px; color:var(--text-muted); text-align:center;">Okuma kayıtları yükleniyor...</p>';
       try {
-        const res = await fetch(`/api/polls/${encodeURIComponent(pollId)}`, { method: 'DELETE' });
+        const res = await fetch('/api/text-votes?limit=500');
         const data = await res.json();
-        if (!data.success) {
-          showToast(`❌ ${data.message || 'Silinemedi'}`);
+        if (!res.ok || !data.success) {
+          contentArea.innerHTML = `<p style="font-size:13px; color:var(--accent-rose); text-align:center; padding:20px 0;">${escapeHtml(data.message || data.error || 'Kayıtlar alınamadı.')}</p>`;
           return;
         }
-        showToast('🗑️ Anket silindi.');
-        await showVotes();
+        renderTextVotes(data);
       } catch (e) {
-        showToast('❌ Anket silinirken hata oluştu.');
+        contentArea.innerHTML = '<p style="font-size:13px; color:var(--accent-rose); text-align:center; padding:20px 0;">Kayıtlar alınırken sunucu hatası oluştu.</p>';
       }
     }
 
-    function closeVotesModal() {
-      document.getElementById('votesModal').style.display = 'none';
+    function textVoteStatusMeta(status) {
+      const map = {
+        synced: { label: 'Başarılı', color: '#34d399' },
+        ignored: { label: 'İşlenmedi', color: '#fbbf24' },
+        retrying: { label: 'Tekrar deneniyor', color: '#38bdf8' },
+        failed: { label: 'Başarısız', color: '#f87171' },
+        pending: { label: 'Bekliyor', color: '#a78bfa' }
+      };
+      return map[status] || map.pending;
+    }
+
+    function textVoteReasonLabel(reason) {
+      const labels = {
+        user_not_found: 'Kullanıcı bulunamadı',
+        ambiguous_push_name: 'Aynı isimde birden fazla kullanıcı var',
+        invalid_date: 'Geçersiz tarih',
+        invalid_amount: 'Geçersiz miktar',
+        invalid_amount_format: 'Geçersiz miktar biçimi',
+        amount_exceeds_limit: 'Miktar üst sınırı aşıyor',
+        selected_options_not_array: 'Seçim listesi geçersiz',
+        multiple_amounts_not_allowed: 'Birden fazla miktar gönderildi',
+        vote_not_found: 'Kayıt bulunamadı'
+      };
+      return labels[reason] || reason || '';
+    }
+
+    function formatReadingDay(date) {
+      const match = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return match ? `${match[3]}.${match[2]}.${match[1]}` : String(date || '—');
+    }
+
+    function formatReadingTime(value) {
+      const match = String(value || '').match(/\b(\d{2}:\d{2})(?::\d{2})?\b/);
+      return match ? match[1] : '—';
+    }
+
+    function renderTextVotes(data) {
+      textVotesDataCache = data;
+      const dates = [...new Set((data.votes || []).map(vote => String(vote.date || '')).filter(Boolean))]
+        .sort((a, b) => b.localeCompare(a));
+      if (!dates.includes(textVotesSelectedDate)) {
+        textVotesSelectedDate = dates[0] || '';
+      }
+      renderTextVotesForDate(textVotesSelectedDate);
+    }
+
+    function renderTextVotesForDate(selectedDate) {
+      const contentArea = document.getElementById('textVotesContentArea');
+      const data = textVotesDataCache || { votes: [] };
+      const allVotes = data.votes || [];
+      const dates = [...new Set(allVotes.map(vote => String(vote.date || '')).filter(Boolean))]
+        .sort((a, b) => b.localeCompare(a));
+      textVotesSelectedDate = dates.includes(selectedDate) ? selectedDate : (dates[0] || '');
+      const votes = textVotesSelectedDate
+        ? allVotes.filter(vote => String(vote.date || '') === textVotesSelectedDate)
+        : [];
+      let html = `
+        <div style="margin-bottom:12px;">
+          <select id="textVotesDateSelect" class="select-input" style="width:100%; margin-bottom:0;"
+            onchange="renderTextVotesForDate(this.value)">
+            ${dates.length
+              ? dates.map(date => `<option value="${escapeHtml(date)}" ${date === textVotesSelectedDate ? 'selected' : ''}>${escapeHtml(formatReadingDay(date))}</option>`).join('')
+              : '<option value="">Kayıtlı gün bulunamadı</option>'}
+          </select>
+        </div>
+      `;
+
+      if (votes.length === 0) {
+        html += '<p style="font-size:13px; color:var(--text-muted); text-align:center; padding:24px 0;">Bu okuma gününde mesaj kaydı yok.</p>';
+      } else {
+        html += `
+          <div style="overflow-x:auto;">
+            <table class="vote-list-table">
+              <thead><tr><th>Kullanıcı</th><th>Okuma Bilgisi</th><th>İşlem durumu</th><th style="text-align:right;">Saat</th></tr></thead>
+              <tbody>
+                ${votes.map(vote => {
+                  const status = vote.syncStatus || 'pending';
+                  const meta = textVoteStatusMeta(status);
+                  const identity = vote.pushName
+                    ? `${vote.pushName} (${vote.voterPhone || vote.voterJid || '—'})`
+                    : (vote.voterPhone || vote.voterJid || '—');
+                  const value = Array.isArray(vote.selectedOptions) && vote.selectedOptions.length
+                    ? String(vote.selectedOptions[0])
+                    : 'İptal';
+                  const reason = textVoteReasonLabel(vote.syncReason)
+                    || (vote.lastSyncError ? `Teknik hata: ${vote.lastSyncError}` : '');
+                  return `<tr>
+                    <td style="font-weight:600; color:#38bdf8;">${escapeHtml(String(identity))}</td>
+                    <td><span class="option-tag">${escapeHtml(String(value))}</span></td>
+                    <td><span style="color:${meta.color}; font-weight:700;">${meta.label}</span>${reason ? `<div style="font-size:10px; color:var(--text-sub); margin-top:2px;">${escapeHtml(reason)}</div>` : ''}</td>
+                    <td style="text-align:right; color:#d9ffe0; font-size:11px; font-weight:600;">${escapeHtml(formatReadingTime(vote.updatedAt))}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+      contentArea.innerHTML = html;
+    }
+
+    function closeTextVotesModal() {
+      document.getElementById('textVotesModal').style.display = 'none';
     }
 
     async function getPairingCode() {
