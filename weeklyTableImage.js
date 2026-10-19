@@ -795,8 +795,8 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null, option
       if (st === 'okudum') {
         ctx.fillStyle = 'rgb(76, 217, 100)';
         ctx.fillRect(cellX, rowY, dayColWidth, rowHeight);
-        ctx.strokeStyle = isToday ? '#5b9bd5' : '#c7c7c7';
-        ctx.lineWidth = isToday ? 2 : 1;
+        ctx.strokeStyle = '#f0f0f0';
+        ctx.lineWidth = 1;
         ctx.strokeRect(cellX, rowY, dayColWidth, rowHeight);
 
         const dayAmount = userAmounts[dStr];
@@ -814,8 +814,8 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null, option
       } else if (st === 'okumadım') {
         ctx.fillStyle = 'rgb(255, 100, 60)'; // Orijinal RoTaKip Canlı Kırmızı (#ff643c)
         ctx.fillRect(cellX, rowY, dayColWidth, rowHeight);
-        ctx.strokeStyle = isToday ? '#5b9bd5' : '#c7c7c7';
-        ctx.lineWidth = isToday ? 2 : 1;
+        ctx.strokeStyle = '#f0f0f0';
+        ctx.lineWidth = 1;
         ctx.strokeRect(cellX, rowY, dayColWidth, rowHeight);
 
         // Koyu Kırmızı Vektörel Çarpı (Cross) Simgesi
@@ -824,8 +824,8 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null, option
         // Boş / İşaretlenmemiş
         ctx.fillStyle = isToday ? '#ebf3fa' : '#f8f9fa';
         ctx.fillRect(cellX, rowY, dayColWidth, rowHeight);
-        ctx.strokeStyle = isToday ? '#5b9bd5' : '#c7c7c7';
-        ctx.lineWidth = isToday ? 2 : 1;
+        ctx.strokeStyle = '#d0d0d0';
+        ctx.lineWidth = 1;
         ctx.strokeRect(cellX, rowY, dayColWidth, rowHeight);
 
         // İndigo Moru Vektörel Eksi (Minus) Simgesi
