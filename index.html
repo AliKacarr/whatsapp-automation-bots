@@ -1242,7 +1242,7 @@
           </div>
           <input type="hidden" id="gsReadingGroupId" />
           <button type="button" id="openReadingGroupPhoneBtn" class="btn btn-secondary"
-            style="display: none; width: 100%; margin-top: 10px; padding: 9px 12px; font-size: 12px; font-weight: 600;"
+            style="display: block; width: 100%; margin-top: 10px; padding: 9px 12px; font-size: 12px; font-weight: 600;"
             onclick="openReadingGroupPhoneModal()">
             📱 Telefon Numaralarını Düzenle
           </button>
@@ -2545,7 +2545,11 @@
         }
         setReadingGroupAdminAuth(pending.id, data.username || username);
         showToast('✅ Yönetici girişi başarılı');
+        const openPhoneEditorAfterLogin = pending.openPhoneEditor === true;
         applyReadingGroupSelection(pending.id, pending.name);
+        if (openPhoneEditorAfterLogin) {
+          await openReadingGroupPhoneModal();
+        }
       } catch (e) {
         errEl.textContent = 'Sunucu hatası oluştu.';
         errEl.style.display = 'block';
@@ -2554,9 +2558,7 @@
 
     function updateReadingGroupPhoneBtnVisibility() {
       const btn = document.getElementById('openReadingGroupPhoneBtn');
-      const groupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
-      const auth = getReadingGroupAdminAuth(groupId);
-      btn.style.display = (groupId && auth) ? 'block' : 'none';
+      if (btn) btn.style.display = 'block';
     }
 
     // Eski çağrı adını koru (showGroupSettings / applyReadingGroupSelection)
@@ -2566,10 +2568,16 @@
 
     async function openReadingGroupPhoneModal() {
       const groupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
+      if (!groupId) {
+        showToast('⚠️ Önce RoTaKip Okuma Grubu seçmelisiniz.');
+        return;
+      }
       const auth = getReadingGroupAdminAuth(groupId);
-      if (!groupId || !auth) {
-        showToast('⚠️ Yönetici girişi gerekli');
-        updateReadingGroupPhoneBtnVisibility();
+      if (!auth) {
+        const cachedGroup = readingGroupsCache.find(group => group.groupId === groupId);
+        const groupName = cachedGroup?.groupName || selectedReadingGroupName || groupId;
+        pendingReadingGroupSelect = { id: groupId, name: groupName, openPhoneEditor: true };
+        openReadingGroupAdminLogin(groupId, groupName);
         return;
       }
 

@@ -649,7 +649,7 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null, option
   });
 
   // Okuma serisi toplamı — public #tfoot-total-streak (⭐ N)
-  ctx.fillStyle = '#f5f5f5';
+  ctx.fillStyle = '#f0f0f0';
   ctx.fillRect(streakX, statsY, streakColWidth, statsRowHeight);
   ctx.strokeStyle = '#c7c7c7';
   ctx.lineWidth = 1;

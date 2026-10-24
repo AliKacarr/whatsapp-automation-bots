@@ -1,283 +1,134 @@
-# WhatsApp Otomasyon Botları
+# WhatsApp Okuma Takip Botu
 
-Bu proje, WhatsApp gruplarında **otomatik anket gönderme**, **mesaj gönderme** ve **veri toplama** işlemlerini gerçekleştirmek için geliştirilmiş otomasyon araçlarını içerir.
+WhatsApp okuma grupları için geliştirilmiş, Node.js tabanlı otomasyon ve yönetim paneli. Günlük okuma anketlerini gönderir, anket ve mesaj yanıtlarını kaydeder, okuma istatistiklerini raporlar.
 
 [![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express.js-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
 [![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
-[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![Render](https://img.shields.io/badge/Render-46E3B7?style=for-the-badge&logo=render&logoColor=black)](https://render.com/)
 
----
+## Özellikler
 
-## Öne Çıkan Özellikler
+- Zamanlanmış veya panelden anında gönderilebilen okuma anketleri
+- Anket oylarının ve metinle bildirilen okumaların kaydı
+- Haftalık okuma raporu ve tablo görseli
+- Okuma serisi ve lig ilerlemesi takibi
+- Kişiye özel teslimat seçeneklerine sahip lig kutlama görselleri
+- Grup, anket ve otomasyon ayarları için web yönetim paneli
+- Parola korumalı panel ve şifreli WhatsApp oturum verileri
+- `CONFIG_KEY` ile birbirinden ayrı çalışan çoklu bot desteği
 
-- **Anket ve Mesaj Gönderimi:** WhatsApp gruplarınıza her gün otomatik anket ve motivasyon cümlesi gönderebilirsiniz.
-- **Veri Saklama:** Kullanıcıların **anlık anket oylamaları** MongoDB veri tabanında kalıcı olarak saklanır.
-- **Haftalık Okuma Tablosu:** Her hafta grubun okuma istatistiklerini içeren tablo görseli otomatik olarak oluşturulur ve gruba gönderilir.
-- **Okuma Serisi Takibi:** Kullanıcıların kesintisiz okuma serileri (🔥 streak) hesaplanır ve haftalık raporda gösterilir.
-- **Modüler Özellik Yönetimi:** Anket gönderimi, rastgele vecize, haftalık tablo/rapor gönderimi, oy tespiti ve metin okuma kaydı gibi özellikleri grup bazında bağımsız olarak aktif/pasif edebilirsiniz.
-- **Çoklu Bot Desteği:** Aynı veritabanını paylaşan birden fazla bot, `CONFIG_KEY` sayesinde birbirinden bağımsız çalışır.
-- **Canlı Web Yönetim Paneli:** Arayüzden anket sonuçlarını görüntüleyebilir, grup/özellik ayarlarını düzenleyebilir ve anket gönderimini tetikleyebilirsiniz.
+## Gereksinimler
 
----
+- Güncel bir Node.js LTS sürümü
+- MongoDB veritabanı
+- WhatsApp hesabı
+- RoTaKip okuma grubu verilerine erişim
 
-## Kurulum Rehberi
+## Kurulum
 
-Uygulamayı ihtiyacınıza göre **Render.com üzerinde sunucu ortamında** veya **kendi bilgisayarınızda (yerel)** çalıştırabilirsiniz.
+Projeyi klonladıktan sonra bağımlılıkları yükleyin:
 
-### 1. Render.com ile Sunucuda Kurulum
+```bash
+npm install
+```
 
-Botunuzu Render.com üzerinde 7/24 kesintisiz çalışır hale getirmek için aşağıdaki adımları sırasıyla uygulayabilirsiniz:
+Proje dizininde bir `.env` dosyası oluşturun:
 
-#### 1. Adım: Projeyi Render'da Yayına Alma
-1. Bu projeyi kendi GitHub hesabınıza **Fork** edin.
-2. [Render.com](https://render.com/) adresine ücretsiz üye olun ve **New +** > **Web Service** seçeneğini seçin.
-3. Forkladığınız GitHub reponuzu bağlayın ve yayına alın.
-4. Render size özel bir web site adresi verecektir (Örn: `https://okuma-takip-botu.onrender.com`).
+```env
+CONFIG_KEY=okumagrubu1
+MONGO_URI=mongodb+srv://kullanici:parola@cluster.mongodb.net
+DB_NAME=readingTracker
+BAILEYS_AUTH_ENCRYPTION_KEY=en-az-32-karakterlik-guclu-bir-gizli-anahtar
+```
 
-#### 2. Adım: Ortam Değişkenlerini Yapılandırma (Environment Variables)
-1. Render panelinde oluşturduğunuz servis içerisinden **Environment** bölümüne gelin.
-2. Aşağıdaki değişkenleri **Add Environment Variable** butonunu kullanarak ekleyin:
+Uygulamayı başlatın:
 
-| Değişken Adı | Zorunlu | Değer / Açıklama |
+```bash
+npm start
+```
+
+Yönetim paneli varsayılan olarak [http://localhost:3000](http://localhost:3000) adresinde açılır.
+
+## İlk Yapılandırma
+
+1. Yönetim panelini açın ve ilk kullanıcı hesabını oluşturun.
+2. WhatsApp hesabınızı QR kod veya eşleştirme koduyla bağlayın.
+3. **Grup Ayarları** bölümünden hedef WhatsApp grubunu seçin.
+4. RoTaKip okuma grubunu seçip grup yöneticisi hesabıyla doğrulayın.
+5. Kullanmak istediğiniz otomasyonları etkinleştirin.
+6. **Anket Ayarları** bölümünden anket başlığını ve seçeneklerini düzenleyin.
+
+## Ortam Değişkenleri
+
+| Değişken | Zorunlu | Açıklama |
 | :--- | :---: | :--- |
-| **`CONFIG_KEY`** | ✅ | Botunuz için rastgele benzersiz bir anahtar belirleyin. *(Örn: `okumagrubu1`)* |
-| **`MONGO_URI`** | ✅ | MongoDB bağlantı adresiniz. *(Örn: `mongodb+srv://user:pass@cluster.mongodb.net`)* |
-| **`BAILEYS_AUTH_ENCRYPTION_KEY`** | Üretimde ✅ | MongoDB'de tutulan WhatsApp oturum anahtarlarını şifreleyen, en az 32 karakterlik gizli değer |
-| **`DB_NAME`** | ✅ | Veritabanı adınız. *(Örn: `readingTracker`)* |
-| **`PING_URL`** | ❌ | Render'ın uyku moduna girmesini engellemek için health check adresi.<br>*(Örn: `https://okuma-takip-botu.onrender.com/api/health` — Dilerseniz bu URL'i [cron-job.org](https://cron-job.org/) gibi harici bir servise ekleyip her 5 dakikada bir tetikleyerek de botu uyanık tutabilirsiniz.)* |
+| `CONFIG_KEY` | Evet | Bot örneğini ve ayarlarını tanımlayan benzersiz anahtar |
+| `MONGO_URI` | Evet | MongoDB bağlantı adresi |
+| `DB_NAME` | Evet | Kullanılacak veritabanının adı |
+| `BAILEYS_AUTH_ENCRYPTION_KEY` | Üretimde | WhatsApp oturum verilerini şifreleyen, en az 32 karakterlik gizli anahtar |
+| `PORT` | Hayır | HTTP sunucusu portu. Varsayılan: `3000` |
+| `PING_URL` | Hayır | Periyodik istek gönderilecek health check adresi |
+| `MAX_READING_AMOUNT` | Hayır | Mesajla kabul edilecek en yüksek okuma miktarı. Varsayılan: `99999` |
 
-3. Değişiklikleri kaydedin. Render uygulamanızı otomatik olarak yeniden başlatacaktır.
+> `.env` dosyanızı ve `BAILEYS_AUTH_ENCRYPTION_KEY` değerini kaynak kontrolüne eklemeyin. Anahtar kaybedilirse kayıtlı WhatsApp oturumu çözülemez.
 
-> **Not:** Üretimde bu dört zorunlu değişken tanımlanmadığında bot hiçbir WhatsApp işlemi gerçekleştirmez. `BAILEYS_AUTH_ENCRYPTION_KEY` değerini parola yöneticisiyle üretilmiş, benzersiz bir sır olarak saklayın; kaybedilirse mevcut WhatsApp oturumu çözülemez. WhatsApp oturum anahtarları ve Baileys'in tekrar gönderim için ihtiyaç duyduğu şifreli mesaj kayıtları ilgili `baileys_auth_<CONFIG_KEY>` koleksiyonunda saklanır.
+## Render ile Yayınlama
 
-#### 3. Adım: QR Kod ile WhatsApp Bağlantısı
-1. Render'ın verdiği web adresine tarayıcınızdan girin.
-2. Karşınıza gelen **QR Kodu** WhatsApp uygulamanızdan *(Bağlı Cihazlar > Cihaz Bağla)* okutarak botunuzu bağlayın.
+1. Depoyu GitHub hesabınıza fork edin.
+2. Render'da yeni bir **Web Service** oluşturup depoyu bağlayın.
+3. Build komutunu `npm install`, başlatma komutunu `npm start` olarak ayarlayın.
+4. Gerekli ortam değişkenlerini Render paneline ekleyin.
+5. Dağıtım tamamlandığında yönetim panelini açarak ilk yapılandırmayı tamamlayın.
 
-#### 4. Adım: Hedef Grup ve Ayarlar
-1. QR kodu okutup giriş yaptıktan sonra yönetim panelindeki **"Grup JID Kopyala"** butonuna tıklayın.
-2. Anket göndermek istediğiniz grubun yanındaki **JID** kodunu kopyalayın (Örn: `123456789012345678@g.us`).
-3. **Ayarlar** butonuna tıklayarak hedef WhatsApp grubu JID, okuma grubu ID ve anket şablonu gibi tüm ayarları arayüzden kolayca yapılandırabilirsiniz.
+## Otomatik Görevler
 
----
+| Görev | Zamanlama |
+| :--- | :--- |
+| Günlük okuma anketi | Her gün 09.00 |
+| Motivasyon cümlesi | Salı ve Perşembe 22.30 |
+| Haftalık okuma raporu | Cumartesi 22.30 |
+| Haftalık tablo görseli | Pazartesi 22.30 |
+| Bekleyen lig kutlamaları | Her dakika |
 
-### 2. Yerel Kurulum
+Tüm zamanlamalar `Europe/Istanbul` saat dilimini kullanır. Otomatik görevler **Grup Ayarları** bölümünden ayrı ayrı yönetilebilir.
 
-Projeyi kendi bilgisayarınızda geliştirme veya test amacıyla çalıştırmak isterseniz:
+## Mesajla Okuma Kaydı
 
-1. **Bağımlılıkları Yükleyin:**
-   ```bash
-   npm install
-   ```
+Metinle okuma kaydı etkinleştirildiğinde aşağıdaki gibi mesajlar kabul edilir:
 
-2. **Ortam Değişkenlerini Oluşturun:**
-   Kök dizinde `.env` dosyası oluşturup zorunlu değişkenlerinizi tanımlayın:
-   ```env
-   CONFIG_KEY=okumagrubu1
-   MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net
-   DB_NAME=readingTracker
-   BAILEYS_AUTH_ENCRYPTION_KEY=en-az-32-karakterlik-rastgele-gizli-deger
-   ```
+```text
+20
+20 sayfa
+20 dakika
+dün 15 sayfa
+```
 
-3. **Uygulamayı Başlatın:**
-   ```bash
-   npm start
-   ```
-   Tarayıcınızda `http://localhost:3000/` adresine girerek yönetim paneline erişebilir, QR kod taratarak oturum açabilir ve **Ayarlar** bölümünden hedef grup, okuma grubu ve anket ayarlarını yapılandırabilirsiniz.
-
----
-
-### Anketleri ve Özellikleri Özelleştirme
-
-Botun otomatik işlevlerini ve anket ayarlarını iki farklı şekilde güncelleyebilirsiniz:
-
-- **Yönetim Panelinden (Özellik Yönetimi & Anket Ayarları):**
-  - **Grup Ayarları > Özellik Yönetimi:** Günlük anket gönderimi, rastgele vecize gönderimi, haftalık okuma raporu, haftalık tablo görseli, oy tespiti ve metin okuma kaydı gibi özellikleri bağımsız olarak tek tıkla aktif/pasif edebilirsiniz.
-  - **Anket Ayarları:** Anket başlığı şablonunu (`{{date}}`), anket seçeneklerini, hedef WhatsApp grubu JID bilgisini ve okuma grubu ID bilgisini arayüzden doğrudan değiştirebilirsiniz.
-- **Dosya Üzerinden (`server.js`):** `scheduleWhatsAppPollJob` fonksiyonundaki cron saat zamanlamasını (varsayılan: `0 9 * * *` - her gün 09:00 TSİ) ile `DEFAULT_POLL_OPTIONS` ve `getDailyPollTitle` fonksiyonlarını doğrudan kod içerisinden değiştirebilirsiniz.
-
----
-
-## Zamanlayıcılar
-
-| Görev | Zamanlama | Açıklama |
-| :--- | :--- | :--- |
-| Günlük Anket | Her gün 09:00 (TSİ) | Hedef gruba otomatik okuma anketi gönderir |
-| Motivasyon Cümlesi | Salı ve Perşembe 22:30 (TSİ) | Veritabanından rastgele bir cümle seçip gruba gönderir |
-| Okuma Serisi Raporu | Cumartesi 22:30 (TSİ) | Okuma serisi ve istatistik özetini metin olarak gönderir |
-| Haftalık Tablo Görseli | Pazartesi 22:30 (TSİ) | Haftalık okuma tablosunu görsel olarak oluşturup gönderir |
-
----
-
-## Python Botları ve Analiz Araçları
-
-Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak isteyenler için repoda Python araçları yer almaktadır:
-
-- **Gerekli Kütüphaneler:**
-  ```bash
-  pip install selenium clipboard
-  ```
-- **Araçlar:**
-  - `wp-bot-anket-olusturucu.py`: WhatsApp Web üzerinden otomatik anket oluşturur.
-  - `wp-bot-oto-mesaj.py`: Belirli zamanlarda otomatik grup mesajı gönderir.
-  - `wp-bot-web-istatistikleri.py`: Grup sohbet mesajlarını kelime ve tarih aralığına göre analiz eder.
-  - `wp-bot-anket-istatistikleri.py`: Anket oylarını ve katılımcı dağılımını analiz eder.
-  - `wp-bot-desktop.py`: Masaüstü WhatsApp verilerini işler.
-  - `logout_whatsapp.py`: Oturumu güvenli şekilde sonlandırır.
-
----
+Bir kaydı iptal etmek için `0` veya `iptal` gönderilebilir. Başarıyla işlenen mesajlara ✔️, geçersiz mesajlara ❌ tepkisi verilir.
 
 ## Ekran Görüntüleri
 
 | Ana Sayfa | Grup Ayarları |
-|:---------:|:-------------:|
-| <img src="screenshots/Ana%20Sayfa.png" width="500"> | <img src="screenshots/Grup%20Ayarları.png" width="500"> | 
+| :---: | :---: |
+| <img src="screenshots/Ana%20Sayfa.png" width="500" alt="Ana sayfa"> | <img src="screenshots/Grup%20Ayarları.png" width="500" alt="Grup ayarları"> |
 
-| Grup Seçim Paneli | Anket Ayarları | 
-|:---------:|:-------------:|
-| <img src="screenshots/Grup%20Seçme.png" width="500"> | <img src="screenshots/Anket%20Ayarları.png" width="500"> | 
+| Grup Seçimi | Anket Ayarları |
+| :---: | :---: |
+| <img src="screenshots/Grup%20Seçme.png" width="500" alt="Grup seçimi"> | <img src="screenshots/Anket%20Ayarları.png" width="500" alt="Anket ayarları"> |
 
----
+## Geliştirme
 
-## API Referansı
+Geliştirme sunucusunu başlatmak için:
 
-| Endpoint | Metod | Açıklama |
-| :--- | :--- | :--- |
-| `/` | `GET` | Web Yönetim Paneli Arayüzü |
-| `/api/status` | `GET` | Bot, konfigürasyon ve veritabanı bağlantı durumu |
-| `/api/send-poll` | `POST` | Hedef gruba anlık anket gönderir |
-| `/api/send-sentence` | `POST` | Hedef gruba motivasyon cümlesi gönderir |
-| `/api/send-reading-report` | `POST` | Haftalık okuma raporu (metin) gönderir |
-| `/api/send-table-image` | `POST` | Haftalık okuma tablosu görselini gönderir |
-| `/api/polls` | `GET` | Gönderilmiş anketleri listeler |
-| `/api/poll-votes/:pollId` | `GET` | Seçilen ankete ait detaylı oy kayıtlarını getirir |
-| `/api/poll-config` | `GET` / `POST` | Anket başlığı, seçenekler, grup JID, okuma grubu ve özellik bayraklarını okur/günceller |
-| `/api/groups` | `GET` | Katılınan WhatsApp gruplarını ve JID adreslerini listeler |
-| `/api/pairing-code` | `POST` | Telefon numarası ile 8 haneli oturum kodu üretir |
-| `/api/restart` | `POST` | Oturumu ve istemciyi yeniden başlatır |
-| `/api/health` | `GET` | Sunucu canlılık (health check) endpoint'i |
-| `/api/auth/status` | `GET` | Mevcut `CONFIG_KEY` kullanıcısının kayıt ve oturum durumunu getirir |
-| `/api/auth/register` | `POST` | İlk kurulumda `CONFIG_KEY` kullanıcısını oluşturur |
-| `/api/auth/login` | `POST` | Yönetim paneli oturumunu açar |
-| `/api/auth/logout` | `POST` | Yönetim paneli oturumunu kapatır |
-
-`/api/health` ve `/api/auth/*` dışındaki tüm API uçları geçerli bir yönetim paneli oturumu gerektirir.
-
----
-
-## Veritabanı Şeması (MongoDB)
-
-#### `auth-wob` Koleksiyonu (Yönetim Paneli Kullanıcıları)
-```json
-{
-  "_id": "mygroupid34",
-  "username": "mygroupid34",
-  "configKey": "mygroupid34",
-  "passwordHash": "$2b$12$...",
-  "passwordHashVersion": 1,
-  "createdAt": { "$date": "2026-10-19T10:00:00.000Z" },
-  "updatedAt": { "$date": "2026-10-19T10:00:00.000Z" },
-  "lastLoginAt": { "$date": "2026-10-19T10:05:00.000Z" }
-}
+```bash
+npm run dev
 ```
 
-- `_id`, `username` ve `configKey`, çalışmakta olan botun `CONFIG_KEY` değeriyle aynıdır.
-- Şifre açık metin olarak saklanmaz; bcrypt özeti `passwordHash` alanına yazılır.
-- İlk site açılışında kayıt yoksa kayıt formu, kayıt varsa giriş formu gösterilir. Formdaki kullanıcı adı sunucuda `.env` dosyasındaki `CONFIG_KEY` ile karşılaştırılır ve istemciye otomatik doldurulmaz.
+Testleri çalıştırmak için:
 
-#### `poll_config` Koleksiyonu (Bot Konfigürasyonu, Özellik Bayrakları & Anket Şablon Ayarları)
-```json
-{
-  "_id": "mygroupid34",
-  "titleTemplate": "{{date}} Okuma Takibi",
-  "options": [ "5 dakika", "10 dakika", "15 dakika", "20 dakika" ],
-  "groupId": "123456789012345678@g.us",
-  "readingGroupId": "mygroupid34",
-  "featurePollEnabled": true,
-  "featureSentenceEnabled": true,
-  "featureWeeklyReportEnabled": true,
-  "featureWeeklyReportQuoteEnabled": true,
-  "featureWeeklyTableEnabled": true,
-  "featureVoteTrackingEnabled": true,
-  "featureMessageReadingEnabled": true,
-  "updatedAt": "2026-08-11 10:45:00"
-}
+```bash
+npm test
 ```
-
-- `_id`: `CONFIG_KEY` ile eşleşen benzersiz konfigürasyon anahtarı
-- `groupId`: Anketlerin gönderileceği WhatsApp grubu JID adresi
-- `readingGroupId`: RoTaKip veritabanındaki okuma grubu kodu (`users_<readingGroupId>` ve `readingstatuses_<readingGroupId>` koleksiyonlarını belirler)
-- `featurePollEnabled`: Günlük anket gönderiminin aktif/pasif durumu
-- `featureSentenceEnabled`: Rastgele vecize / motivasyon cümlesi gönderiminin aktif/pasif durumu
-- `featureWeeklyReportEnabled`: Haftalık okuma serisi raporunun aktif/pasif durumu
-- `featureWeeklyReportQuoteEnabled`: Okuma serisi raporunun sonuna eklenen rastgele hatırlatma sözünün aktif/pasif durumu
-- `featureWeeklyTableEnabled`: Haftalık okuma tablosu görselinin aktif/pasif durumu
-- `featureLeagueCongratulationEnabled`: Lig atlama kutlama görsellerinin aktif/pasif durumu
-- `featureVoteTrackingEnabled`: WhatsApp anket oylarının tespit edilip `poll_votes` koleksiyonuna kaydedilmesinin aktif/pasif durumu
-- `featureMessageReadingEnabled`: Grup metin mesajlarından sayfa okuma bilgisinin `text_votes` koleksiyonuna kaydedilmesinin aktif/pasif durumu
-
-#### `polls` Koleksiyonu (Anket Kayıtları)
-```json
-{
-  "pollId": "3EB0FF9D45F3A12550DEDA",
-  "groupId": "123456789012345678@g.us",
-  "title": "1 Ağustos",
-  "options": [ "5 dakika", "10 dakika", "15 dakika", "20 dakika" ],
-  "createdAt": { "$date": "2026-08-11T07:00:00.000Z" }
-}
-```
-
-#### `poll_votes` Koleksiyonu (Anket Oy Kullanımları)
-```json
-{
-  "pollId": "3EB0FF9D45F3A12550DEDA",
-  "voterJid": "905351234567",
-  "voterPhone": "905351234567",
-  "selectedOptions": [ "15 dakika" ],
-  "readingGroupId": "mygroupid34",
-  "groupId": "120363000000000000@g.us",
-  "configKey": "mygroupid34",
-  "pushName": "Ahmet",
-  "updatedAt": "2026-08-11 10:02:02"
-}
-```
-
-#### `text_votes` Koleksiyonu (Metin Okuma Mesajları)
-```json
-{
-  "voterJid": "905351234567",
-  "voterPhone": "905351234567",
-  "selectedOptions": [ "20" ],
-  "readingGroupId": "mygroupid34",
-  "groupId": "120363000000000000@g.us",
-  "configKey": "mygroupid34",
-  "date": "2026-08-21",
-  "pushName": "Ahmet",
-  "updatedAt": "2026-08-22 01:05:00"
-}
-```
-
-- `date`: Mantıksal okuma günü (`YYYY-MM-DD`). TSİ 00:00–02:00 arası bir önceki güne yazılır; mesaj `dün` ile başlıyorsa bir gün daha geri alınır.
-- Kabul edilen formatlar: `20`, `20 sayfa`, `20 syf`, `20 dk`, `20 dakika`, `dün 15 sayfa` (fazla kelime geçersiz).
-- Aynı `configKey` + `readingGroupId` + `groupId` + `voterJid` + `date` için upsert (yeniden mesaj = güncelleme); başarıda mesaja ✔️ reaction bırakılır.
-- `0`, `00`, `000` ve `iptal` aynı iptal işlemi olarak değerlendirilir.
-- Okuma miktarı varsayılan olarak en fazla `99999` olabilir; `MAX_READING_AMOUNT` ile değiştirilebilir. Sınırı aşan mesaj uygulanmaz ve mesaja ❌ reaksiyonu bırakılır.
-- Başarılı ve başarısız senkronizasyon kayıtları `text_votes` içinde `syncStatus` alanıyla saklanır ve paneldeki **Mesajlardaki Okumaları Görüntüle** bölümünden izlenebilir.
-- Anket ve mesaj okuma panellerinde yalnızca botun mevcut `CONFIG_KEY`, `readingGroupId` ve hedef WhatsApp `groupId` değerleriyle tam eşleşen kayıtlar gösterilir.
-
-#### `lid_mappings` Koleksiyonu (LID - Telefon Numarası Eşleşmeleri)
-```json
-{
-  "_id": "114345098911975",
-  "phone": "905351234567",
-  "updatedAt": "2026-08-11 10:00:00"
-}
-```
-
----
 
 ## Geliştirici
 
@@ -290,8 +141,6 @@ Grup sohbetleri ve geçmiş anket oyları üzerinde daha detaylı analiz yapmak 
 
 [alikacardev@gmail.com](mailto:alikacardev@gmail.com)
 
----
-
 ## Lisans
 
-Bu proje [MIT Lisansı](LICENSE.txt) altında sunulmaktadır.
+Bu proje [MIT Lisansı](LICENSE) ile lisanslanmıştır.
