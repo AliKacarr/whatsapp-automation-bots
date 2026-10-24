@@ -37,9 +37,9 @@ Proje dizininde bir `.env` dosyası oluşturun:
 
 ```env
 CONFIG_KEY=okumagrubu1
-MONGO_URI=mongodb+srv://kullanici:parola@cluster.mongodb.net
+MONGO_URI=veri-tabanı-bağlantı-bilginiz
 DB_NAME=readingTracker
-BAILEYS_AUTH_ENCRYPTION_KEY=en-az-32-karakterlik-guclu-bir-gizli-anahtar
+BAILEYS_AUTH_ENCRYPTION_KEY=en-az-32-karakterlik-güçlü-bir-gizli-anahtar
 ```
 
 Uygulamayı başlatın:
