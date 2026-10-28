@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # npm / Node.js bağımlılıkları için
+  - package-ecosystem: "npm"
+    directory: "/" # package.json dosyasının bulunduğu dizin
+    schedule:
+      interval: "weekly" # Güncelleme kontrol sıklığı: daily, weekly, monthly
+    open-pull-requests-limit: 10 # Aynı anda açılabilecek maksimum PR sayısı
