@@ -6,7 +6,7 @@ const schedule = require('node-schedule');
 const pino = require('pino');
 const QRCode = require('qrcode');
 require('dotenv').config();
-const { setPromotionHandler, connectDB, isDBEnabled, getDB, getDashboardUserStatus, registerDashboardUser, verifyDashboardUser, savePoll, saveVote, saveTextVote, removeVote, getPollById, listPolls, listPollVotes, listTextVotes, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation, getReadingGroupUser, listReadingGroupUsersForLeaguePrefs, updateLeagueCongratulationDelivery, normalizeLeagueCongratulationDelivery, verifyReadingGroupAdmin, listReadingGroupUsersForPhoneEdit, updateReadingGroupUserPhone } = require('./db');
+const { setPromotionHandler, connectDB, isDBEnabled, getDB, getDashboardUserStatus, registerDashboardUser, verifyDashboardUser, savePoll, saveVote, saveTextVote, removeVote, getPollById, listPolls, listPollVotes, listTextVotes, getTRDateString, getLogicalReadingDate, getPollConfig, savePollConfig, saveLidMapping, getAllLidMappings, getReadingGroupPhones, getMappedPhonesByConfigKey, deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence, calculateReadingStreaks, getPendingCongratulations, completeCongratulation, getReadingGroupUser, listReadingGroupUsersForLeaguePrefs, updateLeagueCongratulationDelivery, normalizeLeagueCongratulationDelivery, verifyReadingGroupAdmin, listReadingGroupUsersForPhoneEdit, updateReadingGroupUserPhone, updateEsmaulhusnaIndex, reserveRandomReminder, releaseReminderReservation } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
 const { generateLeagueCongratulationImage } = require('./leagueCongratulationImage');
 const {
@@ -177,56 +177,9 @@ const MONTH_NAMES_TR = [
   'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
 ];
 
-const reminderAlternatives = [
-  "Okumalarımıza düzenli devam edebilmek dileğiyle 🌿",
-  "Okuma alışkanlığımızı birlikte güçlendirelim inşaAllah 📖",
-  "Küçük adımlar, büyük alışkanlıklar oluşturur. Takipteyiz! 📘",
-  "Bu hatırlatma bir vesile olsun, kaldığımız yerden devam edelim 🔄",
-  "Düzenli okumalarla bereketli bir sürece birlikte yürüyelim 🌱",
-  "İstikrar güzeldir; eksiklerimizi birlikte tamamlayalım 🤝",
-  "Okuyanlara tebrikler, henüz okumayanlara nazik bir davet 😊",
-  "İstikrarın güzelliğini hep birlikte yaşayalım 🌟",
-  "Daha okumasını tamamlamayanlar için nazik bir hatırlatma 📖",
-  "Okumalarımıza birlikte devam edebilmek duasıyla 🤲",
-  "Birlikte ilerlemek, devam etmenin en güzel hali 👣",
-  "Okumalarımıza sadakatle devam edelim inşaAllah 🕊️",
-  "Her gün bir satır da olsa, devam edelim ✍️",
-  "İstikrarla yürüdüğümüz bu yolda hep birlikteyiz 🛤️",
-  "Bu küçük hatırlatma, güzel bir başlangıç olsun 🌸",
-  "Unutmak kolay, alışkanlık ise emek ister. Devam edelim 💪",
-  "Güzel alışkanlıklar birlikte inşa edilir 🍃",
-  "Okuma yolculuğumuza birlikte güç katalım 🚀",
-  "Birlikte tamamlanan okumalarda bereket vardır 🧡",
-  "Düzenli okumalarla kalplerimizi diri tutalım ❤️🔥",
-  "Hatırlatmak bizden, gayret sizden 🙏",
-  "Okumaları unutmayalım 🔔",
-  "İstikrarlı adımlar en kalıcı olanlardır ⏳",
-  "Okuma halkamızın bir parçası olmaya ne dersiniz? 💫",
-  "Birlikte okumak, yalnız okumaktan daha değerlidir 🤝",
-  "Okudukça zihin açılır, gönül ferahlar ☀️",
-  "İstikrarlı olan kazanır; bugünü de boş geçmeyelim ⏰",
-  "Birlikte okumak, birlikte güçlenmektir 💪",
-  "Bugün okumaya vakit ayırmak, kendine bir iyiliktir 💝",
-  "Okuma halkamızda siz de yerinizi alın 🤗",
-  "Bir satır da bugün için, alışkanlık zincirini kırma 🔗",
-  "Okumak, gönlü besleyen en güzel alışkanlıktır 🌾",
-  "Okuma yolculuğumuzda mola değil, devam zamanı 🔄",
-  "Zinciri kırmayalım, okumaya devam 🔗",
-  "Az da olsa devamlı okuyalım 💧",
-  "Kaldığımız yerden aynı şevkle devam! 🚀",
-  "Birkaç satır da olsa okuyalım 📖",
-  "Birlikte okuyor, birlikte güzelleşiyoruz 🌱",
-  "Ruhumuza kısa bir okuma molası ☕",
-  "Günün yoğunluğuna kısa bir okuma arası ☕",
-  "Günün bereketini okumayla yakalayalım ☀️",
-  "Okuma saatimiz geldi, sizleri de aramızda görmek isteriz ⏰",
-  "Günü kapatmadan okumalarımızı tamamlayalım ⌛",
-  "Küçük bir gayret, büyük bereket 🌾",
-  "Kitaplar bizi bekler, hadi okumaya 📚",
-  "Gönlümüze iyi gelecek satırlara dönelim 🕊️",
-  "Okuma kervanımız yola devam ediyor 🛤️",
-  "Okumalarımızı tamamlayıp güne huzur katalım 🍂"
-];
+// esmaülhüsna.json (Çarşamba ve Cuma sıralı gönderim için)
+const ESMAULHUSNA_JSON = JSON.parse(fs.readFileSync(path.join(__dirname, 'esmaulhusna.json'), 'utf8'));
+
 
 /**
  * Günlük dinamik anket başlığını üretir (Örn: "4 Ağustos" veya "4 Ağustos Okuma Anketi")
@@ -1909,11 +1862,150 @@ function scheduleSentenceJob() {
 }
 
 // ============================================================================
+// ESMAÜL HÜSNA GÖNDERİMİ (Her Çarşamba ve Cuma 22:30 TSİ)
+// ============================================================================
+
+async function sendEsmaulhusna(options = {}) {
+  const missingEnvs = checkRequiredEnvVars();
+  if (missingEnvs.length > 0) {
+    return {
+      success: false,
+      message: `.env dosyanızda zorunlu değişkenler eksik: ${missingEnvs.join(', ')}`
+    };
+  }
+
+  const targetGroupId = options.groupId || await getTargetGroupId();
+
+  if (!(await hasValidGroupId()) && !options.groupId) {
+    return {
+      success: false,
+      message: 'Henüz bir hedef WhatsApp grubu seçilmemiş! Lütfen Grup Ayarları panelinden WhatsApp Grubunuzu seçin.'
+    };
+  }
+
+  if (!sock || state.status !== 'READY') {
+    return {
+      success: false,
+      status: state.status,
+      message: 'WhatsApp istemcisi bağlı veya hazır değil!'
+    };
+  }
+
+  if (!isDBEnabled()) {
+    return {
+      success: false,
+      message: 'Veritabanı bağlantısı aktif değil. Esmaül Hüsna gönderilemedi.'
+    };
+  }
+
+  if (!ESMAULHUSNA_JSON || ESMAULHUSNA_JSON.length === 0) {
+    return { success: false, message: 'esmaulhusna.json yüklenemedi veya boş.' };
+  }
+
+  try {
+    const config = await getPollConfig();
+    const totalCount = ESMAULHUSNA_JSON.length; // 99
+
+    // Mevcut index'i config'ten al (1-bazlı)
+    let currentIndex = (typeof config?.esmaulhusnaIndex === 'number' && config.esmaulhusnaIndex >= 1)
+      ? config.esmaulhusnaIndex
+      : 1;
+
+    // JSON'da id'ye göre bul; bulunamazsa dizi sırasını kullan
+    const entry = ESMAULHUSNA_JSON.find(e => e.id === currentIndex)
+      || ESMAULHUSNA_JSON[(currentIndex - 1) % totalCount];
+
+    if (!entry) {
+      return { success: false, message: `Esmaül Hüsna index ${currentIndex} bulunamadı.` };
+    }
+
+    // Mesaj formatı: *ES-SELAM*: Açıklama.
+    //
+    // https://youtu.be/...
+    const messageText = `*${entry.esmaulhusna_name}*: ${entry.esmaulhusna_description}\n\n${entry.esmaulhusna_video_url}`;
+
+    await sock.sendMessage(targetGroupId, { text: messageText });
+
+    // Sonraki index'i hesapla (99'dan sonra 1'e dön)
+    const nextIndex = (currentIndex % totalCount) + 1;
+    let indexUpdateResult = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      indexUpdateResult = await updateEsmaulhusnaIndex(nextIndex);
+      if (indexUpdateResult.success) break;
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, attempt * 500));
+      }
+    }
+
+    if (!indexUpdateResult?.success) {
+      console.error(
+        `❌ [Esmaül Hüsna] ${currentIndex}. isim gönderildi ancak sıradaki index kaydedilemedi:`,
+        indexUpdateResult?.message || 'Bilinmeyen veritabanı hatası'
+      );
+      return {
+        success: false,
+        partialSuccess: true,
+        code: 'ESMAULHUSNA_INDEX_UPDATE_FAILED',
+        message: 'Esmaül Hüsna mesajı gönderildi ancak gönderim sırası veritabanına kaydedilemedi.',
+        sentIndex: currentIndex,
+        pendingNextIndex: nextIndex,
+        name: entry.esmaulhusna_name,
+        groupId: targetGroupId
+      };
+    }
+
+    const sentAt = getTRDateString();
+    console.log(`✅ [Esmaül Hüsna] ${currentIndex}. isim gönderildi: ${entry.esmaulhusna_name} → Sıradaki: ${nextIndex} [Grup: ${targetGroupId}]`);
+
+    return {
+      success: true,
+      sentAt,
+      sentIndex: currentIndex,
+      nextIndex,
+      name: entry.esmaulhusna_name,
+      groupId: targetGroupId
+    };
+  } catch (err) {
+    console.error('❌ Esmaül Hüsna Gönderme Hatası:', err);
+    return {
+      success: false,
+      error: 'Esmaül Hüsna mesajı gönderilemedi.'
+    };
+  }
+}
+
+/**
+ * Her Çarşamba ve Cuma saat 22:30 TSİ'de sıradaki Esmaül Hüsna'yı gönderir.
+ * Cron: dakika=30, saat=22, gün=*, ay=*, haftanın günü=3,5 (Çarşamba, Cuma)
+ */
+function scheduleEsmaulhusnaJob() {
+  const job = schedule.scheduleJob({ rule: '30 22 * * 3,5', tz: 'Europe/Istanbul' }, async () => {
+    const config = await getPollConfig();
+    if (!config?.features?.esmaulhusnaEnabled) {
+      console.log('[ZAMANLAYICI] Esmaül Hüsna gönderimi pasif (featureEsmaulhusnaEnabled: false), atlandı.');
+      return;
+    }
+    const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
+    console.log(`\n[ZAMANLAYICI - ${zaman}] Esmaül Hüsna gönderimi başlatılıyor...`);
+    try {
+      const res = await sendEsmaulhusna();
+      console.log(`[ZAMANLAYICI] Esmaül Hüsna Gönderim Sonucu:`, res);
+    } catch (error) {
+      console.error(`[ZAMANLAYICI] Esmaül Hüsna Gönderim Hatası:`, error);
+    }
+  });
+  console.log('✅ Esmaül Hüsna Zamanlayıcısı Kuruldu: Her Çarşamba ve Cuma saat 22:30 (TSİ)');
+  return job;
+}
+
+// ============================================================================
 // HAFTALIK OKUMA SERİSİ RAPORU (Her Cumartesi 22:30 TSİ)
 // ============================================================================
 
 async function sendWeeklyReadingReport(options = {}) {
   const targetGroupId = options.groupId || await getTargetGroupId();
+  let reservedReminder = null;
+  let reminderConfigKey = null;
 
   if (!(await hasValidGroupId()) && !options.groupId) {
     return {
@@ -1950,27 +2042,41 @@ async function sendWeeklyReadingReport(options = {}) {
       msg1 += 'Henüz aktif okuma serisi olan kullanıcı yok.';
     }
 
-    // Mesaj 2: Art arda okumayanlar + (opsiyonel) rastgele hatırlatma sözü
+    // Mesaj 2: Art arda okumayanlar
     const config = await getPollConfig();
     const quoteEnabled = config?.features?.weeklyReportQuoteEnabled !== false;
-    const randomReminder = quoteEnabled
-      ? reminderAlternatives[Math.floor(Math.random() * reminderAlternatives.length)]
-      : null;
     let msg2 = '*Art arda okumayanlar:*\n';
     if (nonReaders.length > 0) {
       msg2 += nonReaders.map(r => `${r.name} (${r.streak} gün)`).join(',\n');
     } else {
       msg2 += 'Art arda okumayan kullanıcı yok, tebrikler! 🎉';
     }
-    if (randomReminder) {
-      msg2 += '\n\n' + randomReminder;
+
+    // Mesaj 3 (opsiyonel): configKey + groupId kapsamında tekrarsız rastgele söz
+    let randomReminder = null;
+    if (quoteEnabled) {
+      reminderConfigKey = String(config?.configKey || process.env.CONFIG_KEY || '').trim();
+      const reminderResult = await reserveRandomReminder(reminderConfigKey, targetGroupId);
+      if (reminderResult.success) {
+        reservedReminder = reminderResult;
+        randomReminder = reminderResult.sentence;
+      } else {
+        console.warn('⚠️ Haftalık rapor hatırlatması seçilemedi:', reminderResult.message);
+      }
     }
 
-    // İki mesajı gruba gönder
+    // Mesajları gruba gönder
     await sock.sendMessage(targetGroupId, { text: msg1 });
     // İkinci mesajı kısa bir gecikmeyle gönder
     await new Promise(r => setTimeout(r, 1500));
     await sock.sendMessage(targetGroupId, { text: msg2 });
+    // Üçüncü mesaj: rastgele söz (quoteEnabled ise)
+    if (randomReminder) {
+      await new Promise(r => setTimeout(r, 1500));
+      await sock.sendMessage(targetGroupId, { text: randomReminder });
+      // Gönderim tamamlandı; hata yakalayıcının bu kaydı serbest bırakmaması gerekir.
+      reservedReminder = null;
+    }
 
     const sentAt = getTRDateString();
     console.log(`✅ [Haftalık Rapor] Okuma serisi raporu gönderildi! Okuyanlar: ${readers.length}, Okumayanlar: ${nonReaders.length} [Grup: ${targetGroupId}]`);
@@ -1984,6 +2090,9 @@ async function sendWeeklyReadingReport(options = {}) {
       groupId: targetGroupId
     };
   } catch (err) {
+    if (reservedReminder?.reminderId) {
+      await releaseReminderReservation(reminderConfigKey, targetGroupId, reservedReminder.reminderId);
+    }
     console.error('❌ Haftalık okuma raporu gönderme hatası:', err);
     return {
       success: false,
@@ -2776,7 +2885,7 @@ app.use('/userAvatars', requireDashboardAuth, express.static(path.join(__dirname
 // Render'ı uyanık tutmak için ping sistemi
 function schedulePing() {
   const pingUrl = process.env.PING_URL;
-  const pingJob = schedule.scheduleJob('*/2 * * * *', async () => {
+  const pingJob = schedule.scheduleJob('3/5 * * * *', async () => {
     try {
       const response = await fetch(pingUrl, {
         method: 'GET',
@@ -2852,6 +2961,7 @@ setPromotionHandler(readingGroupId => {
     initWhatsAppClient(true);
     scheduleWhatsAppPollJob();
     scheduleSentenceJob();
+    scheduleEsmaulhusnaJob();
     scheduleWeeklyReadingReportJob();
     scheduleWeeklyTableImageJob();
     scheduleLeagueCongratulationsJob();
@@ -2996,61 +3106,6 @@ app.get('/api/text-votes', async (req, res) => {
   }
 });
 
-// Manuel Anket Gönderme Endpoint'i (örn: GET veya POST /api/send-poll)
-app.post(['/api/send-poll', '/api/run-poll'], limitSensitiveAction({ name: 'send-poll', limit: 5, windowMs: 60 * 1000 }), async (req, res) => {
-  try {
-    const target = await getAuthorizedTargetGroup(req.body?.groupId);
-    if (!target.success) return res.status(target.status).json(target);
-    const pollTitle = req.body?.pollTitle;
-    const result = await sendWhatsAppPoll({ groupId: target.groupId, pollTitleCustom: pollTitle });
-    res.json(result);
-  } catch (error) {
-    console.error("WhatsApp manuel anket hatası:", error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Manuel Vecize Gönderme Endpoint'i (Test amaçlı)
-app.post(['/api/send-sentence', '/api/run-sentence'], limitSensitiveAction({ name: 'send-sentence', limit: 5, windowMs: 60 * 1000 }), async (req, res) => {
-  try {
-    const target = await getAuthorizedTargetGroup(req.body?.groupId);
-    if (!target.success) return res.status(target.status).json(target);
-    const result = await sendWhatsAppSentence({ groupId: target.groupId });
-    res.json(result);
-  } catch (error) {
-    console.error('WhatsApp manuel vecize gönderim hatası:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Manuel Okuma Serisi Raporu Gönderme Endpoint'i (Test amaçlı)
-app.post(['/api/send-reading-report', '/api/run-reading-report'], limitSensitiveAction({ name: 'send-reading-report', limit: 3, windowMs: 5 * 60 * 1000 }), async (req, res) => {
-  try {
-    const target = await getAuthorizedTargetGroup(req.body?.groupId);
-    if (!target.success) return res.status(target.status).json(target);
-    const result = await sendWeeklyReadingReport({ groupId: target.groupId });
-    res.json(result);
-  } catch (error) {
-    console.error('WhatsApp haftalık rapor gönderim hatası:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Manuel Lig Kutlama Kontrolü Endpoint'i
-app.post(['/api/send-league-congratulations', '/api/run-league-congratulations'], limitSensitiveAction({ name: 'send-league-congratulations', limit: 3, windowMs: 5 * 60 * 1000 }), async (req, res) => {
-  try {
-    const target = await getAuthorizedTargetGroup(req.body?.groupId);
-    if (!target.success) return res.status(target.status).json(target);
-    const readingScope = await getAuthorizedReadingGroup(req, req.body?.readingGroupId, false);
-    if (!readingScope.success) return res.status(readingScope.status).json(readingScope);
-    const result = await sendLeagueCongratulations({ groupId: target.groupId, readingGroupId: readingScope.readingGroupId });
-    res.json(result);
-  } catch (error) {
-    console.error('Lig kutlama gönderim hatası:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // Lig Kutlama Teslimat Tercihleri — üye listesi
 app.get('/api/league-congratulation-prefs', async (req, res) => {
   try {
@@ -3082,20 +3137,7 @@ app.put('/api/league-congratulation-prefs/:userId', async (req, res) => {
   }
 });
 
-// Manuel Haftalık Okuma Tablosu Görseli Gönderme Endpoint'i (Test amaçlı)
-app.post(['/api/send-table-image', '/api/run-table-image'], limitSensitiveAction({ name: 'send-table-image', limit: 3, windowMs: 5 * 60 * 1000 }), async (req, res) => {
-  try {
-    const target = await getAuthorizedTargetGroup(req.body?.groupId);
-    if (!target.success) return res.status(target.status).json(target);
-    const result = await sendWeeklyTableImage({ groupId: target.groupId });
-    res.json(result);
-  } catch (error) {
-    console.error('WhatsApp haftalık tablo resmi gönderim hatası:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/restart', requireRecentDashboardAuth, limitSensitiveAction({ name: 'whatsapp-restart', limit: 2, windowMs: 15 * 60 * 1000 }), async (req, res) => {
+app.post('/api/restart', requireDashboardAuth, limitSensitiveAction({ name: 'whatsapp-restart', limit: 2, windowMs: 15 * 60 * 1000 }), async (req, res) => {
   try {
     await restartWhatsAppClient();
     res.json({ success: true, message: 'WhatsApp istemcisi sıfırlandı ve yeniden başlatılıyor. Yeni QR kod oluşturuluyor...' });
@@ -3161,6 +3203,43 @@ app.post('/api/poll-config', async (req, res) => {
       const readingGroups = await getReadingGroups();
       if (!readingGroups.some(group => String(group.groupId) === requestedReadingGroupId)) {
         return res.status(403).json({ success: false, message: 'Geçersiz okuma grubu.' });
+      }
+    }
+
+    // Bir özellik ilk kez aktifleştirilirken RoTaKip grubu ve en az bir
+    // geçerli üye telefonu zorunludur. Mevcut aktif özelliklerle ilgisiz bir
+    // ayar kaydedilirken bu kontrol tekrar çalıştırılmaz.
+    const featureKeys = [
+      'pollEnabled',
+      'voteTrackingEnabled',
+      'messageReadingEnabled',
+      'sentenceEnabled',
+      'esmaulhusnaEnabled',
+      'weeklyReportEnabled',
+      'weeklyReportQuoteEnabled',
+      'weeklyTableEnabled',
+      'leagueCongratulationEnabled'
+    ];
+    const newlyEnabledFeatures = featureKeys.filter(featureKey =>
+      features?.[featureKey] === true && currentConfig?.features?.[featureKey] !== true
+    );
+
+    if (newlyEnabledFeatures.length > 0) {
+      if (!requestedReadingGroupId) {
+        return res.status(400).json({
+          success: false,
+          code: 'READING_GROUP_REQUIRED',
+          message: 'Önce bir RoTaKip okuma grubu seçmelisiniz.'
+        });
+      }
+
+      const readingGroupPhones = await getReadingGroupPhones(requestedReadingGroupId);
+      if (readingGroupPhones.length === 0) {
+        return res.status(400).json({
+          success: false,
+          code: 'READING_GROUP_PHONE_REQUIRED',
+          message: 'Önce telefon numaralarını düzenleyin.'
+        });
       }
     }
 

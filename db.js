@@ -31,6 +31,7 @@ let client = null;
 let db = null;
 let dbEnabled = false;
 const DASHBOARD_AUTH_COLLECTION = 'auth-wob';
+const REMINDER_STATE_COLLECTION = 'reminder_delivery_state';
 
 /**
  * MONGO_URI ve DB_NAME tanımlı mı kontrol eder.
@@ -66,7 +67,7 @@ async function connectDB() {
     await client.connect();
     db = client.db(dbName);
     dbEnabled = true;
-    console.log('✅ MongoDB bağlantısı başarılı. Veritabanı:', dbName);
+    console.log('✅ MongoDB bağlantısı başarılı.');
 
     await ensureCollectionIndexes();
 
@@ -119,6 +120,7 @@ async function ensureCollectionIndexes() {
   await createSafeIndex('poll_votes', { pollId: 1, configKey: 1, readingGroupId: 1, groupId: 1, updatedAt: -1 });
   await createSafeIndex('pending_league_congratulations', { userId: 1, groupId: 1, league: 1 }, { unique: true });
   await createSafeIndex('pending_league_congratulations', { createdAt: 1 }, { expireAfterSeconds: 3600 });
+  await createSafeIndex(REMINDER_STATE_COLLECTION, { configKey: 1, groupId: 1 }, { unique: true });
   await createSafeIndex(DASHBOARD_AUTH_COLLECTION, { username: 1 }, {
     unique: true,
     partialFilterExpression: { username: { $type: 'string' } }
@@ -639,6 +641,8 @@ async function getPollConfig(passedConfigKey = null) {
         featureWeeklyReportQuoteEnabled: true,
         featureWeeklyTableEnabled: true,
         featureLeagueCongratulationEnabled: true,
+        featureEsmaulhusnaEnabled: false,
+        esmaulhusnaIndex: 1,
         updatedAt: getTRDateString()
       };
       await db.collection('poll_config').updateOne(
@@ -658,8 +662,10 @@ async function getPollConfig(passedConfigKey = null) {
           weeklyReportEnabled: true,
           weeklyReportQuoteEnabled: true,
           weeklyTableEnabled: true,
-          leagueCongratulationEnabled: true
-        }
+          leagueCongratulationEnabled: true,
+          esmaulhusnaEnabled: false
+        },
+        esmaulhusnaIndex: 1
       };
     }
 
@@ -670,7 +676,8 @@ async function getPollConfig(passedConfigKey = null) {
       groupId: (doc.groupId !== undefined && doc.groupId !== null && String(doc.groupId).trim() !== '') ? String(doc.groupId).trim() : null,
       readingGroupId: (doc.readingGroupId && typeof doc.readingGroupId === 'string' && doc.readingGroupId.trim() !== '') ? String(doc.readingGroupId).trim() : null,
       updatedAt: doc.updatedAt || null,
-      // Anket/oy/mesaj: yoksa kapalı. Vecize/rapor/tablo: yoksa açık.
+      esmaulhusnaIndex: (typeof doc.esmaulhusnaIndex === 'number' && doc.esmaulhusnaIndex >= 1) ? doc.esmaulhusnaIndex : 1,
+      // Anket/oy/mesaj: yoksa kapalı. Vecize/rapor/tablo/esmaülhüsna: yoksa açık/kapalı.
       features: {
         pollEnabled: doc.featurePollEnabled === true,
         voteTrackingEnabled: doc.featureVoteTrackingEnabled === true,
@@ -679,7 +686,8 @@ async function getPollConfig(passedConfigKey = null) {
         weeklyReportEnabled: doc.featureWeeklyReportEnabled !== false,
         weeklyReportQuoteEnabled: doc.featureWeeklyReportQuoteEnabled !== false,
         weeklyTableEnabled: doc.featureWeeklyTableEnabled !== false,
-        leagueCongratulationEnabled: doc.featureLeagueCongratulationEnabled !== false
+        leagueCongratulationEnabled: doc.featureLeagueCongratulationEnabled !== false,
+        esmaulhusnaEnabled: doc.featureEsmaulhusnaEnabled === true
       }
     };
   } catch (err) {
@@ -774,6 +782,7 @@ async function savePollConfig(configData) {
     if (typeof features.weeklyReportQuoteEnabled === 'boolean') setFields.featureWeeklyReportQuoteEnabled = features.weeklyReportQuoteEnabled;
     if (typeof features.weeklyTableEnabled === 'boolean') setFields.featureWeeklyTableEnabled = features.weeklyTableEnabled;
     if (typeof features.leagueCongratulationEnabled === 'boolean') setFields.featureLeagueCongratulationEnabled = features.leagueCongratulationEnabled;
+    if (typeof features.esmaulhusnaEnabled === 'boolean') setFields.featureEsmaulhusnaEnabled = features.esmaulhusnaEnabled;
 
     await db.collection('poll_config').updateOne(
       { _id: configKey },
@@ -1037,11 +1046,11 @@ async function updateReadingGroupUserPhone(readingGroupId, userId, phone) {
 // ============================================================================
 
 // Koleksiyonlar ve ağırlıklı seçim yüzdeleri (toplam: %100)
+// Hatırlatmalar Cumartesi raporunun üçüncü mesajında ayrı gönderilir.
 const SENTENCE_COLLECTIONS = [
-  { name: 'ayetler', weight: 15 },  // %15
-  { name: 'hadisler', weight: 15 },  // %15
-  { name: 'dualar', weight: 15 },  // %15
-  { name: 'hatırlatmalar', weight: 15 },  // %15
+  { name: 'ayetler', weight: 20 },  // %20
+  { name: 'hadisler', weight: 20 },  // %20
+  { name: 'dualar', weight: 20 },  // %20
   { name: 'vecizeler', weight: 40 },  // %40
 ];
 
@@ -1487,6 +1496,155 @@ async function updateLeagueCongratulationDelivery(readingGroupId, userId, delive
   }
 }
 
+/**
+ * Esmaül Hüsna gönderim sırasını (index) poll_config'te günceller.
+ * @param {number} newIndex - 1 ile 99 arasında yeni sıra numarası
+ */
+async function updateEsmaulhusnaIndex(newIndex) {
+  if (!dbEnabled || !db) return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  try {
+    const configKey = getPollConfigKey();
+    if (!configKey) return { success: false, message: 'CONFIG_KEY tanımlanmamış.' };
+    await db.collection('poll_config').updateOne(
+      { _id: configKey },
+      { $set: { esmaulhusnaIndex: newIndex, updatedAt: getTRDateString() } },
+      { upsert: true }
+    );
+    return { success: true, esmaulhusnaIndex: newIndex };
+  } catch (err) {
+    console.error('❌ updateEsmaulhusnaIndex hatası:', err.message);
+    return { success: false, message: 'Esmaül Hüsna sırası güncellenemedi.' };
+  }
+}
+
+function getReminderScopeId(configKey, groupId) {
+  return createHash('sha256')
+    .update(`${String(configKey).trim()}\u0000${String(groupId).trim()}`, 'utf8')
+    .digest('hex');
+}
+
+/**
+ * Ortak hatırlatmalar koleksiyonundan, configKey + groupId kapsamındaki mevcut
+ * döngüde henüz gönderilmemiş rastgele bir kaydı ayırır. Tüm aktif kayıtlar
+ * gönderildiyse yalnızca bu kapsamın reminderSentIds listesi sıfırlanır.
+ */
+async function reserveRandomReminder(configKey, groupId) {
+  if (!dbEnabled || !db) {
+    return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  }
+
+  const key = String(configKey || '').trim();
+  const gid = String(groupId || '').trim();
+  if (!key || !gid) {
+    return { success: false, message: 'Hatırlatma seçimi için configKey ve groupId gereklidir.' };
+  }
+
+  try {
+    const reminders = (await db.collection('hatırlatmalar')
+      .find(
+        { sentence: { $type: 'string' }, active: { $ne: false } },
+        { projection: { sentence: 1 } }
+      )
+      .toArray())
+      .filter(item => String(item.sentence || '').trim() !== '');
+
+    if (reminders.length === 0) {
+      return { success: false, message: 'Gönderilebilecek aktif hatırlatma bulunamadı.' };
+    }
+
+    const scopeId = getReminderScopeId(key, gid);
+    const stateCollection = db.collection(REMINDER_STATE_COLLECTION);
+    await stateCollection.updateOne(
+      { _id: scopeId },
+      {
+        $setOnInsert: {
+          configKey: key,
+          groupId: gid,
+          reminderSentIds: [],
+          cycle: 1,
+          createdAt: getTRDateString()
+        }
+      },
+      { upsert: true }
+    );
+
+    // Aynı kapsamı kullanan iki süreç varsa aynı kaydı seçmemeleri için seçim
+    // addToSet ile atomik olarak sahiplenilir; yarış kaybedilirse tekrar denenir.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const state = await stateCollection.findOne({ _id: scopeId });
+      const sentIds = new Set(
+        Array.isArray(state?.reminderSentIds)
+          ? state.reminderSentIds.map(value => String(value))
+          : []
+      );
+      const available = reminders.filter(item => !sentIds.has(String(item._id)));
+
+      if (available.length === 0) {
+        const resetResult = await stateCollection.updateOne(
+          { _id: scopeId, reminderSentIds: Array.from(sentIds) },
+          {
+            $set: { reminderSentIds: [], lastResetAt: getTRDateString() },
+            $inc: { cycle: 1 }
+          }
+        );
+        if (resetResult.modifiedCount === 0) continue;
+        continue;
+      }
+
+      const selected = available[Math.floor(Math.random() * available.length)];
+      const reminderId = String(selected._id);
+      const claimResult = await stateCollection.updateOne(
+        { _id: scopeId, reminderSentIds: { $ne: reminderId } },
+        {
+          $addToSet: { reminderSentIds: reminderId },
+          $set: { updatedAt: getTRDateString() }
+        }
+      );
+
+      if (claimResult.modifiedCount === 1) {
+        return {
+          success: true,
+          scopeId,
+          reminderId,
+          sentence: String(selected.sentence).trim(),
+          cycle: Number(state?.cycle) || 1
+        };
+      }
+    }
+
+    return { success: false, message: 'Hatırlatma seçimi eşzamanlı işlemler nedeniyle tamamlanamadı.' };
+  } catch (err) {
+    console.error('❌ reserveRandomReminder hatası:', err.message);
+    return { success: false, message: 'Hatırlatma seçilemedi.' };
+  }
+}
+
+/**
+ * Mesaj gönderimi başarısız olursa ayrılan kaydı yeniden seçilebilir yapar.
+ */
+async function releaseReminderReservation(configKey, groupId, reminderId) {
+  if (!dbEnabled || !db) return false;
+  const key = String(configKey || '').trim();
+  const gid = String(groupId || '').trim();
+  const rid = String(reminderId || '').trim();
+  if (!key || !gid || !rid) return false;
+
+  try {
+    const scopeId = getReminderScopeId(key, gid);
+    await db.collection(REMINDER_STATE_COLLECTION).updateOne(
+      { _id: scopeId },
+      {
+        $pull: { reminderSentIds: rid },
+        $set: { updatedAt: getTRDateString() }
+      }
+    );
+    return true;
+  } catch (err) {
+    console.error('❌ releaseReminderReservation hatası:', err.message);
+    return false;
+  }
+}
+
 module.exports = {
   setPromotionHandler,
   connectDB,
@@ -1525,5 +1683,8 @@ module.exports = {
   LEAGUE_CONGRATULATION_DELIVERY_VALUES,
   verifyReadingGroupAdmin,
   listReadingGroupUsersForPhoneEdit,
-  updateReadingGroupUserPhone
+  updateReadingGroupUserPhone,
+  updateEsmaulhusnaIndex,
+  reserveRandomReminder,
+  releaseReminderReservation
 };

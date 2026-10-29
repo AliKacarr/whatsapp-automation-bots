@@ -1129,10 +1129,6 @@
 
       <!-- Action Buttons -->
       <div class="actions-grid">
-        <button class="btn btn-primary" id="sendPollBtn" onclick="sendPoll()" disabled style="color: #fff;">
-          🚀 Anket Gönder
-        </button>
-
         <div class="btn-row">
           <button class="btn btn-info" id="showVotesBtn" onclick="showVotes()">
             📈 Anket Oylarını Görüntüle
@@ -1152,7 +1148,7 @@
         </div>
 
         <button class="btn btn-secondary" id="restartBtn" onclick="triggerRestart(true)" style="margin-top: 4px;">
-          🔄 Yeniden Bağlan
+          🔄 Oturumu Sıfırla
         </button>
       </div>
 
@@ -1170,7 +1166,7 @@
       <a href="https://www.instagram.com/catikatimelazig/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><i class="fab fa-instagram" aria-hidden="true"></i></a>
       <a href="https://www.youtube.com/c/%C3%87atikatim" target="_blank" rel="noopener noreferrer" aria-label="YouTube"><i class="fab fa-youtube" aria-hidden="true"></i></a>
       <a href="https://open.spotify.com/show/1QIENVd5g588MS1eF1ZcKi" target="_blank" rel="noopener noreferrer" aria-label="Spotify"><i class="fab fa-spotify" aria-hidden="true"></i></a>
-      <a href="https://wa.me/905539275523" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp"><i class="fab fa-whatsapp" aria-hidden="true"></i></a>
+      <a href="https://wa.me/905312967580" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp"><i class="fab fa-whatsapp" aria-hidden="true"></i></a>
     </div>
   </footer>
 
@@ -1273,7 +1269,7 @@
               style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
               <div>
                 <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Anketlerden Oy Tespiti</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Anketlere gelen oyları veri tabanına 
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Anketlere gelen oyları veri tabanına
                   kaydeder</div>
               </div>
               <label class="feature-toggle">
@@ -1286,7 +1282,7 @@
               style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
               <div>
                 <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📝 Mesajlardan Okuma Bilgisi Tespiti</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Mesajlardaki okuma bilgilerini veri tabanına 
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Mesajlardaki okuma bilgilerini veri tabanına
                   kaydeder</div>
               </div>
               <label class="feature-toggle">
@@ -1304,6 +1300,18 @@
               </div>
               <label class="feature-toggle">
                 <input type="checkbox" id="ftSentenceEnabled" checked />
+                <span class="feature-slider"></span>
+              </label>
+            </div>
+
+            <div
+              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div>
+                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📿 Esmaül Hüsna Gönderimi</div>
+                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her hafta Çarşamba ve Cuma 22:30'da gruba gönderir</div>
+              </div>
+              <label class="feature-toggle">
+                <input type="checkbox" id="ftEsmaulhusnaEnabled" />
                 <span class="feature-slider"></span>
               </label>
             </div>
@@ -1752,14 +1760,6 @@
         if (gsKeyEl) gsKeyEl.value = data.configKey;
       }
 
-      const actionButtons = [
-        document.getElementById('sendPollBtn'),
-      ];
-      const isReady = (data.status === 'READY');
-      actionButtons.forEach(btn => {
-        if (btn) btn.disabled = !isReady;
-      });
-
       if (targetGroupEl) {
         if (data.targetGroup?.name) {
           targetGroupEl.innerHTML = `<b>${escapeHtml(data.targetGroup.name)}</b>`;
@@ -1904,28 +1904,6 @@
       }
     }
 
-    async function sendPoll() {
-      const sendBtn = document.getElementById('sendPollBtn');
-      sendBtn.disabled = true;
-      sendBtn.innerText = '⏳ Gönderiliyor...';
-
-      try {
-        const res = await fetch('/api/send-poll', { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-          showToast('✅ Anket başarıyla gruba gönderildi!');
-        } else {
-          showToast('❌ Hata: ' + (data.message || 'Gönderilemedi'));
-        }
-      } catch (err) {
-        showToast('❌ Sunucu hatası oluştu');
-      } finally {
-        sendBtn.disabled = false;
-        sendBtn.innerText = '📊 Anketi Şimdi Gönder';
-        checkStatus();
-      }
-    }
-
     // ====================================================
     // GRUP AYARLARI MODAL
     // ====================================================
@@ -1940,7 +1918,21 @@
     let groupSettingsRevision = 0;
 
     document.getElementById('groupSettingsModal').addEventListener('change', (event) => {
-      if (event.target.matches('input[type="checkbox"]')) saveGroupSettingsUI();
+      if (!event.target.matches('input[type="checkbox"]')) return;
+
+      const changedToggle = event.target;
+      const previousChecked = !changedToggle.checked;
+      if (changedToggle.checked) {
+        const readingGroupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
+        if (!readingGroupId) {
+          changedToggle.checked = false;
+          syncFeatureDependentControls();
+          showToast('⚠️ Önce bir RoTaKip okuma grubu seçmelisiniz.');
+          return;
+        }
+      }
+
+      saveGroupSettingsUI({ changedToggle, previousChecked });
     });
 
     async function showGroupSettings() {
@@ -2017,6 +2009,7 @@
           document.getElementById('ftVoteTrackingEnabled').checked = features.voteTrackingEnabled === true;
           document.getElementById('ftMessageReadingEnabled').checked = features.messageReadingEnabled === true;
           document.getElementById('ftSentenceEnabled').checked = features.sentenceEnabled !== false;
+          document.getElementById('ftEsmaulhusnaEnabled').checked = features.esmaulhusnaEnabled === true;
           document.getElementById('ftWeeklyReportEnabled').checked = features.weeklyReportEnabled !== false;
           document.getElementById('ftWeeklyReportQuoteEnabled').checked = features.weeklyReportQuoteEnabled !== false;
           document.getElementById('ftWeeklyReportSubSettings').style.display = 'none';
@@ -2036,6 +2029,11 @@
 
     function closeGroupSettingsModal() {
       document.getElementById('groupSettingsModal').style.display = 'none';
+    }
+
+    function syncFeatureDependentControls() {
+      onWeeklyReportEnabledChange();
+      onLeagueCongratulationEnabledChange();
     }
 
     // Okuma Serisi Raporu ⚙️ ayar paneli aç/kapa (rapor pasifken devre dışı)
@@ -2183,17 +2181,24 @@
       }
     }
 
-    function saveGroupSettingsUI() {
+    function saveGroupSettingsUI(changeContext = null) {
       if (groupSettingsLoading) return groupSettingsSaveQueue;
       const revision = ++groupSettingsRevision;
-      groupSettingsSaveQueue = groupSettingsSaveQueue.then(() => persistGroupSettingsUI(revision));
+      groupSettingsSaveQueue = groupSettingsSaveQueue.then(() => persistGroupSettingsUI(revision, changeContext));
       return groupSettingsSaveQueue;
     }
 
-    async function persistGroupSettingsUI(revision) {
+    async function persistGroupSettingsUI(revision, changeContext = null) {
       const readingGroupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId').value.trim();
       const groupId = selectedWpGroupId || document.getElementById('gsWpGroupId').value.trim();
       const configKey = document.getElementById('gsConfigKey').value.trim();
+
+      const restoreChangedToggle = () => {
+        const toggle = changeContext?.changedToggle;
+        if (!toggle?.isConnected) return;
+        toggle.checked = changeContext.previousChecked;
+        syncFeatureDependentControls();
+      };
 
       try {
         // Mevcut config'i al, sadece groupId ve readingGroupId'yi guncelle
@@ -2208,6 +2213,7 @@
           voteTrackingEnabled: document.getElementById('ftVoteTrackingEnabled').checked,
           messageReadingEnabled: document.getElementById('ftMessageReadingEnabled').checked,
           sentenceEnabled: document.getElementById('ftSentenceEnabled').checked,
+          esmaulhusnaEnabled: document.getElementById('ftEsmaulhusnaEnabled').checked,
           weeklyReportEnabled: document.getElementById('ftWeeklyReportEnabled').checked,
           weeklyReportQuoteEnabled: document.getElementById('ftWeeklyReportQuoteEnabled').checked,
           weeklyTableEnabled: document.getElementById('ftWeeklyTableEnabled').checked,
@@ -2232,11 +2238,16 @@
         if (res.ok && data.success) {
           if (revision === groupSettingsRevision) showToast('✅ Değişiklikler kaydedildi.');
           checkStatus();
+          return true;
         } else {
+          restoreChangedToggle();
           showToast('❌ Hata: ' + (data.message || 'Kaydedilemedi'));
+          return false;
         }
       } catch (err) {
+        restoreChangedToggle();
         showToast('❌ Sunucu hatası oluştu');
+        return false;
       }
     }
 
