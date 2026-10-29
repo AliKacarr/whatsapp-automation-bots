@@ -218,6 +218,45 @@
       flex-shrink: 0;
     }
 
+    .active-pair-switcher {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 230px;
+      flex: 1 1 100%;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .active-pair-switcher .select-input {
+      flex: 1 1 auto;
+      margin: 0;
+      min-width: 0;
+      padding: 8px 34px 8px 10px;
+      font-size: 12px;
+    }
+
+    .active-pair-switcher .pair-switcher-btn {
+      width: 34px;
+      height: 34px;
+      min-height: 34px;
+      flex: 0 0 34px;
+      padding: 0;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+
+    .active-pair-switcher .pair-switcher-delete {
+      color: #fca5a5;
+    }
+
+    .group-config-editor-title {
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
     /* Target Group Banner */
     .group-banner {
       background: rgba(255, 255, 255, 0.03);
@@ -229,6 +268,7 @@
       justify-content: space-between;
       margin-bottom: 20px;
       gap: 16px;
+      flex-wrap: wrap;
     }
 
     .group-banner-items {
@@ -905,6 +945,15 @@
         justify-content: space-between;
       }
 
+      .active-pair-switcher {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .active-pair-switcher .select-input {
+        flex: 1;
+      }
+
       .group-info {
         width: 100%;
       }
@@ -1090,6 +1139,18 @@
     <div class="main-card">
       <!-- Target Group Banner -->
       <div class="group-banner">
+        <div class="active-pair-switcher">
+          <span class="group-icon" aria-hidden="true">🔗</span>
+          <select id="activeGroupConfigSelect" class="select-input" aria-label="Aktif grup eşleşmesi"
+            onchange="selectActiveGroupConfig(this.value)">
+            <option value="">Eşleşme yükleniyor...</option>
+          </select>
+          <button type="button" class="btn btn-info pair-switcher-btn" title="Yeni eşleşme ekle"
+            aria-label="Yeni eşleşme ekle" onclick="showGroupSettings(true)">＋</button>
+          <button type="button" id="deleteActiveGroupConfigBtn"
+            class="btn btn-secondary pair-switcher-btn pair-switcher-delete" title="Seçili eşleşmeyi sil"
+            aria-label="Seçili eşleşmeyi sil" onclick="deleteActiveGroupConfig()" disabled>🗑</button>
+        </div>
         <div class="group-banner-items">
           <div class="group-info">
             <span class="group-icon">💬</span>
@@ -1172,7 +1233,7 @@
 
   <!-- Grup Ayarlari Modal -->
   <div class="modal-overlay" id="groupSettingsModal">
-    <div class="modal-card" style="max-width: 520px;">
+    <div class="modal-card" style="max-width: 620px;">
       <div class="modal-header" style="margin-bottom: 18px;">
         <div>
           <h3 style="font-size: 18px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
@@ -1186,7 +1247,11 @@
           onclick="closeGroupSettingsModal()">✕ Kapat</button>
       </div>
 
-      <div class="config-card-box" style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+      <div id="groupConfigEditor" class="config-card-box" style="padding: 20px; display: none; flex-direction: column; gap: 16px;">
+        <div>
+          <div id="groupConfigEditorTitle" class="group-config-editor-title">Yeni Eşleşme</div>
+          <div style="font-size:11px;color:var(--text-sub);margin-top:3px;">Değişiklikler otomatik olarak kaydedilir.</div>
+        </div>
 
         <!-- Kullanici Adi (readonly) -->
         <div style="text-align: left;">
@@ -1533,7 +1598,7 @@
           <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px;"
             onclick="resetPollConfigUI()">Varsayılana Sıfırla</button>
           <button class="btn btn-primary" style="padding: 8px 20px; font-size: 13px; font-weight: 600;"
-            onclick="savePollConfigUI()">Şablonu Kaydet</button>
+            onclick="savePollTemplateUI()">Şablonu Kaydet</button>
         </div>
       </div>
 
@@ -1576,12 +1641,189 @@
   <div class="toast" id="toastMsg"></div>
 
   <script>
+    const APP_VERSION = '2.0.0';
+    console.warn(
+      `%c🚀 RoTaKip WhatsApp Panel v${APP_VERSION}`,
+      'color:#0284c7;font-weight:700;font-size:13px;'
+    );
+
     let lastRenderedStatus = '';
     let currentQrDataUrl = '';
     let dashboardAuthMode = 'login';
     let dashboardAuthenticated = false;
     let statusPollingTimer = null;
     let authStatusRetryTimer = null;
+    let groupConfigsCache = [];
+    let groupConfigsLoaded = false;
+    let groupConfigsHydrated = false;
+    let activeGroupConfigId = '';
+    let editingGroupConfigId = '';
+    let currentConfigKey = '';
+    let groupConfigMutationVersion = 0;
+
+    const DEFAULT_GROUP_FEATURES = Object.freeze({
+      pollEnabled: false,
+      voteTrackingEnabled: false,
+      messageReadingEnabled: false,
+      sentenceEnabled: true,
+      esmaulhusnaEnabled: false,
+      weeklyReportEnabled: true,
+      weeklyReportQuoteEnabled: true,
+      weeklyTableEnabled: true,
+      leagueCongratulationEnabled: true
+    });
+
+    function normalizeGroupConfig(raw) {
+      const config = raw || {};
+      return {
+        ...config,
+        id: String(config.id || config._id || ''),
+        groupId: String(config.groupId || ''),
+        readingGroupId: String(config.readingGroupId || ''),
+        features: { ...DEFAULT_GROUP_FEATURES, ...(config.features || {}) }
+      };
+    }
+
+    function activeConfigStorageKey() {
+      return `activeGroupConfig:${currentConfigKey || 'default'}`;
+    }
+
+    function getActiveGroupConfig() {
+      return groupConfigsCache.find(config => config.id === activeGroupConfigId) || null;
+    }
+
+    function getGroupConfigById(id) {
+      return groupConfigsCache.find(config => config.id === String(id || '')) || null;
+    }
+
+    function resolveGroupConfigNames(config) {
+      if (!config) return { whatsapp: 'Tanımlanmadı', reading: 'Tanımlanmadı' };
+      const wp = wpGroupsCache.find(group => group.id === config.groupId);
+      const reading = readingGroupsCache.find(group => group.groupId === config.readingGroupId);
+      return {
+        whatsapp: config.groupName || config.whatsappGroupName || wp?.name || config.groupId,
+        reading: config.readingGroupName || reading?.groupName || config.readingGroupId
+      };
+    }
+
+    function reconcileActiveGroupConfig() {
+      if (groupConfigsCache.some(config => config.id === activeGroupConfigId)) return;
+      const stored = localStorage.getItem(activeConfigStorageKey());
+      activeGroupConfigId = groupConfigsCache.some(config => config.id === stored)
+        ? stored
+        : (groupConfigsCache[0]?.id || '');
+      if (activeGroupConfigId) localStorage.setItem(activeConfigStorageKey(), activeGroupConfigId);
+      else localStorage.removeItem(activeConfigStorageKey());
+    }
+
+    function renderActiveGroupConfig() {
+      const select = document.getElementById('activeGroupConfigSelect');
+      const active = getActiveGroupConfig();
+      if (select) {
+        if (groupConfigsCache.length === 0) {
+          select.innerHTML = '<option value="">Henüz eşleşme yok</option>';
+          select.disabled = true;
+        } else {
+          select.disabled = false;
+          select.innerHTML = groupConfigsCache.map(config => {
+            const names = resolveGroupConfigNames(config);
+            return `<option value="${escapeHtml(config.id)}" ${config.id === activeGroupConfigId ? 'selected' : ''}>${escapeHtml(names.whatsapp)} → ${escapeHtml(names.reading)}</option>`;
+          }).join('');
+        }
+      }
+
+      const targetGroupEl = document.getElementById('targetGroupName');
+      const targetReadingGroupEl = document.getElementById('targetReadingGroupName');
+      const lastSentRow = document.getElementById('lastSentRow');
+      const lastSentTime = document.getElementById('lastSentTime');
+      const deleteActiveButton = document.getElementById('deleteActiveGroupConfigBtn');
+      if (deleteActiveButton) deleteActiveButton.disabled = !active;
+      const actions = ['showVotesBtn', 'showTextVotesBtn', 'showPollsBtn'];
+      actions.forEach(id => {
+        const button = document.getElementById(id);
+        if (button) button.disabled = !active;
+      });
+
+      if (!active) {
+        if (targetGroupEl) targetGroupEl.textContent = 'Eşleşme eklenmedi';
+        if (targetReadingGroupEl) targetReadingGroupEl.textContent = 'Eşleşme eklenmedi';
+        if (lastSentRow) lastSentRow.style.display = 'none';
+        return;
+      }
+
+      const names = resolveGroupConfigNames(active);
+      if (targetGroupEl) targetGroupEl.textContent = names.whatsapp;
+      if (targetReadingGroupEl) targetReadingGroupEl.textContent = names.reading;
+      if (active.lastPollSentAt) {
+        lastSentRow.style.display = 'flex';
+        const parsed = new Date(active.lastPollSentAt);
+        lastSentTime.textContent = Number.isNaN(parsed.getTime())
+          ? String(active.lastPollSentAt)
+          : parsed.toLocaleString('tr-TR');
+      } else if (lastSentRow) {
+        lastSentRow.style.display = 'none';
+      }
+    }
+
+    function adoptGroupConfigs(configs) {
+      const previousById = new Map(groupConfigsCache.map(config => [config.id, config]));
+      groupConfigsCache = (Array.isArray(configs) ? configs : []).map(raw => {
+        const normalized = normalizeGroupConfig(raw);
+        const previous = previousById.get(normalized.id);
+        if (!previous) return normalized;
+        return normalizeGroupConfig({
+          ...previous,
+          ...raw,
+          id: normalized.id,
+          features: raw?.features ? { ...previous.features, ...raw.features } : previous.features
+        });
+      }).filter(config => config.id);
+      groupConfigsLoaded = true;
+      reconcileActiveGroupConfig();
+      renderActiveGroupConfig();
+    }
+
+    function upsertGroupConfigCache(rawConfig) {
+      const normalized = normalizeGroupConfig(rawConfig);
+      if (!normalized.id) return null;
+      const index = groupConfigsCache.findIndex(config => config.id === normalized.id);
+      if (index >= 0) {
+        groupConfigsCache[index] = normalizeGroupConfig({
+          ...groupConfigsCache[index],
+          ...rawConfig,
+          id: normalized.id,
+          features: rawConfig?.features
+            ? { ...groupConfigsCache[index].features, ...rawConfig.features }
+            : groupConfigsCache[index].features
+        });
+      } else {
+        groupConfigsCache.push(normalized);
+      }
+      groupConfigsLoaded = true;
+      reconcileActiveGroupConfig();
+      renderActiveGroupConfig();
+      return getGroupConfigById(normalized.id);
+    }
+
+    async function loadGroupConfigs(force = false) {
+      if (groupConfigsHydrated && !force) return groupConfigsCache;
+      const res = await fetch('/api/group-configs', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Eşleşmeler yüklenemedi.');
+      adoptGroupConfigs(data.configs || data.groupConfigs || []);
+      groupConfigsHydrated = true;
+      return groupConfigsCache;
+    }
+
+    function selectActiveGroupConfig(id) {
+      const next = getGroupConfigById(id);
+      activeGroupConfigId = next?.id || '';
+      if (activeGroupConfigId) localStorage.setItem(activeConfigStorageKey(), activeGroupConfigId);
+      else localStorage.removeItem(activeConfigStorageKey());
+      textVotesDataCache = null;
+      textVotesSelectedDate = '';
+      renderActiveGroupConfig();
+    }
 
     function setAuthError(message) {
       const errorEl = document.getElementById('authError');
@@ -1734,6 +1976,7 @@
 
     async function checkStatus() {
       if (!dashboardAuthenticated) return;
+      const mutationVersionAtStart = groupConfigMutationVersion;
       try {
         const res = await fetch('/api/status');
         if (res.status === 401) {
@@ -1741,6 +1984,14 @@
           return;
         }
         const data = await res.json();
+        if (data.configKey) currentConfigKey = String(data.configKey);
+        const statusConfigs = data.groupConfigs || data.configs;
+        if (Array.isArray(statusConfigs) && mutationVersionAtStart === groupConfigMutationVersion) {
+          adoptGroupConfigs(statusConfigs);
+        }
+        if (!groupConfigsHydrated) {
+          try { await loadGroupConfigs(); } catch (configError) { console.error('Group configs fetch error:', configError); }
+        }
         renderState(data);
       } catch (err) {
         console.error('Status fetch error:', err);
@@ -1756,33 +2007,11 @@
       const targetReadingGroupEl = document.getElementById('targetReadingGroupName');
 
       if (data.configKey) {
+        currentConfigKey = String(data.configKey);
         const gsKeyEl = document.getElementById('gsConfigKey');
         if (gsKeyEl) gsKeyEl.value = data.configKey;
       }
-
-      if (targetGroupEl) {
-        if (data.targetGroup?.name) {
-          targetGroupEl.innerHTML = `<b>${escapeHtml(data.targetGroup.name)}</b>`;
-        } else if (data.targetGroup?.id) {
-          targetGroupEl.innerHTML = `<span style="font-size:12px; opacity:0.8;">${escapeHtml(data.targetGroup.id)}</span>`;
-        } else {
-          targetGroupEl.innerText = 'Tanımlanmadı';
-        }
-      }
-
-      if (targetReadingGroupEl) {
-        if (data.targetReadingGroupId) {
-          targetReadingGroupEl.innerHTML = `<b>${escapeHtml(data.targetReadingGroupId)}</b>`;
-        } else {
-          targetReadingGroupEl.innerText = 'Tanımlanmadı';
-        }
-      }
-
-      // Last Poll Sent Time
-      if (data.lastPollSentAt) {
-        lastSentRow.style.display = 'flex';
-        lastSentTime.innerText = new Date(data.lastPollSentAt).toLocaleString('tr-TR');
-      }
+      renderActiveGroupConfig();
 
       // Status: MISSING_ENV or MISSING_CONFIG_KEY
       if (data.status === 'MISSING_ENV' || data.status === 'MISSING_CONFIG_KEY') {
@@ -1827,7 +2056,8 @@
         badge.className = 'badge badge-ready';
         badge.innerHTML = '✅ WhatsApp Bağlı';
 
-        if (lastRenderedStatus !== 'READY') {
+        const readyRenderKey = `READY_${groupConfigsCache.length ? 'CONFIGURED' : 'EMPTY'}`;
+        if (lastRenderedStatus !== readyRenderKey) {
           content.innerHTML = `
             <div style="padding: 12px 0;">
               <div style="font-size: 48px; margin-bottom: 8px;">✨</div>
@@ -1835,9 +2065,13 @@
               <p style="color: var(--text-muted); font-size: 14px; margin-top: 6px;">
                 ${data.userInfo?.pushname ? 'Bağlı Kullanıcı: <b>' + escapeHtml(data.userInfo.pushname) + '</b>' : 'WhatsApp istemcisi hazır'}
               </p>
+              ${groupConfigsCache.length === 0 ? `
+                <p style="color:#fbbf24;font-size:13px;margin-top:12px;">Henüz bir WhatsApp–RoTaKip eşleşmesi eklenmedi.</p>
+                <button class="btn btn-info" style="width:auto;margin-top:10px;" onclick="showGroupSettings(true)">➕ İlk Eşleşmeyi Ekle</button>
+              ` : ''}
             </div>
           `;
-          lastRenderedStatus = 'READY';
+          lastRenderedStatus = readyRenderKey;
         }
       }
       // Status: WAITING_FOR_QR
@@ -1913,13 +2147,26 @@
     let selectedWpGroupName = '';
     let selectedReadingGroupId = '';
     let selectedReadingGroupName = '';
-    let groupSettingsSaveQueue = Promise.resolve();
     let groupSettingsLoading = false;
+    let groupSettingsSaveQueue = Promise.resolve();
     let groupSettingsRevision = 0;
 
-    document.getElementById('groupSettingsModal').addEventListener('change', (event) => {
-      if (!event.target.matches('input[type="checkbox"]')) return;
+    function readGroupConfigFeaturesFromForm() {
+      return {
+        pollEnabled: document.getElementById('ftPollEnabled').checked,
+        voteTrackingEnabled: document.getElementById('ftVoteTrackingEnabled').checked,
+        messageReadingEnabled: document.getElementById('ftMessageReadingEnabled').checked,
+        sentenceEnabled: document.getElementById('ftSentenceEnabled').checked,
+        esmaulhusnaEnabled: document.getElementById('ftEsmaulhusnaEnabled').checked,
+        weeklyReportEnabled: document.getElementById('ftWeeklyReportEnabled').checked,
+        weeklyReportQuoteEnabled: document.getElementById('ftWeeklyReportQuoteEnabled').checked,
+        weeklyTableEnabled: document.getElementById('ftWeeklyTableEnabled').checked,
+        leagueCongratulationEnabled: document.getElementById('ftLeagueCongratulationEnabled').checked
+      };
+    }
 
+    document.getElementById('groupSettingsModal').addEventListener('change', event => {
+      if (!event.target.matches('input[type="checkbox"]')) return;
       const changedToggle = event.target;
       const previousChecked = !changedToggle.checked;
       if (changedToggle.checked) {
@@ -1931,94 +2178,59 @@
           return;
         }
       }
-
-      saveGroupSettingsUI({ changedToggle, previousChecked });
+      queueGroupConfigSave({ changedToggle, previousChecked });
     });
 
-    async function showGroupSettings() {
+    function populateGroupConfigEditor(config = null) {
+      editingGroupConfigId = config?.id || '';
+      selectedWpGroupId = config?.groupId || '';
+      selectedReadingGroupId = config?.readingGroupId || '';
+      const names = resolveGroupConfigNames(config);
+      selectedWpGroupName = config ? names.whatsapp : '';
+      selectedReadingGroupName = config ? names.reading : '';
+      document.getElementById('groupConfigEditorTitle').textContent = config ? 'Eşleşmeyi Düzenle' : 'Yeni Eşleşme';
+      document.getElementById('gsConfigKey').value = currentConfigKey || config?.configKey || '';
+      document.getElementById('gsWpGroupId').value = selectedWpGroupId;
+      document.getElementById('gsReadingGroupId').value = selectedReadingGroupId;
+
+      const wpDisplay = document.getElementById('gsWpGroupDisplay');
+      wpDisplay.textContent = selectedWpGroupId ? names.whatsapp : 'Henüz grup seçilmedi';
+      wpDisplay.style.fontStyle = selectedWpGroupId ? 'normal' : 'italic';
+      wpDisplay.style.color = selectedWpGroupId ? 'var(--text-main)' : 'var(--text-sub)';
+      const readingDisplay = document.getElementById('gsReadingGroupDisplay');
+      readingDisplay.textContent = selectedReadingGroupId
+        ? (names.reading === selectedReadingGroupId ? selectedReadingGroupId : `${names.reading} (${selectedReadingGroupId})`)
+        : 'Henüz grup seçilmedi';
+      readingDisplay.style.fontStyle = selectedReadingGroupId ? 'normal' : 'italic';
+      readingDisplay.style.color = selectedReadingGroupId ? 'var(--text-main)' : 'var(--text-sub)';
+
+      const features = { ...DEFAULT_GROUP_FEATURES, ...(config?.features || {}) };
+      document.getElementById('ftPollEnabled').checked = features.pollEnabled;
+      document.getElementById('ftVoteTrackingEnabled').checked = features.voteTrackingEnabled;
+      document.getElementById('ftMessageReadingEnabled').checked = features.messageReadingEnabled;
+      document.getElementById('ftSentenceEnabled').checked = features.sentenceEnabled;
+      document.getElementById('ftEsmaulhusnaEnabled').checked = features.esmaulhusnaEnabled;
+      document.getElementById('ftWeeklyReportEnabled').checked = features.weeklyReportEnabled;
+      document.getElementById('ftWeeklyReportQuoteEnabled').checked = features.weeklyReportQuoteEnabled;
+      document.getElementById('ftWeeklyTableEnabled').checked = features.weeklyTableEnabled;
+      document.getElementById('ftLeagueCongratulationEnabled').checked = features.leagueCongratulationEnabled;
+      document.getElementById('ftWeeklyReportSubSettings').style.display = 'none';
+      syncFeatureDependentControls();
+      document.getElementById('groupConfigEditor').style.display = 'flex';
+      refreshReadingGroupPhoneEditor();
+    }
+
+    async function showGroupSettings(startCreate = false) {
       const modal = document.getElementById('groupSettingsModal');
       modal.style.display = 'flex';
       if (groupSettingsLoading) return;
       groupSettingsLoading = true;
-      const controls = modal.querySelector('.config-card-box');
-      controls.inert = true;
-
-      // Bekleyen kayıtlar tamamlandıktan sonra ayarları yükle.
       try {
         await groupSettingsSaveQueue;
-        const res = await fetch('/api/poll-config');
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error('Ayarlar yüklenemedi');
-        if (data.success && data.config) {
-          document.getElementById('gsConfigKey').value = data.config.configKey || '';
-
-          // Okuma grubu
-          if (data.config.readingGroupId) {
-            selectedReadingGroupId = data.config.readingGroupId;
-            selectedReadingGroupName = data.config.readingGroupId; // varsayilan, grup listesinden guncellenir
-            document.getElementById('gsReadingGroupId').value = selectedReadingGroupId;
-            document.getElementById('gsReadingGroupDisplay').textContent = selectedReadingGroupId;
-            document.getElementById('gsReadingGroupDisplay').style.fontStyle = 'normal';
-            document.getElementById('gsReadingGroupDisplay').style.color = 'var(--text-main)';
-            // groupName'i usergroups listesinden bulmaya calis
-            loadReadingGroupsCache().then(() => {
-              const found = readingGroupsCache.find(g => g.groupId === selectedReadingGroupId);
-              if (found) {
-                selectedReadingGroupName = found.groupName;
-                document.getElementById('gsReadingGroupDisplay').textContent = `${found.groupName} (${found.groupId})`;
-              }
-              refreshReadingGroupPhoneEditor();
-            });
-          } else {
-            selectedReadingGroupId = '';
-            selectedReadingGroupName = '';
-            document.getElementById('gsReadingGroupId').value = '';
-            document.getElementById('gsReadingGroupDisplay').textContent = 'Henüz grup seçilmedi';
-            document.getElementById('gsReadingGroupDisplay').style.fontStyle = 'italic';
-            document.getElementById('gsReadingGroupDisplay').style.color = 'var(--text-sub)';
-            refreshReadingGroupPhoneEditor();
-          }
-
-          // WP grubu — ID'den adi bulmaya calis
-          if (data.config.groupId) {
-            selectedWpGroupId = data.config.groupId;
-            selectedWpGroupName = data.config.groupId;
-            document.getElementById('gsWpGroupId').value = selectedWpGroupId;
-            document.getElementById('gsWpGroupDisplay').textContent = selectedWpGroupId;
-            document.getElementById('gsWpGroupDisplay').style.fontStyle = 'normal';
-            document.getElementById('gsWpGroupDisplay').style.color = 'var(--text-main)';
-            loadWpGroupsCache().then(() => {
-              const found = wpGroupsCache.find(g => g.id === selectedWpGroupId);
-              if (found) {
-                selectedWpGroupName = found.name;
-                document.getElementById('gsWpGroupDisplay').textContent = found.name;
-              }
-            });
-          } else {
-            selectedWpGroupId = '';
-            selectedWpGroupName = '';
-            document.getElementById('gsWpGroupId').value = '';
-            document.getElementById('gsWpGroupDisplay').textContent = 'Henüz grup seçilmedi';
-            document.getElementById('gsWpGroupDisplay').style.fontStyle = 'italic';
-            document.getElementById('gsWpGroupDisplay').style.color = 'var(--text-sub)';
-          }
-
-          // Özellik bayraklarını toggle'lara yansit
-          const features = data.config.features || {};
-          document.getElementById('ftPollEnabled').checked = features.pollEnabled === true;
-          document.getElementById('ftVoteTrackingEnabled').checked = features.voteTrackingEnabled === true;
-          document.getElementById('ftMessageReadingEnabled').checked = features.messageReadingEnabled === true;
-          document.getElementById('ftSentenceEnabled').checked = features.sentenceEnabled !== false;
-          document.getElementById('ftEsmaulhusnaEnabled').checked = features.esmaulhusnaEnabled === true;
-          document.getElementById('ftWeeklyReportEnabled').checked = features.weeklyReportEnabled !== false;
-          document.getElementById('ftWeeklyReportQuoteEnabled').checked = features.weeklyReportQuoteEnabled !== false;
-          document.getElementById('ftWeeklyReportSubSettings').style.display = 'none';
-          onWeeklyReportEnabledChange();
-          document.getElementById('ftWeeklyTableEnabled').checked = features.weeklyTableEnabled !== false;
-          document.getElementById('ftLeagueCongratulationEnabled').checked = features.leagueCongratulationEnabled !== false;
-          onLeagueCongratulationEnabledChange();
-        }
-        controls.inert = false;
+        await Promise.all([loadGroupConfigs(true), loadWpGroupsCache(), loadReadingGroupsCache()]);
+        renderActiveGroupConfig();
+        const config = startCreate ? null : getActiveGroupConfig();
+        populateGroupConfigEditor(config);
       } catch (e) {
         console.error('Grup ayarlari yuklenemedi:', e);
         showToast('❌ Grup ayarları yüklenemedi. Paneli kapatıp yeniden açın.');
@@ -2028,6 +2240,9 @@
     }
 
     function closeGroupSettingsModal() {
+      editingGroupConfigId = '';
+      pendingReadingGroupSelect = null;
+      document.getElementById('groupConfigEditor').style.display = 'none';
       document.getElementById('groupSettingsModal').style.display = 'none';
     }
 
@@ -2075,6 +2290,10 @@
         showToast('⚠️ Önce bir okuma grubu seçin!');
         return;
       }
+      if (!getReadingGroupAdminAuth(readingGroupId)) {
+        promptReadingGroupAdminAuth(readingGroupId, { openLeaguePrefs: true });
+        return;
+      }
 
       document.getElementById('leaguePrefsSearch').value = '';
       document.getElementById('leaguePrefsList').innerHTML =
@@ -2082,9 +2301,18 @@
       document.getElementById('leagueCongratulationPrefsModal').style.display = 'flex';
 
       try {
-        const res = await fetch(`/api/league-congratulation-prefs?readingGroupId=${encodeURIComponent(readingGroupId)}`);
+        const groupConfigId = getMatchingEditorGroupConfigId(readingGroupId);
+        const query = new URLSearchParams({ readingGroupId });
+        if (groupConfigId) query.set('groupConfigId', groupConfigId);
+        const res = await fetch(`/api/league-congratulation-prefs?${query.toString()}`);
         const data = await res.json();
         if (!data.success) {
+          if (res.status === 401) {
+            clearReadingGroupAdminAuth(readingGroupId);
+            closeLeagueCongratulationPrefsModal();
+            promptReadingGroupAdminAuth(readingGroupId, { openLeaguePrefs: true });
+            return;
+          }
           document.getElementById('leaguePrefsList').innerHTML =
             `<div style="text-align:center;color:#f87171;padding:20px;font-size:12px;">${escapeHtml(data.message || 'Liste alınamadı')}</div>`;
           return;
@@ -2164,11 +2392,21 @@
         const res = await fetch(`/api/league-congratulation-prefs/${encodeURIComponent(userId)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ delivery, readingGroupId })
+          body: JSON.stringify({
+            delivery,
+            readingGroupId,
+            groupConfigId: getMatchingEditorGroupConfigId(readingGroupId) || undefined
+          })
         });
         const data = await res.json();
         if (!data.success) {
           selectEl.value = prevSafe;
+          if (res.status === 401) {
+            clearReadingGroupAdminAuth(readingGroupId);
+            closeLeagueCongratulationPrefsModal();
+            promptReadingGroupAdminAuth(readingGroupId, { openLeaguePrefs: true });
+            return;
+          }
           showToast('❌ ' + (data.message || 'Kaydedilemedi'));
           return;
         }
@@ -2181,17 +2419,26 @@
       }
     }
 
-    function saveGroupSettingsUI(changeContext = null) {
+    function queueGroupConfigSave(changeContext = null) {
       if (groupSettingsLoading) return groupSettingsSaveQueue;
       const revision = ++groupSettingsRevision;
-      groupSettingsSaveQueue = groupSettingsSaveQueue.then(() => persistGroupSettingsUI(revision, changeContext));
+      groupSettingsSaveQueue = groupSettingsSaveQueue.then(() => persistGroupConfigEditor(revision, changeContext));
       return groupSettingsSaveQueue;
     }
 
-    async function persistGroupSettingsUI(revision, changeContext = null) {
+    async function persistGroupConfigEditor(revision, changeContext = null) {
       const readingGroupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId').value.trim();
       const groupId = selectedWpGroupId || document.getElementById('gsWpGroupId').value.trim();
-      const configKey = document.getElementById('gsConfigKey').value.trim();
+      if (!groupId || !readingGroupId) {
+        return false;
+      }
+
+      const existing = getGroupConfigById(editingGroupConfigId);
+      const body = {
+        groupId,
+        readingGroupId,
+        features: readGroupConfigFeaturesFromForm()
+      };
 
       const restoreChangedToggle = () => {
         const toggle = changeContext?.changedToggle;
@@ -2200,54 +2447,132 @@
         syncFeatureDependentControls();
       };
 
+      const restoreChangedTarget = () => {
+        const target = changeContext?.changedTarget;
+        if (!target) return;
+
+        if (target.type === 'whatsapp' && selectedWpGroupId === target.nextId) {
+          selectedWpGroupId = target.previousId;
+          selectedWpGroupName = target.previousName;
+          document.getElementById('gsWpGroupId').value = target.previousId;
+          const display = document.getElementById('gsWpGroupDisplay');
+          display.textContent = target.previousId ? target.previousName : 'Henüz grup seçilmedi';
+          display.style.fontStyle = target.previousId ? 'normal' : 'italic';
+          display.style.color = target.previousId ? 'var(--text-main)' : 'var(--text-sub)';
+        }
+
+        if (target.type === 'reading' && selectedReadingGroupId === target.nextId) {
+          selectedReadingGroupId = target.previousId;
+          selectedReadingGroupName = target.previousName;
+          document.getElementById('gsReadingGroupId').value = target.previousId;
+          const display = document.getElementById('gsReadingGroupDisplay');
+          display.textContent = target.previousId
+            ? (target.previousName === target.previousId
+              ? target.previousId
+              : `${target.previousName} (${target.previousId})`)
+            : 'Henüz grup seçilmedi';
+          display.style.fontStyle = target.previousId ? 'normal' : 'italic';
+          display.style.color = target.previousId ? 'var(--text-main)' : 'var(--text-sub)';
+          refreshReadingGroupPhoneEditor();
+        }
+      };
+
+      const restoreFailedChange = () => {
+        restoreChangedToggle();
+        restoreChangedTarget();
+      };
+
       try {
-        // Mevcut config'i al, sadece groupId ve readingGroupId'yi guncelle
-        const getRes = await fetch('/api/poll-config');
-        const getData = await getRes.json();
-        if (!getRes.ok || !getData.success) throw new Error('Mevcut ayarlar alınamadı');
-        const currentConfig = (getData.success && getData.config) ? getData.config : {};
-
-        // Özellik bayraklarını toggle'lardan oku
-        const features = {
-          pollEnabled: document.getElementById('ftPollEnabled').checked,
-          voteTrackingEnabled: document.getElementById('ftVoteTrackingEnabled').checked,
-          messageReadingEnabled: document.getElementById('ftMessageReadingEnabled').checked,
-          sentenceEnabled: document.getElementById('ftSentenceEnabled').checked,
-          esmaulhusnaEnabled: document.getElementById('ftEsmaulhusnaEnabled').checked,
-          weeklyReportEnabled: document.getElementById('ftWeeklyReportEnabled').checked,
-          weeklyReportQuoteEnabled: document.getElementById('ftWeeklyReportQuoteEnabled').checked,
-          weeklyTableEnabled: document.getElementById('ftWeeklyTableEnabled').checked,
-          leagueCongratulationEnabled: document.getElementById('ftLeagueCongratulationEnabled').checked,
-        };
-
-        const body = {
-          configKey: configKey || currentConfig.configKey,
-          groupId: groupId,
-          readingGroupId: readingGroupId,
-          titleTemplate: currentConfig.titleTemplate || '{{date}}',
-          options: currentConfig.options && currentConfig.options.length > 0 ? currentConfig.options : ['5 dakika', '10 dakika', '15 dakika', '20 dakika', '30 dakika', '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika', '150 dakika', '180 dakika'],
-          features
-        };
-
-        const res = await fetch('/api/poll-config', {
-          method: 'POST',
+        const url = existing
+          ? `/api/group-configs/${encodeURIComponent(existing.id)}`
+          : '/api/group-configs';
+        const res = await fetch(url, {
+          method: existing ? 'PATCH' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
         });
         const data = await res.json();
-        if (res.ok && data.success) {
-          if (revision === groupSettingsRevision) showToast('✅ Değişiklikler kaydedildi.');
-          checkStatus();
-          return true;
-        } else {
-          restoreChangedToggle();
-          showToast('❌ Hata: ' + (data.message || 'Kaydedilemedi'));
-          return false;
+        if (!res.ok || !data.success) {
+          if (res.status === 401 && readingGroupId) {
+            restoreFailedChange();
+            clearReadingGroupAdminAuth(readingGroupId);
+            promptReadingGroupAdminAuth(readingGroupId);
+            return false;
+          }
+          throw new Error(data.message || 'Eşleşme kaydedilemedi.');
         }
+        groupConfigMutationVersion += 1;
+        const returnedConfig = data.config || data.groupConfig || null;
+        if (returnedConfig) upsertGroupConfigCache(returnedConfig);
+        const savedId = String(
+          data.config?.id || data.config?._id || data.groupConfig?.id || data.groupConfig?._id || data.id || existing?.id || ''
+        );
+        if (savedId && getGroupConfigById(savedId)) {
+          editingGroupConfigId = savedId;
+          document.getElementById('groupConfigEditorTitle').textContent = 'Eşleşmeyi Düzenle';
+          selectActiveGroupConfig(savedId);
+        }
+        else if (!existing) {
+          const created = groupConfigsCache.find(config => config.groupId === groupId && config.readingGroupId === readingGroupId);
+          if (created) {
+            editingGroupConfigId = created.id;
+            document.getElementById('groupConfigEditorTitle').textContent = 'Eşleşmeyi Düzenle';
+            selectActiveGroupConfig(created.id);
+          }
+        }
+        if (revision === groupSettingsRevision) {
+          showToast(existing ? '✅ Değişiklikler kaydedildi.' : '✅ Yeni eşleşme eklendi.');
+        }
+        lastRenderedStatus = '';
+        checkStatus();
+        return true;
       } catch (err) {
-        restoreChangedToggle();
-        showToast('❌ Sunucu hatası oluştu');
+        restoreFailedChange();
+        showToast(`❌ ${err.message || 'Sunucu hatası oluştu.'}`);
         return false;
+      }
+    }
+
+    function deleteActiveGroupConfig() {
+      const active = getActiveGroupConfig();
+      if (!active) {
+        showToast('⚠️ Silmek için bir eşleşme seçin.');
+        return;
+      }
+      deleteGroupConfigUI(active.id);
+    }
+
+    async function deleteGroupConfigUI(id) {
+      const config = getGroupConfigById(id);
+      if (!config) return;
+      const names = resolveGroupConfigNames(config);
+      const confirmed = window.confirm(
+        `"${names.whatsapp} → ${names.reading}" eşleşmesi silinsin mi?`
+      );
+      if (!confirmed) return;
+      try {
+        const res = await fetch(`/api/group-configs/${encodeURIComponent(config.id)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.message || 'Eşleşme silinemedi.');
+        groupConfigMutationVersion += 1;
+        if (activeGroupConfigId === config.id) activeGroupConfigId = '';
+        groupConfigsCache = groupConfigsCache.filter(item => item.id !== config.id);
+        reconcileActiveGroupConfig();
+        renderActiveGroupConfig();
+        let refreshFailed = false;
+        try {
+          await loadGroupConfigs(true);
+        } catch (refreshError) {
+          refreshFailed = true;
+          console.error('Eşleşme silindi fakat liste yenilenemedi:', refreshError);
+        }
+        lastRenderedStatus = '';
+        showToast(refreshFailed
+          ? '⚠️ Eşleşme silindi; liste bir sonraki kontrolde yenilenecek.'
+          : '✅ Eşleşme silindi; geçmiş kayıtlar korundu.');
+        checkStatus();
+      } catch (error) {
+        showToast(`❌ ${error.message || 'Sunucu hatası oluştu.'}`);
       }
     }
 
@@ -2341,6 +2666,8 @@
     }
 
     function selectWpGroup(id, name) {
+      const previousId = selectedWpGroupId;
+      const previousName = selectedWpGroupName;
       selectedWpGroupId = id;
       selectedWpGroupName = name;
       document.getElementById('gsWpGroupId').value = id;
@@ -2349,7 +2676,14 @@
       display.style.fontStyle = 'normal';
       display.style.color = 'var(--text-main)';
       closeWpGroupPicker();
-      saveGroupSettingsUI();
+      queueGroupConfigSave({
+        changedTarget: {
+          type: 'whatsapp',
+          previousId,
+          previousName,
+          nextId: id
+        }
+      });
     }
 
     // ====================================================
@@ -2361,10 +2695,18 @@
     let readingGroupPhoneCache = [];
 
     const readingGroupAdminGrants = new Map();
+    const READING_GROUP_ADMIN_GRANT_TTL_MS = 29 * 60 * 1000;
 
     function getReadingGroupAdminAuth(groupId) {
       if (!groupId) return null;
-      return readingGroupAdminGrants.get(String(groupId)) || null;
+      const key = String(groupId);
+      const grant = readingGroupAdminGrants.get(key) || null;
+      if (!grant) return null;
+      if (Date.now() - grant.grantedAt >= READING_GROUP_ADMIN_GRANT_TTL_MS) {
+        readingGroupAdminGrants.delete(key);
+        return null;
+      }
+      return grant;
     }
 
     function setReadingGroupAdminAuth(groupId, username) {
@@ -2373,6 +2715,18 @@
 
     function clearReadingGroupAdminAuth(groupId) {
       readingGroupAdminGrants.delete(String(groupId));
+    }
+
+    function promptReadingGroupAdminAuth(groupId, extra = {}) {
+      const cachedGroup = readingGroupsCache.find(group => group.groupId === groupId);
+      const groupName = cachedGroup?.groupName || selectedReadingGroupName || groupId;
+      pendingReadingGroupSelect = { id: groupId, name: groupName, ...extra };
+      openReadingGroupAdminLogin(groupId, groupName);
+    }
+
+    function getMatchingEditorGroupConfigId(readingGroupId) {
+      const config = getGroupConfigById(editingGroupConfigId || activeGroupConfigId);
+      return config && config.readingGroupId === String(readingGroupId || '') ? config.id : '';
     }
 
     async function loadReadingGroupsCache(force = false) {
@@ -2485,14 +2839,15 @@
     function selectReadingGroup(id, name) {
       const auth = getReadingGroupAdminAuth(id);
       if (!auth) {
-        pendingReadingGroupSelect = { id, name };
-        openReadingGroupAdminLogin(id, name);
+        promptReadingGroupAdminAuth(id);
         return;
       }
       applyReadingGroupSelection(id, name);
     }
 
-    function applyReadingGroupSelection(id, name) {
+    function applyReadingGroupSelection(id, name, { persist = true } = {}) {
+      const previousId = selectedReadingGroupId;
+      const previousName = selectedReadingGroupName;
       selectedReadingGroupId = id;
       selectedReadingGroupName = name;
       document.getElementById('gsReadingGroupId').value = id;
@@ -2504,7 +2859,16 @@
       closeReadingGroupAdminLogin();
       pendingReadingGroupSelect = null;
       refreshReadingGroupPhoneEditor();
-      saveGroupSettingsUI();
+      if (persist) {
+        queueGroupConfigSave({
+          changedTarget: {
+            type: 'reading',
+            previousId,
+            previousName,
+            nextId: id
+          }
+        });
+      }
     }
 
     function openReadingGroupAdminLogin(groupId, groupName) {
@@ -2557,9 +2921,14 @@
         setReadingGroupAdminAuth(pending.id, data.username || username);
         showToast('✅ Yönetici girişi başarılı');
         const openPhoneEditorAfterLogin = pending.openPhoneEditor === true;
-        applyReadingGroupSelection(pending.id, pending.name);
+        const openLeaguePrefsAfterLogin = pending.openLeaguePrefs === true;
+        applyReadingGroupSelection(pending.id, pending.name, {
+          persist: !openPhoneEditorAfterLogin && !openLeaguePrefsAfterLogin
+        });
         if (openPhoneEditorAfterLogin) {
           await openReadingGroupPhoneModal();
+        } else if (openLeaguePrefsAfterLogin) {
+          await openLeagueCongratulationPrefsModal();
         }
       } catch (e) {
         errEl.textContent = 'Sunucu hatası oluştu.';
@@ -2585,10 +2954,7 @@
       }
       const auth = getReadingGroupAdminAuth(groupId);
       if (!auth) {
-        const cachedGroup = readingGroupsCache.find(group => group.groupId === groupId);
-        const groupName = cachedGroup?.groupName || selectedReadingGroupName || groupId;
-        pendingReadingGroupSelect = { id: groupId, name: groupName, openPhoneEditor: true };
-        openReadingGroupAdminLogin(groupId, groupName);
+        promptReadingGroupAdminAuth(groupId, { openPhoneEditor: true });
         return;
       }
 
@@ -2604,7 +2970,8 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            readingGroupId: groupId
+            readingGroupId: groupId,
+            groupConfigId: getMatchingEditorGroupConfigId(groupId) || undefined
           })
         });
         const data = await res.json();
@@ -2682,6 +3049,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             readingGroupId: groupId,
+            groupConfigId: getMatchingEditorGroupConfigId(groupId) || undefined,
             phone
           })
         });
@@ -2725,18 +3093,17 @@
 
     async function loadPollConfigUI(configKeyParam = null) {
       try {
-        const url = '/api/poll-config';
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.success && data.config) {
+        if (!groupConfigsLoaded) await loadGroupConfigs();
+        const activeConfig = getActiveGroupConfig();
+        if (activeConfig) {
           const titleInput = document.getElementById('cfgTitleTemplate');
-          if (titleInput) titleInput.value = data.config.titleTemplate || '{{date}}';
+          if (titleInput) titleInput.value = activeConfig.titleTemplate || '{{date}}';
 
-          currentConfigOptions = Array.isArray(data.config.options) ? [...data.config.options] : [];
+          currentConfigOptions = Array.isArray(activeConfig.options) ? [...activeConfig.options] : [];
 
           const lastUpd = document.getElementById('configLastUpdate');
           if (lastUpd) {
-            lastUpd.innerText = data.config.updatedAt ? 'Güncelleme: ' + data.config.updatedAt : '';
+            lastUpd.innerText = activeConfig.updatedAt ? 'Güncelleme: ' + activeConfig.updatedAt : '';
           }
           renderOptionInputs();
         }
@@ -2828,7 +3195,7 @@
       renderOptionInputs();
     }
 
-    async function savePollConfigUI() {
+    async function savePollTemplateUI() {
       const titleTemplate = document.getElementById('cfgTitleTemplate')?.value?.trim() || '{{date}}';
       const container = document.getElementById('cfgOptionsList');
       const inputs = container?.querySelectorAll('.option-edit-input') || [];
@@ -2866,26 +3233,42 @@
       }
 
       try {
-        // Mevcut config’i al, sadece titleTemplate ve options güncelle
-        const getRes = await fetch('/api/poll-config');
-        const getData = await getRes.json();
-        const currentConfig = (getData.success && getData.config) ? getData.config : {};
-
-        const res = await fetch('/api/poll-config', {
-          method: 'POST',
+        const currentConfig = getActiveGroupConfig();
+        if (!currentConfig) {
+          showToast('⚠️ Önce bir grup eşleşmesi seçin.');
+          return;
+        }
+        const res = await fetch(`/api/group-configs/${encodeURIComponent(currentConfig.id)}`, {
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            configKey: currentConfig.configKey,
             titleTemplate,
-            options,
-            groupId: currentConfig.groupId,
-            readingGroupId: currentConfig.readingGroupId
+            options
           })
         });
         const data = await res.json();
-        if (data.success) {
-          showToast('✅ Anket ayarları başarıyla kaydedildi!');
+        if (res.ok && data.success) {
+          groupConfigMutationVersion += 1;
+          if (data.config || data.groupConfig) {
+            upsertGroupConfigCache(data.config || data.groupConfig);
+          } else {
+            upsertGroupConfigCache({
+              ...currentConfig,
+              titleTemplate,
+              options
+            });
+          }
           currentConfigOptions = options;
+          let refreshFailed = false;
+          try {
+            await loadGroupConfigs(true);
+          } catch (refreshError) {
+            refreshFailed = true;
+            console.error('Anket ayarları kaydedildi fakat liste yenilenemedi:', refreshError);
+          }
+          showToast(refreshFailed
+            ? '⚠️ Anket ayarları kaydedildi; görünüm bir sonraki kontrolde yenilenecek.'
+            : '✅ Anket ayarları başarıyla kaydedildi!');
         } else {
           showToast('❌ Hata: ' + (data.message || 'Kaydedilemedi'));
         }
@@ -2910,16 +3293,11 @@
     // ANKETLER MODALI (polls)
     // ----------------------------------------------------
     async function showPolls() {
-      // Once grup ayarlarinin kayitli olup olmadigini kontrol et
-      try {
-        const res = await fetch('/api/poll-config');
-        const data = await res.json();
-        if (!data.success || !data.config || !data.config.groupId) {
-          showToast('⚠️ Önce Grup Ayarları panelinden WhatsApp grubunuzu seçin!');
-          showGroupSettings();
-          return;
-        }
-      } catch (e) { }
+      if (!getActiveGroupConfig()) {
+        showToast('⚠️ Önce bir WhatsApp–RoTaKip eşleşmesi ekleyin!');
+        showGroupSettings(true);
+        return;
+      }
 
       const modal = document.getElementById('pollsModal');
       modal.style.display = 'flex';
@@ -2942,6 +3320,11 @@
     }
 
     async function showVotes(targetPollId = null) {
+      const activeConfig = getActiveGroupConfig();
+      if (!activeConfig) {
+        showToast('⚠️ Önce bir grup eşleşmesi seçin.');
+        return;
+      }
       const modal = document.getElementById('votesModal');
       const dropdown = document.getElementById('pollSelectDropdown');
       const contentArea = document.getElementById('votesContentArea');
@@ -2949,7 +3332,7 @@
       contentArea.innerHTML = '<div class="spinner"></div><p style="font-size:12px; color:var(--text-muted); text-align:center;">Oylar yükleniyor...</p>';
 
       try {
-        const res = await fetch('/api/polls');
+        const res = await fetch(`/api/polls?groupConfigId=${encodeURIComponent(activeConfig.id)}`);
         const data = await res.json();
 
         if (!data.success || !data.polls || data.polls.length === 0) {
@@ -2985,7 +3368,9 @@
       contentArea.innerHTML = '<div class="spinner"></div>';
 
       try {
-        const res = await fetch(`/api/poll-votes/${encodeURIComponent(pollId)}`);
+        const activeConfig = getActiveGroupConfig();
+        if (!activeConfig) throw new Error('Aktif eşleşme bulunamadı.');
+        const res = await fetch(`/api/poll-votes/${encodeURIComponent(pollId)}?groupConfigId=${encodeURIComponent(activeConfig.id)}`);
         const data = await res.json();
 
         if (!data.success) {
@@ -3053,6 +3438,10 @@
     let textVotesSelectedDate = '';
 
     async function showTextVotes() {
+      if (!getActiveGroupConfig()) {
+        showToast('⚠️ Önce bir grup eşleşmesi seçin.');
+        return;
+      }
       const modal = document.getElementById('textVotesModal');
       const contentArea = document.getElementById('textVotesContentArea');
       modal.style.display = 'flex';
@@ -3065,7 +3454,10 @@
       const contentArea = document.getElementById('textVotesContentArea');
       contentArea.innerHTML = '<div class="spinner"></div><p style="font-size:12px; color:var(--text-muted); text-align:center;">Okuma kayıtları yükleniyor...</p>';
       try {
-        const res = await fetch('/api/text-votes?limit=500');
+        const activeConfig = getActiveGroupConfig();
+        if (!activeConfig) throw new Error('Aktif eşleşme bulunamadı.');
+        const params = new URLSearchParams({ groupConfigId: activeConfig.id, limit: '500' });
+        const res = await fetch(`/api/text-votes?${params.toString()}`);
         const data = await res.json();
         if (!res.ok || !data.success) {
           contentArea.innerHTML = `<p style="font-size:13px; color:var(--accent-rose); text-align:center; padding:20px 0;">${escapeHtml(data.message || data.error || 'Kayıtlar alınamadı.')}</p>`;

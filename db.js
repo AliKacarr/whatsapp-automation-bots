@@ -32,6 +32,7 @@ let db = null;
 let dbEnabled = false;
 const DASHBOARD_AUTH_COLLECTION = 'auth-wob';
 const REMINDER_STATE_COLLECTION = 'reminder_delivery_state';
+const GROUP_CONFIG_COLLECTION = 'group_configs';
 
 /**
  * MONGO_URI ve DB_NAME tanımlı mı kontrol eder.
@@ -71,18 +72,21 @@ async function connectDB() {
 
     await ensureCollectionIndexes();
 
-    // Anket ayarları yoksa varsayılan şablonu veritabanına ekle
-    await getPollConfig();
     readingSync = createReadingSync({
       db,
       onPromotion: groupId => promotionHandler(groupId),
       getScope: async () => {
-        const config = await getPollConfig();
-        const configKey = String(config?.configKey || '').trim();
-        const readingGroupId = String(config?.readingGroupId || '').trim();
-        const groupId = String(config?.groupId || '').trim();
-        if (!configKey || !readingGroupId || !groupId) return null;
-        return { configKey, readingGroupId, groupId };
+        const configKey = getConfigKey();
+        if (!configKey) return null;
+        const configs = await listGroupConfigs(configKey);
+        if (configs.length === 0) return null;
+        return {
+          configKey,
+          $or: configs.map(config => ({
+            readingGroupId: config.readingGroupId,
+            groupId: config.groupId
+          }))
+        };
       }
     });
     readingSync.start();
@@ -96,7 +100,8 @@ async function connectDB() {
 
 /**
  * Gerekli indeksleri oluşturur. polls time-series olduğu için unique indeks kullanılmaz.
- * Bir indeks hatası tüm DB bağlantısını düşürmez.
+ * Sorgu hızlandırma indeksleri best-effort'tur; veri izolasyonu ve
+ * benzersizlik sağlayan zorunlu indeksler kurulamazsa DB devre dışı kalır.
  */
 async function ensureCollectionIndexes() {
   if (!db) return;
@@ -106,6 +111,14 @@ async function ensureCollectionIndexes() {
       await db.collection(collectionName).createIndex(keys, options);
     } catch (err) {
       console.warn(`⚠️ İndeks oluşturulamadı [${collectionName}]:`, err.message);
+    }
+  };
+  const createRequiredIndex = async (collectionName, keys, options = {}) => {
+    try {
+      await db.collection(collectionName).createIndex(keys, options);
+    } catch (err) {
+      console.error(`❌ Zorunlu indeks oluşturulamadı [${collectionName}]:`, err.message);
+      throw err;
     }
   };
 
@@ -129,26 +142,35 @@ async function ensureCollectionIndexes() {
     unique: true,
     partialFilterExpression: { configKey: { $type: 'string' } }
   });
+  await createSafeIndex(GROUP_CONFIG_COLLECTION, { configKey: 1, createdAt: 1 });
+  await createRequiredIndex(GROUP_CONFIG_COLLECTION, { configKey: 1, groupId: 1 }, {
+    unique: true,
+    partialFilterExpression: {
+      configKey: { $type: 'string' },
+      groupId: { $type: 'string' }
+    }
+  });
+  await createRequiredIndex(GROUP_CONFIG_COLLECTION, { configKey: 1, readingGroupId: 1 }, {
+    unique: true,
+    partialFilterExpression: {
+      configKey: { $type: 'string' },
+      readingGroupId: { $type: 'string' }
+    }
+  });
   // text_votes artık WhatsApp grubu ve okuma grubuna göre de ayrılır.
-  // Önce yeni unique indeksin hazır olduğundan emin ol; oluşturma başarısızsa
-  // eski korumayı kaldırma ve uygulamayı benzersiz indeks olmadan bırakma.
-  let scopedTextVoteUniqueIndexReady = false;
+  // Bu indeks veri izolasyonu için zorunludur: kurulamazsa uygulama eski,
+  // tek-grup unique indeksiyle çalışıp iki eşleşmenin oylarını çakıştırmamalı.
+  await createRequiredIndex(
+    'text_votes',
+    { configKey: 1, readingGroupId: 1, groupId: 1, voterJid: 1, date: 1 },
+    { unique: true }
+  );
   try {
-    await db.collection('text_votes').createIndex(
-      { configKey: 1, readingGroupId: 1, groupId: 1, voterJid: 1, date: 1 },
-      { unique: true }
-    );
-    scopedTextVoteUniqueIndexReady = true;
+    await db.collection('text_votes').dropIndex('configKey_1_voterJid_1_date_1');
   } catch (err) {
-    console.warn('⚠️ Grup kapsamlı text_votes unique indeksi oluşturulamadı:', err.message);
-  }
-  if (scopedTextVoteUniqueIndexReady) {
-    try {
-      await db.collection('text_votes').dropIndex('configKey_1_voterJid_1_date_1');
-    } catch (err) {
-      if (err?.codeName !== 'IndexNotFound' && err?.code !== 27) {
-        console.warn('⚠️ Eski text_votes unique indeksi kaldırılamadı:', err.message);
-      }
+    if (err?.codeName !== 'IndexNotFound' && err?.code !== 27) {
+      console.error('❌ Eski text_votes unique indeksi kaldırılamadı:', err.message);
+      throw err;
     }
   }
   await createSafeIndex('text_votes', { configKey: 1, syncedVersion: 1 });
@@ -177,7 +199,7 @@ function normalizeDashboardPasswordForBcrypt(password) {
 /**
  * CONFIG_KEY ile eşleşen yönetim paneli kullanıcısının mevcut olup olmadığını döndürür.
  */
-async function getDashboardUserStatus(configKey = getPollConfigKey()) {
+async function getDashboardUserStatus(configKey = getConfigKey()) {
   if (!dbEnabled || !db) {
     return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
   }
@@ -317,17 +339,12 @@ async function saveTextVote(voteData) {
 
   try {
     const voterPhone = voteData.voterPhone || voteData.voterJid;
-    const configKey = voteData.configKey || null;
+    const configKey = String(voteData.configKey || '').trim();
     const date = voteData.date;
-    if (!date || !voterPhone) return null;
+    if (!date || !voterPhone || !configKey) return null;
 
     let readingGroupId = voteData.readingGroupId;
     let groupId = voteData.groupId;
-    if (!readingGroupId || !groupId) {
-      const config = await getPollConfig();
-      readingGroupId = readingGroupId || config?.readingGroupId || null;
-      groupId = groupId || config?.groupId || null;
-    }
     readingGroupId = readingGroupId ? String(readingGroupId).trim() : null;
     groupId = groupId ? String(groupId).trim() : null;
     if (!readingGroupId || !groupId) return null;
@@ -357,10 +374,9 @@ async function saveTextVote(voteData) {
       updatedAt: getTRDateString(voteData.updatedAt)
     };
     if (voteData.pushName) setFields.pushName = voteData.pushName;
-    if (configKey) setFields.configKey = configKey;
+    setFields.configKey = configKey;
 
-    const filter = { voterJid: voterPhone, date, readingGroupId, groupId };
-    if (configKey) filter.configKey = configKey;
+    const filter = { voterJid: voterPhone, date, readingGroupId, groupId, configKey };
 
     const result = await db.collection('text_votes').updateOne(
       filter,
@@ -412,23 +428,22 @@ async function savePoll(pollData) {
       if (!isNaN(d.getTime())) createdAt = d;
     }
 
+    const groupId = pollData.groupId !== undefined ? pollData.groupId : existing?.groupId;
+    const configKey = pollData.configKey || existing?.configKey || null;
+    const readingGroupId = pollData.readingGroupId || existing?.readingGroupId || null;
+    if (!groupId || !configKey || !readingGroupId) return null;
+
     const doc = {
       pollId: pollData.pollId,
-      groupId: pollData.groupId !== undefined ? pollData.groupId : existing?.groupId,
+      groupId: String(groupId).trim(),
+      configKey: String(configKey).trim(),
+      readingGroupId: String(readingGroupId).trim(),
       createdAt
     };
     if (pollData.title !== undefined) doc.title = pollData.title;
     else if (existing?.title !== undefined) doc.title = existing.title;
     if (Array.isArray(pollData.options)) doc.options = pollData.options;
     else if (Array.isArray(existing?.options)) doc.options = existing.options;
-    if (pollData.configKey) doc.configKey = pollData.configKey;
-    else if (existing?.configKey) doc.configKey = existing.configKey;
-    let readingGroupId = pollData.readingGroupId || existing?.readingGroupId || null;
-    if (!readingGroupId) {
-      const config = await getPollConfig(pollData.configKey || existing?.configKey || null);
-      readingGroupId = config?.readingGroupId || null;
-    }
-    if (readingGroupId) doc.readingGroupId = String(readingGroupId).trim();
     if (pollData.messageData) doc.messageData = pollData.messageData;
     else if (existing?.messageData) doc.messageData = existing.messageData;
 
@@ -466,14 +481,10 @@ async function saveVote(voteData) {
 
     let readingGroupId = voteData.readingGroupId;
     let groupId = voteData.groupId;
-    if (!readingGroupId || !groupId) {
-      const config = await getPollConfig();
-      readingGroupId = readingGroupId || config?.readingGroupId || null;
-      groupId = groupId || config?.groupId || null;
-    }
+    const configKey = String(voteData.configKey || '').trim();
     readingGroupId = readingGroupId ? String(readingGroupId).trim() : null;
     groupId = groupId ? String(groupId).trim() : null;
-    if (!readingGroupId || !groupId) return null;
+    if (!readingGroupId || !groupId || !configKey) return null;
 
     const setFields = {
       syncVersion: randomUUID(),
@@ -489,9 +500,7 @@ async function saveVote(voteData) {
       setFields.pushName = voteData.pushName;
     }
     // configKey alanı: farklı kullanıcıların oylarını izole etmek için
-    if (voteData.configKey) {
-      setFields.configKey = voteData.configKey;
-    }
+    setFields.configKey = configKey;
 
     const result = await db.collection('poll_votes').updateOne(
       { pollId: voteData.pollId, voterJid: voterPhone },
@@ -541,6 +550,308 @@ const DEFAULT_POLL_OPTIONS = [
   '45 dakika', '60 dakika', '75 dakika', '90 dakika', '120 dakika',
   '150 dakika', '180 dakika'
 ];
+
+const DEFAULT_GROUP_CONFIG_FEATURES = Object.freeze({
+  pollEnabled: false,
+  voteTrackingEnabled: false,
+  messageReadingEnabled: false,
+  sentenceEnabled: true,
+  weeklyReportEnabled: true,
+  weeklyReportQuoteEnabled: true,
+  weeklyTableEnabled: true,
+  leagueCongratulationEnabled: true,
+  esmaulhusnaEnabled: false
+});
+
+const GROUP_CONFIG_FEATURE_FIELDS = Object.freeze({
+  pollEnabled: 'featurePollEnabled',
+  voteTrackingEnabled: 'featureVoteTrackingEnabled',
+  messageReadingEnabled: 'featureMessageReadingEnabled',
+  sentenceEnabled: 'featureSentenceEnabled',
+  weeklyReportEnabled: 'featureWeeklyReportEnabled',
+  weeklyReportQuoteEnabled: 'featureWeeklyReportQuoteEnabled',
+  weeklyTableEnabled: 'featureWeeklyTableEnabled',
+  leagueCongratulationEnabled: 'featureLeagueCongratulationEnabled',
+  esmaulhusnaEnabled: 'featureEsmaulhusnaEnabled'
+});
+
+function isValidReadingGroupId(value) {
+  const id = String(value || '').trim();
+  // RoTaKip kimlikleri Türkçe harf içerebilir (örn. catıkatı23).
+  // Nokta, boşluk, $ ve diğer koleksiyon-adı enjeksiyon karakterleri reddedilir.
+  return /^[\p{L}\p{N}\p{M}_-]{1,100}$/u.test(id);
+}
+
+function normalizeConfigKey(passedConfigKey = null) {
+  return String(passedConfigKey || getConfigKey() || '').trim();
+}
+
+function normalizeGroupConfigFeatures(doc = {}) {
+  const features = {};
+  for (const [featureName, fieldName] of Object.entries(GROUP_CONFIG_FEATURE_FIELDS)) {
+    const fallback = DEFAULT_GROUP_CONFIG_FEATURES[featureName];
+    features[featureName] = fallback
+      ? doc[fieldName] !== false
+      : doc[fieldName] === true;
+  }
+  return features;
+}
+
+function normalizeGroupConfigDocument(doc) {
+  if (!doc) return null;
+  return {
+    id: String(doc._id),
+    configKey: String(doc.configKey || '').trim(),
+    groupId: String(doc.groupId || '').trim(),
+    readingGroupId: String(doc.readingGroupId || '').trim(),
+    titleTemplate: String(doc.titleTemplate || '{{date}}'),
+    options: Array.isArray(doc.options) && doc.options.length > 0
+      ? doc.options.map(option => String(option))
+      : [...DEFAULT_POLL_OPTIONS],
+    features: normalizeGroupConfigFeatures(doc),
+    esmaulhusnaIndex: Number.isInteger(doc.esmaulhusnaIndex) && doc.esmaulhusnaIndex >= 1
+      ? doc.esmaulhusnaIndex
+      : 1,
+    lastPollSentAt: doc.lastPollSentAt || null,
+    createdAt: doc.createdAt || null,
+    updatedAt: doc.updatedAt || null
+  };
+}
+
+function validateGroupConfigValues({ groupId, readingGroupId, titleTemplate, options }) {
+  if (!groupId || !/^[0-9-]{5,40}@g\.us$/.test(groupId)) {
+    return { success: false, code: 'INVALID_WHATSAPP_GROUP', message: 'Geçersiz WhatsApp grup JID değeri.' };
+  }
+  if (!isValidReadingGroupId(readingGroupId)) {
+    return { success: false, code: 'INVALID_READING_GROUP', message: 'Geçersiz okuma grubu kimliği.' };
+  }
+  if (!titleTemplate || titleTemplate.length > 200) {
+    return { success: false, code: 'INVALID_POLL_TITLE', message: 'Anket başlığı şablonu 1 ile 200 karakter arasında olmalıdır.' };
+  }
+  if (!Array.isArray(options) || options.length < 2 || options.length > 12) {
+    return { success: false, code: 'INVALID_POLL_OPTIONS', message: 'Anket seçenekleri 2 ile 12 adet arasında olmalıdır.' };
+  }
+  if (options.some(option => !option || option.length > 100)) {
+    return { success: false, code: 'INVALID_POLL_OPTION', message: 'Anket seçenekleri boş olamaz ve en fazla 100 karakter olabilir.' };
+  }
+  const normalizedOptions = options.map(option => option.toLocaleLowerCase('tr-TR'));
+  if (new Set(normalizedOptions).size !== normalizedOptions.length) {
+    return { success: false, code: 'DUPLICATE_POLL_OPTION', message: 'Anket seçenekleri aynı olamaz.' };
+  }
+  return { success: true };
+}
+
+function duplicateGroupConfigResult(error) {
+  const duplicateField = error?.keyPattern?.groupId
+    ? 'groupId'
+    : (error?.keyPattern?.readingGroupId ? 'readingGroupId' : null);
+  const message = duplicateField === 'groupId'
+    ? 'Bu WhatsApp grubu başka bir aktif eşleşmede kullanılıyor.'
+    : (duplicateField === 'readingGroupId'
+      ? 'Bu RoTaKip okuma grubu başka bir aktif eşleşmede kullanılıyor.'
+      : 'Bu grup eşleşmesi zaten mevcut.');
+  return {
+    success: false,
+    status: 409,
+    code: 'DUPLICATE_GROUP_CONFIG',
+    mongoCode: 11000,
+    duplicateField,
+    message
+  };
+}
+
+async function listGroupConfigs(passedConfigKey = null) {
+  if (!dbEnabled || !db) return [];
+  const configKey = normalizeConfigKey(passedConfigKey);
+  if (!configKey) return [];
+  const docs = await db.collection(GROUP_CONFIG_COLLECTION)
+    .find({ configKey })
+    .sort({ createdAt: 1, _id: 1 })
+    .toArray();
+  return docs.map(normalizeGroupConfigDocument);
+}
+
+async function getGroupConfigById(id, passedConfigKey = null) {
+  if (!dbEnabled || !db || !id) return null;
+  const configKey = normalizeConfigKey(passedConfigKey);
+  if (!configKey) return null;
+  const doc = await db.collection(GROUP_CONFIG_COLLECTION).findOne({
+    _id: String(id),
+    configKey
+  });
+  return normalizeGroupConfigDocument(doc);
+}
+
+async function findGroupConfigByWhatsAppGroup(groupId, passedConfigKey = null) {
+  if (!dbEnabled || !db || !groupId) return null;
+  const configKey = normalizeConfigKey(passedConfigKey);
+  if (!configKey) return null;
+  const doc = await db.collection(GROUP_CONFIG_COLLECTION).findOne({
+    configKey,
+    groupId: String(groupId).trim()
+  });
+  return normalizeGroupConfigDocument(doc);
+}
+
+async function findGroupConfigByReadingGroup(readingGroupId, passedConfigKey = null) {
+  if (!dbEnabled || !db || !readingGroupId) return null;
+  const configKey = normalizeConfigKey(passedConfigKey);
+  if (!configKey) return null;
+  const doc = await db.collection(GROUP_CONFIG_COLLECTION).findOne({
+    configKey,
+    readingGroupId: String(readingGroupId).trim()
+  });
+  return normalizeGroupConfigDocument(doc);
+}
+
+async function findGroupConfigByPair(groupId, readingGroupId, passedConfigKey = null) {
+  if (!dbEnabled || !db || !groupId || !readingGroupId) return null;
+  const configKey = normalizeConfigKey(passedConfigKey);
+  if (!configKey) return null;
+  const doc = await db.collection(GROUP_CONFIG_COLLECTION).findOne({
+    configKey,
+    groupId: String(groupId).trim(),
+    readingGroupId: String(readingGroupId).trim()
+  });
+  return normalizeGroupConfigDocument(doc);
+}
+
+async function createGroupConfig(configData = {}) {
+  if (!dbEnabled || !db) return { success: false, status: 503, message: 'Veritabanı bağlantısı aktif değil.' };
+  const configKey = normalizeConfigKey(configData.configKey);
+  if (!configKey) return { success: false, status: 400, code: 'MISSING_CONFIG_KEY', message: 'CONFIG_KEY tanımlanmamış.' };
+
+  const groupId = String(configData.groupId || '').trim();
+  const readingGroupId = String(configData.readingGroupId || '').trim();
+  const titleTemplate = String(configData.titleTemplate || '{{date}}').trim() || '{{date}}';
+  const options = Array.isArray(configData.options)
+    ? configData.options.map(option => String(option).trim()).filter(Boolean)
+    : [...DEFAULT_POLL_OPTIONS];
+  const validation = validateGroupConfigValues({ groupId, readingGroupId, titleTemplate, options });
+  if (!validation.success) return { ...validation, status: 400 };
+
+  const now = new Date();
+  const doc = {
+    _id: randomUUID(),
+    schemaVersion: 2,
+    configKey,
+    groupId,
+    readingGroupId,
+    titleTemplate,
+    options,
+    esmaulhusnaIndex: Number.isInteger(configData.esmaulhusnaIndex) && configData.esmaulhusnaIndex >= 1
+      ? configData.esmaulhusnaIndex
+      : 1,
+    lastPollSentAt: configData.lastPollSentAt || null,
+    createdAt: now,
+    updatedAt: now
+  };
+  const requestedFeatures = configData.features || {};
+  for (const [featureName, fieldName] of Object.entries(GROUP_CONFIG_FEATURE_FIELDS)) {
+    doc[fieldName] = typeof requestedFeatures[featureName] === 'boolean'
+      ? requestedFeatures[featureName]
+      : DEFAULT_GROUP_CONFIG_FEATURES[featureName];
+  }
+  if (configData.migratedFromLegacy === true) doc.migratedFromLegacy = true;
+
+  try {
+    await db.collection(GROUP_CONFIG_COLLECTION).insertOne(doc);
+    return { success: true, config: normalizeGroupConfigDocument(doc) };
+  } catch (error) {
+    if (error?.code === 11000) return duplicateGroupConfigResult(error);
+    console.error('❌ Grup eşleşmesi oluşturma hatası:', error.message);
+    return { success: false, status: 500, message: 'Grup eşleşmesi oluşturulamadı.' };
+  }
+}
+
+async function updateGroupConfig(id, configData = {}, passedConfigKey = null) {
+  if (!dbEnabled || !db) return { success: false, status: 503, message: 'Veritabanı bağlantısı aktif değil.' };
+  const configKey = normalizeConfigKey(passedConfigKey || configData.configKey);
+  if (!configKey || !id) return { success: false, status: 400, message: 'Eşleşme kimliği ve CONFIG_KEY gereklidir.' };
+
+  const collection = db.collection(GROUP_CONFIG_COLLECTION);
+  const current = await collection.findOne({ _id: String(id), configKey });
+  if (!current) return { success: false, status: 404, code: 'GROUP_CONFIG_NOT_FOUND', message: 'Grup eşleşmesi bulunamadı.' };
+
+  const groupId = configData.groupId === undefined
+    ? String(current.groupId || '').trim()
+    : String(configData.groupId || '').trim();
+  const readingGroupId = configData.readingGroupId === undefined
+    ? String(current.readingGroupId || '').trim()
+    : String(configData.readingGroupId || '').trim();
+  const titleTemplate = configData.titleTemplate === undefined
+    ? String(current.titleTemplate || '{{date}}').trim()
+    : (String(configData.titleTemplate || '').trim() || '{{date}}');
+  const options = configData.options === undefined
+    ? (Array.isArray(current.options) ? current.options.map(option => String(option).trim()).filter(Boolean) : [...DEFAULT_POLL_OPTIONS])
+    : (Array.isArray(configData.options) ? configData.options.map(option => String(option).trim()).filter(Boolean) : []);
+  const validation = validateGroupConfigValues({ groupId, readingGroupId, titleTemplate, options });
+  if (!validation.success) return { ...validation, status: 400 };
+
+  // PATCH semantiğini koru: doğrulama tüm birleşik belge üzerinde yapılır,
+  // fakat yalnızca istekte gerçekten bulunan alanlar yazılır. Böylece farklı
+  // ekran/sekme eşzamanlı olarak şablon ve özellik güncellediğinde stale bir
+  // okuma ilgisiz alanları geri ezmez.
+  const setFields = { updatedAt: new Date() };
+  if (configData.groupId !== undefined) setFields.groupId = groupId;
+  if (configData.readingGroupId !== undefined) setFields.readingGroupId = readingGroupId;
+  if (configData.titleTemplate !== undefined) setFields.titleTemplate = titleTemplate;
+  if (configData.options !== undefined) setFields.options = options;
+  const features = configData.features || {};
+  for (const [featureName, fieldName] of Object.entries(GROUP_CONFIG_FEATURE_FIELDS)) {
+    if (typeof features[featureName] === 'boolean') setFields[fieldName] = features[featureName];
+  }
+  if (Number.isInteger(configData.esmaulhusnaIndex) && configData.esmaulhusnaIndex >= 1) {
+    setFields.esmaulhusnaIndex = configData.esmaulhusnaIndex;
+  }
+
+  try {
+    const result = await collection.updateOne({ _id: String(id), configKey }, { $set: setFields });
+    if (result.matchedCount !== 1) {
+      return { success: false, status: 404, code: 'GROUP_CONFIG_NOT_FOUND', message: 'Grup eşleşmesi bulunamadı.' };
+    }
+    return { success: true, config: normalizeGroupConfigDocument({ ...current, ...setFields }) };
+  } catch (error) {
+    if (error?.code === 11000) return duplicateGroupConfigResult(error);
+    console.error('❌ Grup eşleşmesi güncelleme hatası:', error.message);
+    return { success: false, status: 500, message: 'Grup eşleşmesi güncellenemedi.' };
+  }
+}
+
+async function deleteGroupConfig(id, passedConfigKey = null) {
+  if (!dbEnabled || !db) return { success: false, status: 503, message: 'Veritabanı bağlantısı aktif değil.' };
+  const configKey = normalizeConfigKey(passedConfigKey);
+  if (!configKey || !id) return { success: false, status: 400, message: 'Eşleşme kimliği ve CONFIG_KEY gereklidir.' };
+  const result = await db.collection(GROUP_CONFIG_COLLECTION).deleteOne({ _id: String(id), configKey });
+  if (result.deletedCount !== 1) {
+    return { success: false, status: 404, code: 'GROUP_CONFIG_NOT_FOUND', message: 'Grup eşleşmesi bulunamadı.' };
+  }
+  return { success: true, id: String(id) };
+}
+
+async function updateGroupConfigRuntimeState(id, runtimeFields = {}, passedConfigKey = null) {
+  if (!dbEnabled || !db) return { success: false, status: 503, message: 'Veritabanı bağlantısı aktif değil.' };
+  const configKey = normalizeConfigKey(passedConfigKey);
+  if (!configKey || !id) return { success: false, status: 400, message: 'Eşleşme kimliği ve CONFIG_KEY gereklidir.' };
+  const setFields = { updatedAt: new Date() };
+  if (runtimeFields.lastPollSentAt !== undefined) setFields.lastPollSentAt = runtimeFields.lastPollSentAt;
+  if (Number.isInteger(runtimeFields.esmaulhusnaIndex) && runtimeFields.esmaulhusnaIndex >= 1) {
+    setFields.esmaulhusnaIndex = runtimeFields.esmaulhusnaIndex;
+  }
+  try {
+    const result = await db.collection(GROUP_CONFIG_COLLECTION).updateOne(
+      { _id: String(id), configKey },
+      { $set: setFields }
+    );
+    if (result.matchedCount !== 1) {
+      return { success: false, status: 404, code: 'GROUP_CONFIG_NOT_FOUND', message: 'Grup eşleşmesi bulunamadı.' };
+    }
+    return { success: true, id: String(id), ...setFields };
+  } catch (error) {
+    console.warn('⚠️ Grup eşleşmesi çalışma durumu güncellenemedi:', error.message);
+    return { success: false, status: 500, code: 'GROUP_CONFIG_RUNTIME_UPDATE_FAILED', message: 'Eşleşme çalışma durumu kaydedilemedi.' };
+  }
+}
 
 async function getPollById(pollId, configKey, readingGroupId, groupId) {
   if (!dbEnabled || !db) return null;
@@ -595,208 +906,11 @@ async function listTextVotes(readingGroupId, configKey, groupId, limit = 500) {
     .toArray();
 }
 
-function getPollConfigKey() {
+function getConfigKey() {
   if (process.env.CONFIG_KEY && process.env.CONFIG_KEY.trim() !== '') {
     return process.env.CONFIG_KEY.trim();
   }
   return null;
-}
-
-/**
- * Anket şablon ayarlarını MongoDB'den okur.
- * Doküman yoksa varsayılan değerleri döndürür.
- * @param {string} [passedConfigKey] - İsteğe bağlı konfigürasyon ID'si. Verilmezse CONFIG_KEY kullanılır.
- */
-async function getPollConfig(passedConfigKey = null) {
-  const configKey = (passedConfigKey && String(passedConfigKey).trim())
-    ? String(passedConfigKey).trim()
-    : getPollConfigKey();
-
-  if (!configKey) return null;
-
-  const defaultConfig = {
-    configKey: configKey,
-    titleTemplate: '{{date}}',
-    options: DEFAULT_POLL_OPTIONS,
-    groupId: null,
-    readingGroupId: null
-  };
-
-  if (!dbEnabled || !db) return defaultConfig;
-
-  try {
-    const doc = await db.collection('poll_config').findOne({ _id: configKey });
-    if (!doc) {
-      const initialDoc = {
-        _id: configKey,
-        titleTemplate: defaultConfig.titleTemplate,
-        options: defaultConfig.options,
-        groupId: defaultConfig.groupId,
-        readingGroupId: defaultConfig.readingGroupId,
-        featurePollEnabled: false,
-        featureVoteTrackingEnabled: false,
-        featureMessageReadingEnabled: false,
-        featureSentenceEnabled: true,
-        featureWeeklyReportEnabled: true,
-        featureWeeklyReportQuoteEnabled: true,
-        featureWeeklyTableEnabled: true,
-        featureLeagueCongratulationEnabled: true,
-        featureEsmaulhusnaEnabled: false,
-        esmaulhusnaIndex: 1,
-        updatedAt: getTRDateString()
-      };
-      await db.collection('poll_config').updateOne(
-        { _id: configKey },
-        { $setOnInsert: initialDoc },
-        { upsert: true }
-      );
-      console.log(`📌 poll_config (${configKey}) dokümanı oluşturuldu.`);
-      return {
-        configKey,
-        ...initialDoc,
-        features: {
-          pollEnabled: false,
-          voteTrackingEnabled: false,
-          messageReadingEnabled: false,
-          sentenceEnabled: true,
-          weeklyReportEnabled: true,
-          weeklyReportQuoteEnabled: true,
-          weeklyTableEnabled: true,
-          leagueCongratulationEnabled: true,
-          esmaulhusnaEnabled: false
-        },
-        esmaulhusnaIndex: 1
-      };
-    }
-
-    return {
-      configKey: doc._id || configKey,
-      titleTemplate: doc.titleTemplate || defaultConfig.titleTemplate,
-      options: (Array.isArray(doc.options) && doc.options.length > 0) ? doc.options : defaultConfig.options,
-      groupId: (doc.groupId !== undefined && doc.groupId !== null && String(doc.groupId).trim() !== '') ? String(doc.groupId).trim() : null,
-      readingGroupId: (doc.readingGroupId && typeof doc.readingGroupId === 'string' && doc.readingGroupId.trim() !== '') ? String(doc.readingGroupId).trim() : null,
-      updatedAt: doc.updatedAt || null,
-      esmaulhusnaIndex: (typeof doc.esmaulhusnaIndex === 'number' && doc.esmaulhusnaIndex >= 1) ? doc.esmaulhusnaIndex : 1,
-      // Anket/oy/mesaj: yoksa kapalı. Vecize/rapor/tablo/esmaülhüsna: yoksa açık/kapalı.
-      features: {
-        pollEnabled: doc.featurePollEnabled === true,
-        voteTrackingEnabled: doc.featureVoteTrackingEnabled === true,
-        messageReadingEnabled: doc.featureMessageReadingEnabled === true,
-        sentenceEnabled: doc.featureSentenceEnabled !== false,
-        weeklyReportEnabled: doc.featureWeeklyReportEnabled !== false,
-        weeklyReportQuoteEnabled: doc.featureWeeklyReportQuoteEnabled !== false,
-        weeklyTableEnabled: doc.featureWeeklyTableEnabled !== false,
-        leagueCongratulationEnabled: doc.featureLeagueCongratulationEnabled !== false,
-        esmaulhusnaEnabled: doc.featureEsmaulhusnaEnabled === true
-      }
-    };
-  } catch (err) {
-    console.error(`❌ Anket ayarları okuma hatası (${configKey}):`, err.message);
-    return defaultConfig;
-  }
-}
-
-/**
- * Anket şablon ayarlarını MongoDB'ye kaydeder.
- * @param {Object} configData - { titleTemplate, options, groupId, readingGroupId, configKey, features }
- * features: { pollEnabled, voteTrackingEnabled, messageReadingEnabled, sentenceEnabled, weeklyReportEnabled, weeklyTableEnabled, leagueCongratulationEnabled }
- */
-async function savePollConfig(configData) {
-  if (!dbEnabled || !db) return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
-
-  try {
-    const configKey = (configData.configKey || configData.configId || '').trim() || getPollConfigKey();
-
-    if (!configKey) {
-      return { success: false, message: 'CONFIG_KEY çevre değişkeni tanımlanmamış.' };
-    }
-
-    const titleTemplate = (configData.titleTemplate || '').trim() || '{{date}}';
-    const options = Array.isArray(configData.options)
-      ? configData.options.map(o => String(o).trim()).filter(Boolean)
-      : [];
-
-    if (titleTemplate.length > 200) {
-      return { success: false, message: 'Anket başlığı şablonu en fazla 200 karakter olabilir.' };
-    }
-    if (options.some(option => option.length > 100)) {
-      return { success: false, message: 'Anket seçenekleri en fazla 100 karakter olabilir.' };
-    }
-
-    if (options.length < 2) {
-      return { success: false, message: 'En az 2 anket seçeneği eklemelisiniz.' };
-    }
-    if (options.length > 12) {
-      return { success: false, message: 'En fazla 12 anket seçeneği ekleyebilirsiniz.' };
-    }
-
-    // Anket seçenekleri aynı olamaz kontrolü
-    const seenOptions = new Set();
-    const duplicateOptions = [];
-    for (const opt of options) {
-      const lower = opt.toLowerCase();
-      if (seenOptions.has(lower)) {
-        if (!duplicateOptions.includes(opt)) duplicateOptions.push(opt);
-      } else {
-        seenOptions.add(lower);
-      }
-    }
-
-    if (duplicateOptions.length > 0) {
-      return {
-        success: false,
-        message: `Anket seçenekleri aynı olamaz! Yinelenen seçenekler: ${duplicateOptions.join(', ')}`
-      };
-    }
-
-    const groupId = (configData.groupId !== undefined && configData.groupId !== null && String(configData.groupId).trim() !== '')
-      ? String(configData.groupId).trim()
-      : null;
-
-    const readingGroupId = (configData.readingGroupId !== undefined && configData.readingGroupId !== null && String(configData.readingGroupId).trim() !== '')
-      ? String(configData.readingGroupId).trim()
-      : null;
-
-    if (groupId && !/^[0-9-]{5,40}@g\.us$/.test(groupId)) {
-      return { success: false, message: 'Geçersiz WhatsApp grup JID değeri.' };
-    }
-    if (readingGroupId && !/^[A-Za-z0-9_-]{1,100}$/.test(readingGroupId)) {
-      return { success: false, message: 'Geçersiz okuma grubu kimliği.' };
-    }
-
-    const setFields = {
-      titleTemplate,
-      options,
-      groupId,
-      readingGroupId,
-      updatedAt: getTRDateString()
-    };
-
-    // Özellik bayrakları — sadece gönderilenleri güncelle (gönderilmeyenler mevcut değerini korur)
-    const features = configData.features || {};
-    if (typeof features.pollEnabled === 'boolean') setFields.featurePollEnabled = features.pollEnabled;
-    if (typeof features.voteTrackingEnabled === 'boolean') setFields.featureVoteTrackingEnabled = features.voteTrackingEnabled;
-    if (typeof features.messageReadingEnabled === 'boolean') setFields.featureMessageReadingEnabled = features.messageReadingEnabled;
-    if (typeof features.sentenceEnabled === 'boolean') setFields.featureSentenceEnabled = features.sentenceEnabled;
-    if (typeof features.weeklyReportEnabled === 'boolean') setFields.featureWeeklyReportEnabled = features.weeklyReportEnabled;
-    if (typeof features.weeklyReportQuoteEnabled === 'boolean') setFields.featureWeeklyReportQuoteEnabled = features.weeklyReportQuoteEnabled;
-    if (typeof features.weeklyTableEnabled === 'boolean') setFields.featureWeeklyTableEnabled = features.weeklyTableEnabled;
-    if (typeof features.leagueCongratulationEnabled === 'boolean') setFields.featureLeagueCongratulationEnabled = features.leagueCongratulationEnabled;
-    if (typeof features.esmaulhusnaEnabled === 'boolean') setFields.featureEsmaulhusnaEnabled = features.esmaulhusnaEnabled;
-
-    await db.collection('poll_config').updateOne(
-      { _id: configKey },
-      { $set: setFields },
-      { upsert: true }
-    );
-
-    process.env.CONFIG_KEY = configKey;
-
-    return { success: true, config: { configKey, ...setFields } };
-  } catch (err) {
-    console.error(`❌ Anket ayarları kayıt hatası:`, err.message);
-    return { success: false, message: 'Ayarlar kaydedilemedi.' };
-  }
 }
 
 /**
@@ -1132,11 +1246,7 @@ async function getMonthlyReadingAmountTotal(passedReadingGroupId = null) {
   if (!dbEnabled || !db) return null;
 
   try {
-    let readingGroupId = (passedReadingGroupId || '').trim();
-    if (!readingGroupId) {
-      const config = await getPollConfig();
-      readingGroupId = config?.readingGroupId || null;
-    }
+    const readingGroupId = String(passedReadingGroupId || '').trim();
     if (!readingGroupId) return null;
 
     const trNow = new Date(Date.now() + 3 * 60 * 60 * 1000);
@@ -1185,17 +1295,13 @@ async function getMonthlyReadingAmountTotal(passedReadingGroupId = null) {
 /**
  * users_<readingGroupId> ve readingstatuses_<readingGroupId> koleksiyonlarını kullanarak
  * her kullanıcı için okuma serisi ve okumama serisini hesaplar.
- * @param {string} [passedReadingGroupId] - İsteğe bağlı okuma grubu veritabanı eki. Verilmezse poll_config'den okunur.
+ * @param {string} passedReadingGroupId - Okuma grubu veritabanı eki.
  */
 async function calculateReadingStreaks(passedReadingGroupId = null) {
   if (!dbEnabled || !db) return { readers: [], nonReaders: [] };
 
   try {
-    let readingGroupId = (passedReadingGroupId || '').trim();
-    if (!readingGroupId) {
-      const config = await getPollConfig();
-      readingGroupId = config?.readingGroupId || null;
-    }
+    const readingGroupId = String(passedReadingGroupId || '').trim();
     if (!readingGroupId) return { readers: [], nonReaders: [] };
 
     const usersCollName = `users_${readingGroupId}`;
@@ -1496,27 +1602,6 @@ async function updateLeagueCongratulationDelivery(readingGroupId, userId, delive
   }
 }
 
-/**
- * Esmaül Hüsna gönderim sırasını (index) poll_config'te günceller.
- * @param {number} newIndex - 1 ile 99 arasında yeni sıra numarası
- */
-async function updateEsmaulhusnaIndex(newIndex) {
-  if (!dbEnabled || !db) return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
-  try {
-    const configKey = getPollConfigKey();
-    if (!configKey) return { success: false, message: 'CONFIG_KEY tanımlanmamış.' };
-    await db.collection('poll_config').updateOne(
-      { _id: configKey },
-      { $set: { esmaulhusnaIndex: newIndex, updatedAt: getTRDateString() } },
-      { upsert: true }
-    );
-    return { success: true, esmaulhusnaIndex: newIndex };
-  } catch (err) {
-    console.error('❌ updateEsmaulhusnaIndex hatası:', err.message);
-    return { success: false, message: 'Esmaül Hüsna sırası güncellenemedi.' };
-  }
-}
-
 function getReminderScopeId(configKey, groupId) {
   return createHash('sha256')
     .update(`${String(configKey).trim()}\u0000${String(groupId).trim()}`, 'utf8')
@@ -1663,8 +1748,17 @@ module.exports = {
   listTextVotes,
   getTRDateString,
   getLogicalReadingDate,
-  getPollConfig,
-  savePollConfig,
+  listGroupConfigs,
+  getGroupConfigById,
+  findGroupConfigByWhatsAppGroup,
+  findGroupConfigByReadingGroup,
+  findGroupConfigByPair,
+  createGroupConfig,
+  updateGroupConfig,
+  deleteGroupConfig,
+  updateGroupConfigRuntimeState,
+  DEFAULT_GROUP_CONFIG_FEATURES,
+  isValidReadingGroupId,
   saveLidMapping,
   getAllLidMappings,
   getReadingGroupPhones,
@@ -1684,7 +1778,6 @@ module.exports = {
   verifyReadingGroupAdmin,
   listReadingGroupUsersForPhoneEdit,
   updateReadingGroupUserPhone,
-  updateEsmaulhusnaIndex,
   reserveRandomReminder,
   releaseReminderReservation
 };

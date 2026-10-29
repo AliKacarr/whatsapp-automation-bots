@@ -146,3 +146,34 @@ test('duplicate pushName matches are rejected as ambiguous', async () => {
   assert.equal(vote.syncReason, 'ambiguous_push_name');
   assert.equal(fixture.getReadingStatusWrites(), 0);
 });
+
+test('retry scan accepts a multi-group Mongo scope without collapsing it', async () => {
+  const seenFilters = [];
+  const db = {
+    collection(name) {
+      assert.ok(['poll_votes', 'text_votes'].includes(name));
+      return {
+        find(filter) {
+          seenFilters.push({ name, filter });
+          return makeCursor([]);
+        }
+      };
+    }
+  };
+  const scope = {
+    configKey: 'test',
+    $or: [
+      { readingGroupId: 'group1', groupId: '11111@g.us' },
+      { readingGroupId: 'group2', groupId: '22222@g.us' }
+    ]
+  };
+  const sync = createReadingSync({ db, getScope: async () => scope });
+
+  await sync.retryPending();
+
+  assert.equal(seenFilters.length, 2);
+  for (const { filter } of seenFilters) {
+    assert.deepEqual(filter.$and[0], scope);
+    assert.equal(Array.isArray(filter.$and[1].$or), true);
+  }
+});

@@ -16,6 +16,8 @@ WhatsApp okuma grupları için geliştirilmiş, Node.js tabanlı otomasyon ve y�
 - Kişiye özel teslimat seçeneklerine sahip lig kutlama görselleri
 - Grup, anket ve otomasyon ayarları için web yönetim paneli
 - Parola korumalı panel ve şifreli WhatsApp oturum verileri
+- Tek `CONFIG_KEY` ve WhatsApp oturumu altında birden fazla WhatsApp–RoTaKip grup eşleşmesi
+- Her eşleşme için bağımsız anket şablonu ve otomasyon ayarları
 - `CONFIG_KEY` ile birbirinden ayrı çalışan çoklu bot desteği
 
 ## Gereksinimler
@@ -54,10 +56,15 @@ Yönetim paneli varsayılan olarak [http://localhost:3000](http://localhost:3000
 
 1. Yönetim panelini açın ve ilk kullanıcı hesabını oluşturun.
 2. WhatsApp hesabınızı QR kod veya eşleştirme koduyla bağlayın.
-3. **Grup Ayarları** bölümünden hedef WhatsApp grubunu seçin.
-4. RoTaKip okuma grubunu seçip grup yöneticisi hesabıyla doğrulayın.
-5. Kullanmak istediğiniz otomasyonları etkinleştirin.
-6. **Anket Ayarları** bölümünden anket başlığını ve seçeneklerini düzenleyin.
+3. Ana sayfadaki eşleşme seçicisinin yanındaki **+** düğmesine basın.
+4. Hedef WhatsApp grubunu ve RoTaKip okuma grubunu seçin; RoTaKip grup yöneticisi hesabıyla doğrulayın.
+5. Eşleşmeye özel otomasyonları belirleyin. Grup ve otomasyon değişiklikleri seçim yapıldıkça otomatik kaydedilir.
+6. Ana sayfadaki eşleşme seçicisinden aktif grubu seçin.
+7. **Anket Ayarları** bölümünden aktif eşleşmenin anket başlığını ve seçeneklerini düzenleyin.
+
+Aynı panelden yeni eşleşmeler ekleyebilir veya mevcut eşleşmelerin iki hedefini de değiştirebilirsiniz. Bir WhatsApp grubu ve bir RoTaKip grubu aynı anda yalnızca bir aktif eşleşmede kullanılabilir.
+
+Bir eşleşme silindiğinde otomasyonları hemen durur ve ayar kartı panelden kalkar. Eski anket, oy ve mesaj kayıtları silinmez; aynı grup çifti daha sonra yeniden eklenirse geçmiş tekrar görünür.
 
 ## Ortam Değişkenleri
 
@@ -91,7 +98,7 @@ Yönetim paneli varsayılan olarak [http://localhost:3000](http://localhost:3000
 | Haftalık tablo görseli | Pazartesi 22.30 |
 | Bekleyen lig kutlamaları | Her dakika |
 
-Tüm zamanlamalar `Europe/Istanbul` saat dilimini kullanır. Otomatik görevler **Grup Ayarları** bölümünden ayrı ayrı yönetilebilir.
+Tüm zamanlamalar `Europe/Istanbul` saat dilimini kullanır. Her otomatik görev **Grup Ayarları** bölümünden eşleşme bazında ayrı ayrı yönetilebilir. Bir eşleşmedeki gönderim hatası diğer eşleşmelerin çalışmasını durdurmaz.
 
 ## Mesajla Okuma Kaydı
 

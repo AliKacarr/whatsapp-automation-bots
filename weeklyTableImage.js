@@ -369,11 +369,11 @@ function drawDefaultAvatar(ctx, x, y, radius) {
 /**
  * Haftalık Okuma Tablosu Görselini çizer ve seçilen formatta Buffer döner.
  * @param {object} db - MongoDB veritabanı referansı
- * @param {string} [passedReadingGroupId] - Okuma grubu koleksiyon eki (örn: 'mygroupid34', 'hisarkapisi16'). Verilmezse poll_config'den çekilir.
+ * @param {string} passedReadingGroupId - Okuma grubu koleksiyon eki (örn: 'catikati23', 'hisarkapisi16').
  * @param {{outputFormat?: 'png'|'jpeg'|'jpg', jpegQuality?: number}} [options]
  * @returns {Promise<object>} Görsel ve tablo meta verileri
  */
-async function generateWeeklyTableCanvas(db, passedReadingGroupId = null, options = {}) {
+async function generateWeeklyTableCanvas(db, passedReadingGroupId, options = {}) {
   if (!db) throw new Error('Veritabanı bağlantısı aktif değil.');
 
   const normalizedOutputFormat = String(options.outputFormat || 'png').toLowerCase() === 'jpeg'
@@ -385,21 +385,8 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId = null, option
     ? Math.max(1, Math.min(100, requestedJpegQuality))
     : OUTPUT_JPEG_QUALITY;
 
-  let readingGroupId = (passedReadingGroupId || '').trim();
-  if (!readingGroupId) {
-    const configKey = process.env.CONFIG_KEY?.trim();
-    if (!configKey) throw new Error('CONFIG_KEY tanımlanmamış. .env dosyanıza CONFIG_KEY ekleyin.');
-    try {
-      const pollConfig = await db.collection('poll_config').findOne({ _id: configKey });
-      if (pollConfig?.readingGroupId && typeof pollConfig.readingGroupId === 'string' && pollConfig.readingGroupId.trim() !== '') {
-        readingGroupId = pollConfig.readingGroupId.trim();
-      } else {
-        readingGroupId = configKey;
-      }
-    } catch (e) {
-      readingGroupId = configKey;
-    }
-  }
+  const readingGroupId = String(passedReadingGroupId || '').trim();
+  if (!readingGroupId) throw new Error('Haftalık tablo için readingGroupId gereklidir.');
 
   const usersColl = db.collection(`users_${readingGroupId}`);
   const statusesColl = db.collection(`readingstatuses_${readingGroupId}`);
