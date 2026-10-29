@@ -563,6 +563,14 @@ const DEFAULT_GROUP_CONFIG_FEATURES = Object.freeze({
   esmaulhusnaEnabled: false
 });
 
+const DEFAULT_GROUP_CONFIG_SCHEDULES = Object.freeze({
+  poll: Object.freeze({ hour: 9, minute: 0 }),
+  sentence: Object.freeze({ weekdays: Object.freeze([2, 4]), hour: 22, minute: 30 }),
+  esmaulhusna: Object.freeze({ weekdays: Object.freeze([3, 5]), hour: 22, minute: 30 })
+});
+
+const GROUP_CONFIG_SCHEDULE_KEYS = Object.freeze(['poll', 'sentence', 'esmaulhusna']);
+
 const GROUP_CONFIG_FEATURE_FIELDS = Object.freeze({
   pollEnabled: 'featurePollEnabled',
   voteTrackingEnabled: 'featureVoteTrackingEnabled',
@@ -597,6 +605,78 @@ function normalizeGroupConfigFeatures(doc = {}) {
   return features;
 }
 
+function cloneDefaultGroupConfigSchedules() {
+  return {
+    poll: { ...DEFAULT_GROUP_CONFIG_SCHEDULES.poll },
+    sentence: {
+      ...DEFAULT_GROUP_CONFIG_SCHEDULES.sentence,
+      weekdays: [...DEFAULT_GROUP_CONFIG_SCHEDULES.sentence.weekdays]
+    },
+    esmaulhusna: {
+      ...DEFAULT_GROUP_CONFIG_SCHEDULES.esmaulhusna,
+      weekdays: [...DEFAULT_GROUP_CONFIG_SCHEDULES.esmaulhusna.weekdays]
+    }
+  };
+}
+
+function normalizeGroupConfigSchedules(source = {}) {
+  const defaults = cloneDefaultGroupConfigSchedules();
+  const normalized = {};
+  for (const key of GROUP_CONFIG_SCHEDULE_KEYS) {
+    const fallback = defaults[key];
+    const value = source?.[key];
+    const hour = Number.isInteger(value?.hour) && value.hour >= 0 && value.hour <= 23
+      ? value.hour
+      : fallback.hour;
+    const minute = Number.isInteger(value?.minute) && value.minute >= 0 && value.minute <= 59
+      ? value.minute
+      : fallback.minute;
+    normalized[key] = { hour, minute };
+    if (key !== 'poll') {
+      const weekdays = Array.isArray(value?.weekdays)
+        ? [...new Set(value.weekdays.filter(day => Number.isInteger(day) && day >= 1 && day <= 7))]
+        : [];
+      normalized[key].weekdays = weekdays.length === 2 ? weekdays : [...fallback.weekdays];
+    }
+  }
+  return normalized;
+}
+
+function validateGroupConfigSchedules(input, baseSchedules = null) {
+  const base = normalizeGroupConfigSchedules(baseSchedules || {});
+  if (input === undefined) return { success: true, schedules: base };
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { success: false, code: 'INVALID_GROUP_SCHEDULES', message: 'Zamanlama ayarları geçersiz.' };
+  }
+  const unknownKey = Object.keys(input).find(key => !GROUP_CONFIG_SCHEDULE_KEYS.includes(key));
+  if (unknownKey) {
+    return { success: false, code: 'INVALID_GROUP_SCHEDULE', message: `Bilinmeyen zamanlama türü: ${unknownKey}` };
+  }
+
+  const schedules = {};
+  for (const key of GROUP_CONFIG_SCHEDULE_KEYS) {
+    const provided = input[key];
+    if (provided !== undefined && (!provided || typeof provided !== 'object' || Array.isArray(provided))) {
+      return { success: false, code: 'INVALID_GROUP_SCHEDULE', message: `${key} zamanlaması geçersiz.` };
+    }
+    const candidate = { ...base[key], ...(provided || {}) };
+    if (!Number.isInteger(candidate.hour) || candidate.hour < 0 || candidate.hour > 23 ||
+        !Number.isInteger(candidate.minute) || candidate.minute < 0 || candidate.minute > 59) {
+      return { success: false, code: 'INVALID_GROUP_SCHEDULE_TIME', message: 'Saat 00:00 ile 23:59 arasında olmalıdır.' };
+    }
+    schedules[key] = { hour: candidate.hour, minute: candidate.minute };
+    if (key !== 'poll') {
+      if (!Array.isArray(candidate.weekdays) || candidate.weekdays.length !== 2 ||
+          candidate.weekdays.some(day => !Number.isInteger(day) || day < 1 || day > 7) ||
+          new Set(candidate.weekdays).size !== 2) {
+        return { success: false, code: 'INVALID_GROUP_SCHEDULE_DAYS', message: 'Haftalık gönderimler için iki farklı gün seçilmelidir.' };
+      }
+      schedules[key].weekdays = [...candidate.weekdays];
+    }
+  }
+  return { success: true, schedules };
+}
+
 function normalizeGroupConfigDocument(doc) {
   if (!doc) return null;
   return {
@@ -609,6 +689,7 @@ function normalizeGroupConfigDocument(doc) {
       ? doc.options.map(option => String(option))
       : [...DEFAULT_POLL_OPTIONS],
     features: normalizeGroupConfigFeatures(doc),
+    schedules: normalizeGroupConfigSchedules(doc.schedules),
     esmaulhusnaIndex: Number.isInteger(doc.esmaulhusnaIndex) && doc.esmaulhusnaIndex >= 1
       ? doc.esmaulhusnaIndex
       : 1,
@@ -729,16 +810,19 @@ async function createGroupConfig(configData = {}) {
     : [...DEFAULT_POLL_OPTIONS];
   const validation = validateGroupConfigValues({ groupId, readingGroupId, titleTemplate, options });
   if (!validation.success) return { ...validation, status: 400 };
+  const scheduleValidation = validateGroupConfigSchedules(configData.schedules);
+  if (!scheduleValidation.success) return { ...scheduleValidation, status: 400 };
 
   const now = new Date();
   const doc = {
     _id: randomUUID(),
-    schemaVersion: 2,
+    schemaVersion: 3,
     configKey,
     groupId,
     readingGroupId,
     titleTemplate,
     options,
+    schedules: scheduleValidation.schedules,
     esmaulhusnaIndex: Number.isInteger(configData.esmaulhusnaIndex) && configData.esmaulhusnaIndex >= 1
       ? configData.esmaulhusnaIndex
       : 1,
@@ -787,6 +871,8 @@ async function updateGroupConfig(id, configData = {}, passedConfigKey = null) {
     : (Array.isArray(configData.options) ? configData.options.map(option => String(option).trim()).filter(Boolean) : []);
   const validation = validateGroupConfigValues({ groupId, readingGroupId, titleTemplate, options });
   if (!validation.success) return { ...validation, status: 400 };
+  const scheduleValidation = validateGroupConfigSchedules(configData.schedules, current.schedules);
+  if (!scheduleValidation.success) return { ...scheduleValidation, status: 400 };
 
   // PATCH semantiğini koru: doğrulama tüm birleşik belge üzerinde yapılır,
   // fakat yalnızca istekte gerçekten bulunan alanlar yazılır. Böylece farklı
@@ -797,6 +883,10 @@ async function updateGroupConfig(id, configData = {}, passedConfigKey = null) {
   if (configData.readingGroupId !== undefined) setFields.readingGroupId = readingGroupId;
   if (configData.titleTemplate !== undefined) setFields.titleTemplate = titleTemplate;
   if (configData.options !== undefined) setFields.options = options;
+  if (configData.schedules !== undefined) {
+    setFields.schedules = scheduleValidation.schedules;
+    setFields.schemaVersion = 3;
+  }
   const features = configData.features || {};
   for (const [featureName, fieldName] of Object.entries(GROUP_CONFIG_FEATURE_FIELDS)) {
     if (typeof features[featureName] === 'boolean') setFields[fieldName] = features[featureName];
@@ -850,6 +940,25 @@ async function updateGroupConfigRuntimeState(id, runtimeFields = {}, passedConfi
   } catch (error) {
     console.warn('⚠️ Grup eşleşmesi çalışma durumu güncellenemedi:', error.message);
     return { success: false, status: 500, code: 'GROUP_CONFIG_RUNTIME_UPDATE_FAILED', message: 'Eşleşme çalışma durumu kaydedilemedi.' };
+  }
+}
+
+async function claimGroupConfigScheduleRun(id, scheduleKey, runSlot, passedConfigKey = null) {
+  if (!dbEnabled || !db) return false;
+  const configKey = normalizeConfigKey(passedConfigKey);
+  const key = String(scheduleKey || '').trim();
+  const slot = String(runSlot || '').trim();
+  if (!configKey || !id || !GROUP_CONFIG_SCHEDULE_KEYS.includes(key) || !slot) return false;
+  const field = `scheduleLastRuns.${key}`;
+  try {
+    const result = await db.collection(GROUP_CONFIG_COLLECTION).updateOne(
+      { _id: String(id), configKey, [field]: { $ne: slot } },
+      { $set: { [field]: slot, updatedAt: new Date() } }
+    );
+    return result.modifiedCount === 1;
+  } catch (error) {
+    console.warn(`⚠️ ${key} zamanlama çalıştırması rezerve edilemedi:`, error.message);
+    return false;
   }
 }
 
@@ -1757,7 +1866,10 @@ module.exports = {
   updateGroupConfig,
   deleteGroupConfig,
   updateGroupConfigRuntimeState,
+  claimGroupConfigScheduleRun,
   DEFAULT_GROUP_CONFIG_FEATURES,
+  DEFAULT_GROUP_CONFIG_SCHEDULES,
+  validateGroupConfigSchedules,
   isValidReadingGroupId,
   saveLidMapping,
   getAllLidMappings,

@@ -913,6 +913,22 @@
       margin-top: 12px;
     }
 
+    .schedule-settings-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 110px;
+      gap: 8px;
+      align-items: end;
+    }
+
+    .schedule-settings-grid .select-input,
+    .schedule-settings-grid input[type="time"] {
+      box-sizing: border-box;
+      height: 42px;
+      min-height: 42px;
+      margin-top: 5px;
+      margin-bottom: 0;
+    }
+
     /* Mobil: paneller ekranı doldursun, yatay taşma sayfayı küçültmesin */
     @media (max-width: 640px) {
       body {
@@ -1060,6 +1076,14 @@
 
       .modal-actions .btn {
         width: 100%;
+      }
+
+      .schedule-settings-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+
+      .schedule-time-field {
+        grid-column: 1 / -1;
       }
 
       #wpGroupPickerList,
@@ -1318,16 +1342,28 @@
           <div style="display: flex; flex-direction: column; gap: 10px;">
 
             <div
-              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Anket Gönderimi</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her sabah 09:00'da gruba anket
-                  gönderir</div>
+              style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                <div style="min-width: 0;">
+                  <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Anket Gönderimi</div>
+                  <div id="ftPollScheduleSubtitle" style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her gün 09:00'da gruba gönderir</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button type="button" id="ftPollScheduleGearBtn" onclick="toggleScheduleSubSettings('poll')"
+                    title="Anket Zamanlama Ayarları"
+                    style="background: transparent; border: none; width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; line-height: 1; flex-shrink: 0;">⚙️</button>
+                  <label class="feature-toggle">
+                    <input type="checkbox" id="ftPollEnabled" onchange="onScheduledFeatureEnabledChange('poll')" />
+                    <span class="feature-slider"></span>
+                  </label>
+                </div>
               </div>
-              <label class="feature-toggle">
-                <input type="checkbox" id="ftPollEnabled" />
-                <span class="feature-slider"></span>
-              </label>
+              <div id="ftPollScheduleSubSettings"
+                style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,0.1);">
+                <label style="display:block;font-size:11px;color:var(--text-sub);margin-bottom:5px;">Gönderim saati</label>
+                <input type="time" id="ftPollScheduleTime" class="phone-input" value="09:00"
+                  style="width:100%;" onchange="onScheduleFieldChange(this)" />
+              </div>
             </div>
 
             <div
@@ -1357,28 +1393,77 @@
             </div>
 
             <div
-              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">💬 Rastgele Vecize Gönderimi</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her hafta Salı ve Perşembe 22:30'da gruba
-                  gönderir</div>
+              style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                <div style="min-width: 0;">
+                  <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">💬 Rastgele Vecize Gönderimi</div>
+                  <div id="ftSentenceScheduleSubtitle" style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her Salı ve Perşembe 22:30'da gruba gönderir</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button type="button" id="ftSentenceScheduleGearBtn" onclick="toggleScheduleSubSettings('sentence')"
+                    title="Vecize Zamanlama Ayarları"
+                    style="background: transparent; border: none; width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; line-height: 1; flex-shrink: 0;">⚙️</button>
+                  <label class="feature-toggle">
+                    <input type="checkbox" id="ftSentenceEnabled" checked onchange="onScheduledFeatureEnabledChange('sentence')" />
+                    <span class="feature-slider"></span>
+                  </label>
+                </div>
               </div>
-              <label class="feature-toggle">
-                <input type="checkbox" id="ftSentenceEnabled" checked />
-                <span class="feature-slider"></span>
-              </label>
+              <div id="ftSentenceScheduleSubSettings"
+                style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,0.1);">
+                <div class="schedule-settings-grid">
+                  <label style="font-size:11px;color:var(--text-sub);">1. gün
+                    <select id="ftSentenceScheduleDay1" class="select-input" style="width:100%;margin-top:5px;padding:8px;" onchange="onScheduleFieldChange(this)">
+                      <option value="1">Pazartesi</option><option value="2">Salı</option><option value="3">Çarşamba</option><option value="4">Perşembe</option><option value="5">Cuma</option><option value="6">Cumartesi</option><option value="7">Pazar</option>
+                    </select>
+                  </label>
+                  <label style="font-size:11px;color:var(--text-sub);">2. gün
+                    <select id="ftSentenceScheduleDay2" class="select-input" style="width:100%;margin-top:5px;padding:8px;" onchange="onScheduleFieldChange(this)">
+                      <option value="1">Pazartesi</option><option value="2">Salı</option><option value="3">Çarşamba</option><option value="4">Perşembe</option><option value="5">Cuma</option><option value="6">Cumartesi</option><option value="7">Pazar</option>
+                    </select>
+                  </label>
+                  <label class="schedule-time-field" style="font-size:11px;color:var(--text-sub);">Saat
+                    <input type="time" id="ftSentenceScheduleTime" class="phone-input" value="22:30" style="width:100%;margin-top:5px;" onchange="onScheduleFieldChange(this)" />
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div
-              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📿 Esmaül Hüsna Gönderimi</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her hafta Çarşamba ve Cuma 22:30'da gruba gönderir</div>
+              style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                <div style="min-width: 0;">
+                  <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📿 Esmaül Hüsna Gönderimi</div>
+                  <div id="ftEsmaulhusnaScheduleSubtitle" style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Her Çarşamba ve Cuma 22:30'da gruba gönderir</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button type="button" id="ftEsmaulhusnaScheduleGearBtn" onclick="toggleScheduleSubSettings('esmaulhusna')"
+                    title="Esmaül Hüsna Zamanlama Ayarları"
+                    style="background: transparent; border: none; width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; line-height: 1; flex-shrink: 0;">⚙️</button>
+                  <label class="feature-toggle">
+                    <input type="checkbox" id="ftEsmaulhusnaEnabled" onchange="onScheduledFeatureEnabledChange('esmaulhusna')" />
+                    <span class="feature-slider"></span>
+                  </label>
+                </div>
               </div>
-              <label class="feature-toggle">
-                <input type="checkbox" id="ftEsmaulhusnaEnabled" />
-                <span class="feature-slider"></span>
-              </label>
+              <div id="ftEsmaulhusnaScheduleSubSettings"
+                style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,0.1);">
+                <div class="schedule-settings-grid">
+                  <label style="font-size:11px;color:var(--text-sub);">1. gün
+                    <select id="ftEsmaulhusnaScheduleDay1" class="select-input" style="width:100%;margin-top:5px;padding:8px;" onchange="onScheduleFieldChange(this)">
+                      <option value="1">Pazartesi</option><option value="2">Salı</option><option value="3">Çarşamba</option><option value="4">Perşembe</option><option value="5">Cuma</option><option value="6">Cumartesi</option><option value="7">Pazar</option>
+                    </select>
+                  </label>
+                  <label style="font-size:11px;color:var(--text-sub);">2. gün
+                    <select id="ftEsmaulhusnaScheduleDay2" class="select-input" style="width:100%;margin-top:5px;padding:8px;" onchange="onScheduleFieldChange(this)">
+                      <option value="1">Pazartesi</option><option value="2">Salı</option><option value="3">Çarşamba</option><option value="4">Perşembe</option><option value="5">Cuma</option><option value="6">Cumartesi</option><option value="7">Pazar</option>
+                    </select>
+                  </label>
+                  <label class="schedule-time-field" style="font-size:11px;color:var(--text-sub);">Saat
+                    <input type="time" id="ftEsmaulhusnaScheduleTime" class="phone-input" value="22:30" style="width:100%;margin-top:5px;" onchange="onScheduleFieldChange(this)" />
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div
@@ -1491,12 +1576,14 @@
   <!-- Okuma Grubu Yönetici Girişi -->
   <div class="modal-overlay" id="readingGroupAdminLoginModal" style="z-index: 220;">
     <div class="modal-card" style="max-width: 400px;">
-      <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
-        <h4 style="font-size: 15px; color: #fff;">🔐 Yönetici Girişi</h4>
+      <div class="modal-header" style="align-items: center; margin-bottom: 14px;">
+        <h4 style="font-size: 16px; color: #fff; margin: 0;">📚 RoTaKip Grup Doğrulama</h4>
         <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
           onclick="closeReadingGroupAdminLogin()">✕</button>
       </div>
-      <p id="readingGroupAdminLoginHint" style="font-size: 12px; color: var(--text-sub); margin: 0 0 14px; line-height: 1.4;"></p>
+      <div style="background: rgba(14,165,233,.08); border: 1px solid rgba(56,189,248,.2); border-radius: 12px; padding: 10px 13px; margin-bottom: 15px; text-align: left;">
+        <div id="readingGroupAdminLoginHint" style="font-size: 14px; font-weight: 700; color: #e2e8f0;"></div>
+      </div>
       <div style="display: flex; flex-direction: column; gap: 12px; text-align: left;">
         <div>
           <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">Yönetici adı</label>
@@ -1509,7 +1596,7 @@
         </div>
         <p id="rgAdminLoginError" style="display:none; font-size: 12px; color: #f87171; margin: 0;"></p>
         <button class="btn btn-primary" style="padding: 10px 16px;" onclick="submitReadingGroupAdminLogin()">
-          Giriş Yap
+          Doğrula
         </button>
       </div>
     </div>
@@ -1589,7 +1676,7 @@
               Ekle</button>
           </div>
           <div id="cfgOptionsList"
-            style="display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; padding-right: 4px;">
+            style="display: flex; flex-direction: column; gap: 6px;">
           </div>
         </div>
 
@@ -1641,7 +1728,7 @@
   <div class="toast" id="toastMsg"></div>
 
   <script>
-    const APP_VERSION = '2.0.0';
+    const APP_VERSION = '2.0.1';
     console.warn(
       `%c🚀 RoTaKip WhatsApp Panel v${APP_VERSION}`,
       'color:#0284c7;font-weight:700;font-size:13px;'
@@ -1673,6 +1760,33 @@
       leagueCongratulationEnabled: true
     });
 
+    const DEFAULT_GROUP_SCHEDULES = Object.freeze({
+      poll: Object.freeze({ hour: 9, minute: 0 }),
+      sentence: Object.freeze({ weekdays: Object.freeze([2, 4]), hour: 22, minute: 30 }),
+      esmaulhusna: Object.freeze({ weekdays: Object.freeze([3, 5]), hour: 22, minute: 30 })
+    });
+
+    function normalizeGroupSchedules(rawSchedules = {}) {
+      const normalizeTime = (value, fallback) => ({
+        hour: Number.isInteger(value?.hour) && value.hour >= 0 && value.hour <= 23 ? value.hour : fallback.hour,
+        minute: Number.isInteger(value?.minute) && value.minute >= 0 && value.minute <= 59 ? value.minute : fallback.minute
+      });
+      const normalizeWeekly = (value, fallback) => {
+        const time = normalizeTime(value, fallback);
+        const weekdays = Array.isArray(value?.weekdays) && value.weekdays.length === 2 &&
+          value.weekdays.every(day => Number.isInteger(day) && day >= 1 && day <= 7) &&
+          new Set(value.weekdays).size === 2
+          ? [...value.weekdays]
+          : [...fallback.weekdays];
+        return { ...time, weekdays };
+      };
+      return {
+        poll: normalizeTime(rawSchedules.poll, DEFAULT_GROUP_SCHEDULES.poll),
+        sentence: normalizeWeekly(rawSchedules.sentence, DEFAULT_GROUP_SCHEDULES.sentence),
+        esmaulhusna: normalizeWeekly(rawSchedules.esmaulhusna, DEFAULT_GROUP_SCHEDULES.esmaulhusna)
+      };
+    }
+
     function normalizeGroupConfig(raw) {
       const config = raw || {};
       return {
@@ -1680,7 +1794,8 @@
         id: String(config.id || config._id || ''),
         groupId: String(config.groupId || ''),
         readingGroupId: String(config.readingGroupId || ''),
-        features: { ...DEFAULT_GROUP_FEATURES, ...(config.features || {}) }
+        features: { ...DEFAULT_GROUP_FEATURES, ...(config.features || {}) },
+        schedules: normalizeGroupSchedules(config.schedules)
       };
     }
 
@@ -2165,6 +2280,106 @@
       };
     }
 
+    const SCHEDULE_DAY_NAMES = Object.freeze({
+      1: 'Pazartesi', 2: 'Salı', 3: 'Çarşamba', 4: 'Perşembe',
+      5: 'Cuma', 6: 'Cumartesi', 7: 'Pazar'
+    });
+
+    function scheduleTimeValue(scheduleConfig) {
+      return `${String(scheduleConfig.hour).padStart(2, '0')}:${String(scheduleConfig.minute).padStart(2, '0')}`;
+    }
+
+    function parseScheduleTime(value) {
+      const match = String(value || '').match(/^(\d{2}):(\d{2})$/);
+      if (!match) return null;
+      const hour = Number(match[1]);
+      const minute = Number(match[2]);
+      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+      return { hour, minute };
+    }
+
+    function setPersistedScheduleFieldValue(id, value) {
+      const field = document.getElementById(id);
+      field.value = String(value);
+      field.dataset.persistedValue = String(value);
+    }
+
+    function markCurrentScheduleFieldsPersisted() {
+      [
+        'ftPollScheduleTime',
+        'ftSentenceScheduleDay1', 'ftSentenceScheduleDay2', 'ftSentenceScheduleTime',
+        'ftEsmaulhusnaScheduleDay1', 'ftEsmaulhusnaScheduleDay2', 'ftEsmaulhusnaScheduleTime'
+      ].forEach(id => {
+        const field = document.getElementById(id);
+        field.dataset.persistedValue = field.value;
+      });
+    }
+
+    function applyGroupConfigSchedulesToForm(rawSchedules = {}) {
+      const schedules = normalizeGroupSchedules(rawSchedules);
+      setPersistedScheduleFieldValue('ftPollScheduleTime', scheduleTimeValue(schedules.poll));
+      setPersistedScheduleFieldValue('ftSentenceScheduleDay1', schedules.sentence.weekdays[0]);
+      setPersistedScheduleFieldValue('ftSentenceScheduleDay2', schedules.sentence.weekdays[1]);
+      setPersistedScheduleFieldValue('ftSentenceScheduleTime', scheduleTimeValue(schedules.sentence));
+      setPersistedScheduleFieldValue('ftEsmaulhusnaScheduleDay1', schedules.esmaulhusna.weekdays[0]);
+      setPersistedScheduleFieldValue('ftEsmaulhusnaScheduleDay2', schedules.esmaulhusna.weekdays[1]);
+      setPersistedScheduleFieldValue('ftEsmaulhusnaScheduleTime', scheduleTimeValue(schedules.esmaulhusna));
+      updateScheduleSubtitles();
+    }
+
+    function readGroupConfigSchedulesFromForm() {
+      const pollTime = parseScheduleTime(document.getElementById('ftPollScheduleTime').value);
+      const sentenceTime = parseScheduleTime(document.getElementById('ftSentenceScheduleTime').value);
+      const esmaulhusnaTime = parseScheduleTime(document.getElementById('ftEsmaulhusnaScheduleTime').value);
+      if (!pollTime || !sentenceTime || !esmaulhusnaTime) return null;
+      return {
+        poll: pollTime,
+        sentence: {
+          weekdays: [
+            Number(document.getElementById('ftSentenceScheduleDay1').value),
+            Number(document.getElementById('ftSentenceScheduleDay2').value)
+          ],
+          ...sentenceTime
+        },
+        esmaulhusna: {
+          weekdays: [
+            Number(document.getElementById('ftEsmaulhusnaScheduleDay1').value),
+            Number(document.getElementById('ftEsmaulhusnaScheduleDay2').value)
+          ],
+          ...esmaulhusnaTime
+        }
+      };
+    }
+
+    function updateScheduleSubtitles() {
+      const schedules = readGroupConfigSchedulesFromForm();
+      if (!schedules) return;
+      document.getElementById('ftPollScheduleSubtitle').textContent =
+        `Her gün ${scheduleTimeValue(schedules.poll)}'da gruba gönderir`;
+      document.getElementById('ftSentenceScheduleSubtitle').textContent =
+        `Her ${SCHEDULE_DAY_NAMES[schedules.sentence.weekdays[0]]} ve ${SCHEDULE_DAY_NAMES[schedules.sentence.weekdays[1]]} ${scheduleTimeValue(schedules.sentence)}'da gruba gönderir`;
+      document.getElementById('ftEsmaulhusnaScheduleSubtitle').textContent =
+        `Her ${SCHEDULE_DAY_NAMES[schedules.esmaulhusna.weekdays[0]]} ve ${SCHEDULE_DAY_NAMES[schedules.esmaulhusna.weekdays[1]]} ${scheduleTimeValue(schedules.esmaulhusna)}'da gruba gönderir`;
+    }
+
+    function onScheduleFieldChange(field) {
+      const previousValue = field.dataset.persistedValue ?? '';
+      const nextValue = field.value;
+      const schedules = readGroupConfigSchedulesFromForm();
+      const invalidWeeklyDays = schedules && [schedules.sentence, schedules.esmaulhusna]
+        .some(scheduleConfig => new Set(scheduleConfig.weekdays).size !== 2);
+      if (!schedules || invalidWeeklyDays) {
+        field.value = previousValue;
+        updateScheduleSubtitles();
+        showToast(invalidWeeklyDays
+          ? '⚠️ Haftalık gönderimler için iki farklı gün seçmelisiniz.'
+          : '⚠️ Geçerli bir gönderim saati seçmelisiniz.');
+        return;
+      }
+      updateScheduleSubtitles();
+      queueGroupConfigSave({ changedSchedule: { field, previousValue, nextValue } });
+    }
+
     document.getElementById('groupSettingsModal').addEventListener('change', event => {
       if (!event.target.matches('input[type="checkbox"]')) return;
       const changedToggle = event.target;
@@ -2214,6 +2429,10 @@
       document.getElementById('ftWeeklyReportQuoteEnabled').checked = features.weeklyReportQuoteEnabled;
       document.getElementById('ftWeeklyTableEnabled').checked = features.weeklyTableEnabled;
       document.getElementById('ftLeagueCongratulationEnabled').checked = features.leagueCongratulationEnabled;
+      applyGroupConfigSchedulesToForm(config?.schedules);
+      document.getElementById('ftPollScheduleSubSettings').style.display = 'none';
+      document.getElementById('ftSentenceScheduleSubSettings').style.display = 'none';
+      document.getElementById('ftEsmaulhusnaScheduleSubSettings').style.display = 'none';
       document.getElementById('ftWeeklyReportSubSettings').style.display = 'none';
       syncFeatureDependentControls();
       document.getElementById('groupConfigEditor').style.display = 'flex';
@@ -2247,8 +2466,29 @@
     }
 
     function syncFeatureDependentControls() {
+      onScheduledFeatureEnabledChange('poll');
+      onScheduledFeatureEnabledChange('sentence');
+      onScheduledFeatureEnabledChange('esmaulhusna');
       onWeeklyReportEnabledChange();
       onLeagueCongratulationEnabledChange();
+    }
+
+    function toggleScheduleSubSettings(scheduleKey) {
+      const gearBtn = document.getElementById(`ft${scheduleKey === 'poll' ? 'Poll' : scheduleKey === 'sentence' ? 'Sentence' : 'Esmaulhusna'}ScheduleGearBtn`);
+      if (gearBtn.disabled) return;
+      const sub = document.getElementById(`ft${scheduleKey === 'poll' ? 'Poll' : scheduleKey === 'sentence' ? 'Sentence' : 'Esmaulhusna'}ScheduleSubSettings`);
+      sub.style.display = (sub.style.display === 'none' || !sub.style.display) ? 'block' : 'none';
+    }
+
+    function onScheduledFeatureEnabledChange(scheduleKey) {
+      const prefix = scheduleKey === 'poll' ? 'Poll' : scheduleKey === 'sentence' ? 'Sentence' : 'Esmaulhusna';
+      const enabled = document.getElementById(`ft${prefix}Enabled`).checked;
+      const gearBtn = document.getElementById(`ft${prefix}ScheduleGearBtn`);
+      const sub = document.getElementById(`ft${prefix}ScheduleSubSettings`);
+      gearBtn.disabled = !enabled;
+      gearBtn.style.opacity = enabled ? '1' : '0.35';
+      gearBtn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+      if (!enabled) sub.style.display = 'none';
     }
 
     // Okuma Serisi Raporu ⚙️ ayar paneli aç/kapa (rapor pasifken devre dışı)
@@ -2437,7 +2677,8 @@
       const body = {
         groupId,
         readingGroupId,
-        features: readGroupConfigFeaturesFromForm()
+        features: readGroupConfigFeaturesFromForm(),
+        schedules: readGroupConfigSchedulesFromForm()
       };
 
       const restoreChangedToggle = () => {
@@ -2477,9 +2718,18 @@
         }
       };
 
+      const restoreChangedSchedule = () => {
+        const scheduleChange = changeContext?.changedSchedule;
+        const field = scheduleChange?.field;
+        if (!field?.isConnected || field.value !== scheduleChange.nextValue) return;
+        field.value = scheduleChange.previousValue;
+        updateScheduleSubtitles();
+      };
+
       const restoreFailedChange = () => {
         restoreChangedToggle();
         restoreChangedTarget();
+        restoreChangedSchedule();
       };
 
       try {
@@ -2504,6 +2754,11 @@
         groupConfigMutationVersion += 1;
         const returnedConfig = data.config || data.groupConfig || null;
         if (returnedConfig) upsertGroupConfigCache(returnedConfig);
+        markCurrentScheduleFieldsPersisted();
+        const changedSchedule = changeContext?.changedSchedule;
+        if (changedSchedule?.field?.isConnected && changedSchedule.field.value === changedSchedule.nextValue) {
+          changedSchedule.field.dataset.persistedValue = changedSchedule.nextValue;
+        }
         const savedId = String(
           data.config?.id || data.config?._id || data.groupConfig?.id || data.groupConfig?._id || data.id || existing?.id || ''
         );
@@ -2872,8 +3127,7 @@
     }
 
     function openReadingGroupAdminLogin(groupId, groupName) {
-      document.getElementById('readingGroupAdminLoginHint').textContent =
-        `"${groupName}" okuma grubu yönetici bilgilerinizi girin.`;
+      document.getElementById('readingGroupAdminLoginHint').textContent = groupName || groupId;
       document.getElementById('rgAdminUsername').value = '';
       document.getElementById('rgAdminPassword').value = '';
       document.getElementById('rgAdminLoginError').style.display = 'none';

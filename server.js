@@ -14,7 +14,7 @@ const {
   listGroupConfigs, getGroupConfigById,
   findGroupConfigByWhatsAppGroup, findGroupConfigByPair, createGroupConfig,
   updateGroupConfig, deleteGroupConfig, updateGroupConfigRuntimeState,
-  DEFAULT_GROUP_CONFIG_FEATURES,
+  claimGroupConfigScheduleRun, DEFAULT_GROUP_CONFIG_FEATURES,
   saveLidMapping, getAllLidMappings,
   getReadingGroupPhones, getMappedPhonesByConfigKey,
   deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence,
@@ -198,7 +198,7 @@ const MONTH_NAMES_TR = [
   'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
 ];
 
-// esmaülhüsna.json (Çarşamba ve Cuma sıralı gönderim için)
+// esmaülhüsna.json (eşleşmeye özel seçilen iki günde sıralı gönderim için)
 const ESMAULHUSNA_JSON = JSON.parse(fs.readFileSync(path.join(__dirname, 'esmaulhusna.json'), 'utf8'));
 
 
@@ -1925,36 +1925,98 @@ async function runForEnabledGroupConfigs(featureKey, label, worker) {
   return results;
 }
 
-function scheduleWhatsAppPollJob() {
-  const job = schedule.scheduleJob({ rule: '0 9 * * *', tz: 'Europe/Istanbul' }, async () => {
-    const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
-    console.log(`\n[ZAMANLAYICI - ${zaman}] Günlük WhatsApp anketi gönderimi başlatılıyor...`);
-    const results = await runForEnabledGroupConfigs('pollEnabled', 'WhatsApp anketi',
-      groupConfig => sendWhatsAppPoll({ groupConfig }));
-    console.log('[ZAMANLAYICI] WhatsApp Anket Gönderim Sonuçları:', results);
-  });
-  console.log("✅ WhatsApp Anket Zamanlayıcısı Kuruldu: Her gün saat 09:00 (TSİ)");
-  return job;
+const ISTANBUL_WEEKDAY_NUMBERS = Object.freeze({ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 });
+
+function getIstanbulScheduleParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Istanbul',
+    weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date).reduce((result, part) => {
+    if (part.type !== 'literal') result[part.type] = part.value;
+    return result;
+  }, {});
+  return {
+    weekday: ISTANBUL_WEEKDAY_NUMBERS[parts.weekday],
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    slot: `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+  };
 }
 
-/**
- * Her Salı ve Perşembe saat 22:30 TSİ'de rastgele vecize gönderir.
- * Cron: dakika=30, saat=22, gün=*, ay=*, haftanın günü=2,4 (Salı, Perşembe)
- */
-function scheduleSentenceJob() {
-  const job = schedule.scheduleJob({ rule: '30 22 * * 2,4', tz: 'Europe/Istanbul' }, async () => {
-    const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
-    console.log(`\n[ZAMANLAYICI - ${zaman}] Rastgele vecize gönderimi başlatılıyor...`);
-    const results = await runForEnabledGroupConfigs('sentenceEnabled', 'Vecize',
-      groupConfig => sendWhatsAppSentence({ groupConfig }));
-    console.log('[ZAMANLAYICI] Vecize Gönderim Sonuçları:', results);
+function isGroupScheduleDue(scheduleConfig, now, weekly = false) {
+  if (!scheduleConfig || scheduleConfig.hour !== now.hour || scheduleConfig.minute !== now.minute) return false;
+  return !weekly || (Array.isArray(scheduleConfig.weekdays) && scheduleConfig.weekdays.includes(now.weekday));
+}
+
+let configurableMessagingScheduleTail = Promise.resolve();
+
+async function dispatchConfigurableMessagingSchedules(fireDate = new Date()) {
+  const now = getIstanbulScheduleParts(fireDate);
+  const configs = await getActiveGroupConfigs();
+  const definitions = [
+    {
+      scheduleKey: 'poll',
+      featureKey: 'pollEnabled',
+      label: 'WhatsApp anketi',
+      weekly: false,
+      worker: groupConfig => sendWhatsAppPoll({ groupConfig })
+    },
+    {
+      scheduleKey: 'sentence',
+      featureKey: 'sentenceEnabled',
+      label: 'Vecize',
+      weekly: true,
+      worker: groupConfig => sendWhatsAppSentence({ groupConfig })
+    },
+    {
+      scheduleKey: 'esmaulhusna',
+      featureKey: 'esmaulhusnaEnabled',
+      label: 'Esmaül Hüsna',
+      weekly: true,
+      worker: groupConfig => sendEsmaulhusna({ groupConfig })
+    }
+  ];
+
+  for (const groupConfig of configs) {
+    for (const definition of definitions) {
+      if (groupConfig.features?.[definition.featureKey] !== true) continue;
+      if (!isGroupScheduleDue(groupConfig.schedules?.[definition.scheduleKey], now, definition.weekly)) continue;
+      const claimed = await claimGroupConfigScheduleRun(
+        groupConfig.id || groupConfig._id,
+        definition.scheduleKey,
+        now.slot,
+        getConfiguredConfigKey()
+      );
+      if (!claimed) continue;
+      try {
+        console.log(`[ZAMANLAYICI] ${definition.label} başlatılıyor [${groupConfig.groupId} → ${groupConfig.readingGroupId}]`);
+        const result = await definition.worker(groupConfig);
+        console.log(`[ZAMANLAYICI] ${definition.label} sonucu [${groupConfig.groupId}]:`, result);
+      } catch (error) {
+        console.error(`[ZAMANLAYICI] ${definition.label} hatası [${groupConfig.groupId} → ${groupConfig.readingGroupId}]:`, error);
+      }
+    }
+  }
+}
+
+function scheduleConfigurableMessagingJobs() {
+  const job = schedule.scheduleJob({ rule: '* * * * *', tz: 'Europe/Istanbul' }, fireDate => {
+    configurableMessagingScheduleTail = configurableMessagingScheduleTail
+      .then(() => dispatchConfigurableMessagingSchedules(fireDate))
+      .catch(error => console.error('[ZAMANLAYICI] Dinamik gönderim kontrolü hatası:', error));
   });
-  console.log("✅ Vecize Zamanlayıcısı Kuruldu: Her Salı ve Perşembe saat 22:30 (TSİ)");
+  console.log('✅ Anket, vecize ve Esmaül Hüsna dinamik zamanlayıcısı kuruldu (Europe/Istanbul)');
   return job;
 }
 
 // ============================================================================
-// ESMAÜL HÜSNA GÖNDERİMİ (Her Çarşamba ve Cuma 22:30 TSİ)
+// ESMAÜL HÜSNA GÖNDERİMİ (eşleşmeye özel iki gün ve saat)
 // ============================================================================
 
 async function sendEsmaulhusna(options = {}) {
@@ -2070,22 +2132,6 @@ async function sendEsmaulhusna(options = {}) {
       error: 'Esmaül Hüsna mesajı gönderilemedi.'
     };
   }
-}
-
-/**
- * Her Çarşamba ve Cuma saat 22:30 TSİ'de sıradaki Esmaül Hüsna'yı gönderir.
- * Cron: dakika=30, saat=22, gün=*, ay=*, haftanın günü=3,5 (Çarşamba, Cuma)
- */
-function scheduleEsmaulhusnaJob() {
-  const job = schedule.scheduleJob({ rule: '30 22 * * 3,5', tz: 'Europe/Istanbul' }, async () => {
-    const zaman = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
-    console.log(`\n[ZAMANLAYICI - ${zaman}] Esmaül Hüsna gönderimi başlatılıyor...`);
-    const results = await runForEnabledGroupConfigs('esmaulhusnaEnabled', 'Esmaül Hüsna',
-      groupConfig => sendEsmaulhusna({ groupConfig }));
-    console.log('[ZAMANLAYICI] Esmaül Hüsna Gönderim Sonuçları:', results);
-  });
-  console.log('✅ Esmaül Hüsna Zamanlayıcısı Kuruldu: Her Çarşamba ve Cuma saat 22:30 (TSİ)');
-  return job;
 }
 
 // ============================================================================
@@ -3083,9 +3129,7 @@ setPromotionHandler(readingGroupId => {
 
   try {
     initWhatsAppClient(true);
-    scheduleWhatsAppPollJob();
-    scheduleSentenceJob();
-    scheduleEsmaulhusnaJob();
+    scheduleConfigurableMessagingJobs();
     scheduleWeeklyReadingReportJob();
     scheduleWeeklyTableImageJob();
     scheduleLeagueCongratulationsJob();
@@ -3227,7 +3271,8 @@ app.post('/api/group-configs', async (req, res) => {
       readingGroupId: readingScope.readingGroupId,
       titleTemplate: req.body?.titleTemplate,
       options: req.body?.options,
-      features: requestedFeatures
+      features: requestedFeatures,
+      schedules: req.body?.schedules
     });
     if (result?.success !== false && sock && state.status === 'READY') {
       void fetchTargetGroupInfo().catch(error => console.warn('⚠️ Grup adları yenilenemedi:', error.message));
@@ -3270,6 +3315,7 @@ app.patch('/api/group-configs/:id', async (req, res) => {
 
     if (req.body?.titleTemplate !== undefined) changes.titleTemplate = req.body.titleTemplate;
     if (req.body?.options !== undefined) changes.options = req.body.options;
+    if (req.body?.schedules !== undefined) changes.schedules = req.body.schedules;
     const nextFeatures = { ...current.features, ...(req.body?.features || {}) };
     const phoneReadiness = await validateFeaturePhoneReadiness(
       nextReadingGroupId,

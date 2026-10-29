@@ -92,13 +92,14 @@ Bir eşleşme silindiğinde otomasyonları hemen durur ve ayar kartı panelden k
 
 | Görev | Zamanlama |
 | :--- | :--- |
-| Günlük okuma anketi | Her gün 09.00 |
-| Motivasyon cümlesi | Salı ve Perşembe 22.30 |
+| Günlük okuma anketi | Eşleşme ayarlarından belirlenen günlük saat |
+| Rastgele vecize | Eşleşme ayarlarından belirlenen iki gün ve saat |
+| Esmaül Hüsna | Eşleşme ayarlarından belirlenen iki gün ve saat |
 | Haftalık okuma raporu | Cumartesi 22.30 |
 | Haftalık tablo görseli | Pazartesi 22.30 |
 | Bekleyen lig kutlamaları | Her dakika |
 
-Tüm zamanlamalar `Europe/Istanbul` saat dilimini kullanır. Her otomatik görev **Grup Ayarları** bölümünden eşleşme bazında ayrı ayrı yönetilebilir. Bir eşleşmedeki gönderim hatası diğer eşleşmelerin çalışmasını durdurmaz.
+Tüm zamanlamalar `Europe/Istanbul` saat dilimini kullanır. Anket, rastgele vecize ve Esmaül Hüsna zamanları **Grup Ayarları** içindeki dişli düğmelerinden eşleşme bazında belirlenir. Bir eşleşmedeki gönderim hatası diğer eşleşmelerin çalışmasını durdurmaz.
 
 ## Mesajla Okuma Kaydı
 
