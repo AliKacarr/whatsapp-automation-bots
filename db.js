@@ -1173,6 +1173,23 @@ async function listUnresolvedVoterLids({ configKey, readingGroupId, groupId, lim
   }
 }
 
+async function countUnresolvedVoterLids({ configKey, readingGroupId, groupId }) {
+  if (!dbEnabled || !db) return 0;
+  const filter = {
+    configKey: String(configKey || '').trim(),
+    readingGroupId: String(readingGroupId || '').trim(),
+    groupId: String(groupId || '').trim()
+  };
+  if (Object.values(filter).some(value => !value)) return 0;
+
+  try {
+    return await db.collection(UNRESOLVED_VOTER_LIDS_COLLECTION).countDocuments(filter);
+  } catch (error) {
+    console.error('❌ Çözülemeyen voterLid sayma hatası:', error.message);
+    return 0;
+  }
+}
+
 /**
  * LID -> Telefon Numarası eşleşmesini MongoDB'deki lid_mappings koleksiyonuna kalıcı kaydeder.
  * configKey ile izole edilir: farklı kullanıcıların LID eşleşmeleri karışmaz.
@@ -1390,7 +1407,13 @@ async function listReadingGroupUsersForPhoneEdit(readingGroupId) {
           authority: u.authority || null
         };
       })
-      .sort((a, b) => a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' }));
+      .sort((a, b) => {
+        // Önce hiçbir iletişim kimliği girilmemiş üyeler, ardından yalnızca LID'si
+        // olanlar, en sonda telefon numarası bulunanlar gösterilir.
+        const rank = user => user.phone ? 2 : (user.voterLid ? 1 : 0);
+        return rank(a) - rank(b)
+          || a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' });
+      });
   } catch (err) {
     console.error('❌ listReadingGroupUsersForPhoneEdit hatası:', err.message);
     return [];
@@ -2102,6 +2125,7 @@ module.exports = {
   saveUnresolvedVoterLid,
   deleteUnresolvedVoterLid,
   listUnresolvedVoterLids,
+  countUnresolvedVoterLids,
   getReadingGroupPhones,
   getReadingGroupVoterLids,
   getMappedPhonesByConfigKey,

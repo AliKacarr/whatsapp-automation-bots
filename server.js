@@ -17,7 +17,7 @@ const {
   claimGroupConfigScheduleRun, DEFAULT_GROUP_CONFIG_FEATURES,
   saveLidMapping, getAllLidMappings,
   findReadingGroupUserByVoterLid, saveUnresolvedVoterLid, deleteUnresolvedVoterLid,
-  listUnresolvedVoterLids,
+  listUnresolvedVoterLids, countUnresolvedVoterLids,
   getReadingGroupPhones, getReadingGroupVoterLids, getMappedPhonesByConfigKey,
   deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence,
   calculateReadingStreaks, getPendingCongratulations,
@@ -2823,7 +2823,9 @@ async function getWhatsAppStatus(autoStartIfDisconnected = false) {
 const app = express();
 const port = process.env.PORT || 3000;
 const DASHBOARD_SESSION_COOKIE = 'dashboard_session';
-const DASHBOARD_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const DASHBOARD_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const READING_GROUP_ADMIN_GRANT_TTL_MS = 24 * 60 * 60 * 1000;
+const RECENT_DASHBOARD_AUTH_TTL_MS = 60 * 60 * 1000;
 const AUTH_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_ATTEMPT_LIMIT = 8;
 const dashboardSessions = new Map();
@@ -3086,7 +3088,7 @@ function grantReadingGroupAdmin(req, readingGroupId, username) {
   const grants = readingGroupAdminGrants.get(sessionId) || new Map();
   grants.set(String(readingGroupId), {
     username,
-    expiresAt: Date.now() + 30 * 60 * 1000
+    expiresAt: Date.now() + READING_GROUP_ADMIN_GRANT_TTL_MS
   });
   readingGroupAdminGrants.set(sessionId, grants);
 }
@@ -3120,7 +3122,7 @@ function limitSensitiveAction({ name, limit, windowMs }) {
 }
 
 function requireRecentDashboardAuth(req, res, next) {
-  if (!req.dashboardSession?.createdAt || Date.now() - req.dashboardSession.createdAt > 15 * 60 * 1000) {
+  if (!req.dashboardSession?.createdAt || Date.now() - req.dashboardSession.createdAt > RECENT_DASHBOARD_AUTH_TTL_MS) {
     return res.status(403).json({
       success: false,
       code: 'REAUTH_REQUIRED',
@@ -3564,15 +3566,21 @@ app.post('/api/reading-group-unresolved-lids', async (req, res) => {
 
     const groupId = String(scope.groupConfig?.groupId || '').trim();
     if (!groupId) {
-      return res.json({ success: true, readingGroupId: scope.readingGroupId, records: [] });
+      return res.json({ success: true, readingGroupId: scope.readingGroupId, count: 0, records: [] });
     }
-    const records = await listUnresolvedVoterLids({
+    const query = {
       configKey: getConfiguredConfigKey(),
       readingGroupId: scope.readingGroupId,
-      groupId,
-      limit: 200
-    });
-    return res.json({ success: true, readingGroupId: scope.readingGroupId, records });
+      groupId
+    };
+    const [records, count] = await Promise.all([
+      listUnresolvedVoterLids({
+        ...query,
+        limit: 200
+      }),
+      countUnresolvedVoterLids(query)
+    ]);
+    return res.json({ success: true, readingGroupId: scope.readingGroupId, count, records });
   } catch (error) {
     console.error('Çözülemeyen voterLid listesi hatası:', error);
     return res.status(500).json({ success: false, message: 'LID kayıtları alınamadı.' });

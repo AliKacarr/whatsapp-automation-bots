@@ -1608,16 +1608,23 @@
       <div class="modal-header" style="align-items: center; margin-bottom: 12px;">
         <div>
           <h4 style="font-size: 15px; color: #fff; margin: 0;">📱 Telefon Numaraları</h4>
-          <p id="readingGroupPhoneModalSub" style="font-size: 11px; color: var(--text-sub); margin: 4px 0 0;"></p>
+          <p id="readingGroupPhoneModalSub" style="font-size: 11px; color: #b2c2d2; margin: 4px 0 0;"></p>
         </div>
         <button class="btn btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;"
           onclick="closeReadingGroupPhoneModal()">✕</button>
       </div>
-      <button type="button" id="openReadingGroupLidBtn" class="btn btn-info" disabled
-        style="width:100%;padding:8px 12px;font-size:12px;margin-bottom:10px;"
-        onclick="openReadingGroupLidModal()">
-        Telefon Numarası Bilinmeyen Üyeleri Ayarla
-      </button>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(15,23,42,.45);text-align:left;">
+        <span style="min-width:0;color:#cbd5e1;font-size:11px;line-height:1.35;">
+          Grupta telefon numarasını bilmediğiniz üyeler mi var?
+        </span>
+        <button type="button" id="openReadingGroupLidBtn" class="btn btn-info" disabled
+          style="width:auto;min-width:max-content;padding:7px 9px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;"
+          onclick="openReadingGroupLidModal()">
+          LID Ayarla
+          <span id="unresolvedVoterLidPanelCount" title="Eşleştirme bekleyen LID kaydı"
+            style="display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:rgba(15,23,42,.8);border:1px solid rgba(255,255,255,.28);color:#fff;font-size:10px;font-weight:800;line-height:1;">—</span>
+        </button>
+      </div>
       <input type="text" id="readingGroupPhoneSearch" class="phone-input" style="width: 100%; margin-bottom: 10px;"
         placeholder="İsim veya telefon ile ara..." oninput="filterReadingGroupPhones(this.value)" />
       <div id="readingGroupPhoneList" style="max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;"></div>
@@ -1635,10 +1642,8 @@
       </div>
       <div style="background:rgba(14,165,233,.08);border:1px solid rgba(56,189,248,.2);border-radius:10px;padding:10px 12px;margin-bottom:10px;text-align:left;">
         <div style="font-size:13px;font-weight:700;color:#bae6fd;margin-bottom:5px;">Nasıl kullanılır?</div>
-        <div style="font-size:12px;color:var(--text-sub);line-height:1.55;">
-          Telefonu bilinmeyen üye ankete oy verdiğinde veya okuma mesajı yazdığında LID kaydı oluşur.
-          Aşağıdan LID'yi kopyalayıp doğru üyenin alanına yapıştırın.
-        </div>
+        <div style="font-size:12px;color:#b2c2d2;line-height:1.55;"> Telefon numarasını bilmediğiniz bir üye <u>ankete oy verdiğinde veya okuma mesajı yazdığında</u> LID kaydı oluşur. Aşağıdan bu LID bilgisini kopyalayıp doğru üyenin alanına yapıştırın. </div>
+
       </div>
       <div style="background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;margin-bottom:10px;text-align:left;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
@@ -1648,7 +1653,7 @@
         <div id="unresolvedVoterLidList" style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
       </div>
       <input type="text" id="readingGroupLidSearch" class="phone-input" style="width:100%;margin-bottom:10px;"
-        placeholder="Telefonu kaydedilmemiş üyelerde ara..." oninput="filterReadingGroupLidUsers(this.value)" />
+        placeholder="Telefon numarası kaydedilmemiş üyelerde ara..." oninput="filterReadingGroupLidUsers(this.value)" />
       <div id="readingGroupLidUserList" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
     </div>
   </div>
@@ -1762,7 +1767,7 @@
   <div class="toast" id="toastMsg"></div>
 
   <script>
-    const APP_VERSION = '2.0.2';
+    const APP_VERSION = '2.0.3';
     console.warn(
       `%c🚀 RoTaKip WhatsApp Panel v${APP_VERSION}`,
       'color:#0284c7;font-weight:700;font-size:13px;'
@@ -2985,9 +2990,11 @@
     let readingGroupPhoneCacheGroupId = '';
     let readingGroupPhoneLoadVersion = 0;
     let unresolvedVoterLidCache = [];
+    let unresolvedVoterLidDocumentCount = 0;
 
     const readingGroupAdminGrants = new Map();
-    const READING_GROUP_ADMIN_GRANT_TTL_MS = 29 * 60 * 1000;
+    // Sunucudaki 24 saatlik yetkiden bir dakika önce yerel kaydı yenilet.
+    const READING_GROUP_ADMIN_GRANT_TTL_MS = (24 * 60 - 1) * 60 * 1000;
 
     function getReadingGroupAdminAuth(groupId) {
       if (!groupId) return null;
@@ -3253,14 +3260,18 @@
       readingGroupPhoneCache = [];
       readingGroupPhoneCacheGroupId = '';
       unresolvedVoterLidCache = [];
+      unresolvedVoterLidDocumentCount = 0;
       const lidButton = document.getElementById('openReadingGroupLidBtn');
       if (lidButton) lidButton.disabled = true;
+      const unresolvedCountEl = document.getElementById('unresolvedVoterLidPanelCount');
+      if (unresolvedCountEl) unresolvedCountEl.textContent = '…';
       document.getElementById('readingGroupPhoneModalSub').textContent =
-        'Grup üyelerinin WhatsApp telefon numaralarını kaydedebilirsiniz.';
+        'Okuma tespiti için grup üyelerinin telefon numaralarını veya LID bilgilerini kaydedin.';
       document.getElementById('readingGroupPhoneSearch').value = '';
       document.getElementById('readingGroupPhoneList').innerHTML =
         '<div style="text-align:center;color:var(--text-sub);padding:20px;font-size:12px;">Yükleniyor...</div>';
       document.getElementById('readingGroupPhoneModal').style.display = 'flex';
+      void loadUnresolvedVoterLids();
 
       try {
         const res = await fetch('/api/reading-group-phones', {
@@ -3321,10 +3332,39 @@
         return;
       }
 
-      listEl.innerHTML = users.map(u => `
+      const sortedUsers = [...users].sort((a, b) => {
+        const rank = user => String(user.phone || '').trim()
+          ? 2
+          : (String(user.voterLid || '').trim() ? 1 : 0);
+        return rank(a) - rank(b)
+          || String(a.name || '').localeCompare(String(b.name || ''), 'tr', { sensitivity: 'base' });
+      });
+
+      listEl.innerHTML = sortedUsers.map((u, index) => {
+        const hasPhone = Boolean(String(u.phone || '').trim());
+        const hasVoterLid = Boolean(String(u.voterLid || '').trim());
+        const userRank = hasPhone ? 2 : (hasVoterLid ? 1 : 0);
+        const previousUser = index > 0 ? sortedUsers[index - 1] : null;
+        const previousRank = previousUser
+          ? (String(previousUser.phone || '').trim() ? 2 : (String(previousUser.voterLid || '').trim() ? 1 : 0))
+          : null;
+        const completedSectionDivider = userRank > 0 && previousRank === 0
+          ? `<div style="display:flex;align-items:center;gap:9px;margin:7px 2px 2px;color:#94a3b8;">
+              <span style="height:1px;flex:1;background:rgba(148,163,184,.25);"></span>
+              <span style="font-size:10px;font-weight:700;letter-spacing:.02em;white-space:nowrap;">Telefon veya LID eşleştirmesi tamamlananlar</span>
+              <span style="height:1px;flex:1;background:rgba(148,163,184,.25);"></span>
+            </div>`
+          : '';
+        const status = hasPhone
+          ? '<span style="color:#86efac;">Telefon kayıtlı</span>'
+          : (hasVoterLid
+            ? `<span style="color:#7dd3fc;">LID kayıtlı - ${escapeHtml(String(u.voterLid || ''))}</span>`
+            : '<span style="color:#fbbf24;">Telefon veya LID kayıtlı değil</span>');
+        return `${completedSectionDivider}
         <div style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.22);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:8px 10px;">
           <div style="min-width:0;flex:1;">
             <div style="font-size:12px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(u.name)}</div>
+            <div style="font-size:10px;line-height:1.25;margin-top:2px;">${status}</div>
           </div>
           <input type="text" id="rgPhoneInput_${u.id}" value="${escapeHtml(u.phone || '')}"
             placeholder="90XXXXXXXXXX"
@@ -3332,7 +3372,8 @@
           <button type="button" class="btn btn-secondary" style="width:auto;padding:5px 8px;font-size:11px;flex-shrink:0;"
             onclick="saveReadingGroupUserPhone('${u.id}')">Kaydet</button>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
     async function saveReadingGroupUserPhone(userId) {
@@ -3369,7 +3410,7 @@
         }
         const cached = readingGroupPhoneCache.find(u => u.id === userId);
         if (cached) cached.phone = data.phone || '';
-        if (input) input.value = data.phone || '';
+        filterReadingGroupPhones(document.getElementById('readingGroupPhoneSearch')?.value || '');
         showToast('✅ Telefon kaydedildi');
       } catch (e) {
         showToast('❌ Sunucu hatası');
@@ -3426,13 +3467,12 @@
         <div style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:8px 10px;text-align:left;">
           <div style="min-width:0;flex:1;">
             <div style="font-size:13px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(user.name)}</div>
-            <div style="font-size:10px;color:#fbbf24;line-height:1.25;margin-top:2px;">Telefon numarası kayıtlı değil</div>
           </div>
           <input type="text" id="rgVoterLidInput_${user.id}" value="${escapeHtml(user.voterLid || '')}"
             placeholder="LID bilgisini yapıştırın"
             style="box-sizing:border-box;width:190px;max-width:42%;height:32px;flex-shrink:0;background:rgba(15,23,42,.9);color:#bae6fd;border:1px solid rgba(56,189,248,.24);border-radius:6px;padding:0 8px;font-size:11px;font-family:monospace;" />
           <button type="button" class="btn btn-info" style="box-sizing:border-box;width:auto;height:32px;min-height:32px;padding:0 9px;font-size:10px;line-height:1;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;"
-            onclick="saveReadingGroupUserVoterLid('${user.id}')">LID Kaydet</button>
+            onclick="saveReadingGroupUserVoterLid('${user.id}')">Kaydet</button>
         </div>
       `).join('');
     }
@@ -3461,21 +3501,32 @@
             return;
           }
           listEl.innerHTML = `<div style="text-align:center;color:#f87171;padding:12px;font-size:11px;">${escapeHtml(data.message || 'LID kayıtları alınamadı')}</div>`;
+          const panelCountEl = document.getElementById('unresolvedVoterLidPanelCount');
+          if (panelCountEl) panelCountEl.textContent = '?';
           return;
         }
         unresolvedVoterLidCache = data.records || [];
+        unresolvedVoterLidDocumentCount = Number.isFinite(Number(data.count))
+          ? Number(data.count)
+          : unresolvedVoterLidCache.length;
         renderUnresolvedVoterLids();
       } catch (e) {
         listEl.innerHTML = '<div style="text-align:center;color:#f87171;padding:12px;font-size:11px;">Sunucu hatası</div>';
+        const panelCountEl = document.getElementById('unresolvedVoterLidPanelCount');
+        if (panelCountEl) panelCountEl.textContent = '?';
       }
     }
 
     function renderUnresolvedVoterLids() {
       const listEl = document.getElementById('unresolvedVoterLidList');
       const countEl = document.getElementById('unresolvedVoterLidCount');
-      countEl.textContent = unresolvedVoterLidCache.length ? `(${unresolvedVoterLidCache.length})` : '';
+      const panelCountEl = document.getElementById('unresolvedVoterLidPanelCount');
+      countEl.textContent = unresolvedVoterLidDocumentCount ? `(${unresolvedVoterLidDocumentCount})` : '';
+      if (panelCountEl) {
+        panelCountEl.textContent = String(unresolvedVoterLidDocumentCount);
+      }
       if (unresolvedVoterLidCache.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:12px;font-size:11px;">Çözülemeyen LID kaydı yok.</div>';
+        listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:12px;font-size:11px;">Çözülemeyen LID kaydı yok.</div>';
         return;
       }
 
@@ -3558,6 +3609,7 @@
         }
 
         unresolvedVoterLidCache = unresolvedVoterLidCache.filter(record => record.voterLid !== voterLid);
+        unresolvedVoterLidDocumentCount = Math.max(0, unresolvedVoterLidDocumentCount - 1);
         renderUnresolvedVoterLids();
         showToast('🗑️ LID kaydı silindi');
       } catch (error) {
@@ -3600,9 +3652,14 @@
         if (cached) cached.voterLid = data.voterLid || '';
         if (input) input.value = data.voterLid || '';
         if (data.voterLid) {
+          const wasUnresolved = unresolvedVoterLidCache.some(record => record.voterLid === data.voterLid);
           unresolvedVoterLidCache = unresolvedVoterLidCache.filter(record => record.voterLid !== data.voterLid);
+          if (wasUnresolved) {
+            unresolvedVoterLidDocumentCount = Math.max(0, unresolvedVoterLidDocumentCount - 1);
+          }
           renderUnresolvedVoterLids();
         }
+        filterReadingGroupPhones(document.getElementById('readingGroupPhoneSearch')?.value || '');
         showToast(data.voterLid ? '✅ voterLid kaydedildi' : '✅ voterLid temizlendi');
       } catch (e) {
         showToast('❌ Sunucu hatası');
