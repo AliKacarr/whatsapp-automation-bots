@@ -3540,14 +3540,14 @@
         const rawDetectedAt = String(record.updatedAt || record.createdAt || record.date || '').trim();
         const detectedAtMatch = rawDetectedAt.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?/);
         const detectedAt = detectedAtMatch
-          ? `${detectedAtMatch[1]}${detectedAtMatch[2] ? ` ${detectedAtMatch[2]}` : ''}`
+          ? `${detectedAtMatch[1]}${detectedAtMatch[2] ? ` · ${detectedAtMatch[2]}` : ''}`
           : rawDetectedAt;
         return `
           <div style="background:rgba(15,23,42,.72);border:1px solid rgba(56,189,248,.16);border-radius:8px;padding:8px 9px;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
               <div style="min-width:0;">
                 <div style="font-size:12px;font-weight:700;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${person}</div>
-                <div style="font-size:12px;line-height:1.4;color:var(--text-sub);margin-top:3px;">${escapeHtml(detectedAt)} · ${sourceLabel}</div>
+                <div style="font-size:12px;line-height:1.4;color:#cdcdcd;margin-top:3px;">${escapeHtml(detectedAt)} · ${sourceLabel}</div>
               </div>
               <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
                 <button type="button" class="copy-btn" style="font-size:11px;padding:5px 9px;"
@@ -3676,6 +3676,28 @@
       }).format(new Date());
     }
 
+    function formatIstanbulDateTime(value) {
+      if (!value) return '';
+      const legacyMatch = String(value).match(/^(\d{4}-\d{2}-\d{2})[ ](\d{2}:\d{2})/);
+      if (legacyMatch) return `${legacyMatch[1]} · ${legacyMatch[2]}`;
+
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return String(value);
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Istanbul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+      }).formatToParts(parsed).reduce((result, part) => {
+        result[part.type] = part.value;
+        return result;
+      }, {});
+      return `${parts.year}-${parts.month}-${parts.day} · ${parts.hour}:${parts.minute}`;
+    }
+
     // ----------------------------------------------------
     // ANKET ŞABLONU & DİNAMİK SEÇENEK YÖNETİMİ
     // ----------------------------------------------------
@@ -3695,7 +3717,9 @@
 
           const lastUpd = document.getElementById('configLastUpdate');
           if (lastUpd) {
-            lastUpd.innerText = activeConfig.updatedAt ? 'Güncelleme: ' + activeConfig.updatedAt : '';
+            lastUpd.innerText = activeConfig.updatedAt
+              ? `Güncelleme: ${formatIstanbulDateTime(activeConfig.updatedAt)}`
+              : '';
           }
           renderOptionInputs();
         }
