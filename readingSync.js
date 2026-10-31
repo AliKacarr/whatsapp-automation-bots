@@ -3,6 +3,7 @@ const {
   validateTextVoteSelectedOptions,
   isValidIsoDate
 } = require('./readingVoteValidation');
+const { normalizeVoterLid, voterLidVariants } = require('./whatsappIdentity');
 
 function trDate(value = new Date()) {
   return new Date(new Date(value).getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -222,10 +223,11 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
   async function syncPollVoteToReadingStatus(voteDoc) {
     if (!voteDoc || !voteDoc.pollId) return false;
 
-    // Oy veren kullanıcının telefon numarasını temizle (örn: 905010734844)
-    const rawPhone = voteDoc.voterPhone || voteDoc.voterJid || '';
+    // Telefon varsa önce onu, yoksa WhatsApp LID kimliğini kullan.
+    const rawPhone = voteDoc.voterPhone || '';
     const phone = formatPhoneNumber(rawPhone);
-    if (!phone) return false;
+    const voterLid = normalizeVoterLid(voteDoc.voterLid);
+    if (!phone && !voterLid) return false;
 
     // İlgili anketi aynı bot, okuma grubu ve WhatsApp grubu kapsamında bul.
     const pollFilter = { pollId: voteDoc.pollId };
@@ -273,7 +275,8 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
     if (targetGroupId) {
       // Doğrudan ilgili gruptan işlem yap
       const { users, readingStatuses } = getGroupCollections(targetGroupId);
-      const user = await users.findOne({ phone });
+      const userMatch = await findUserByPhoneOrVoterLid(users, phone, voterLid);
+      const user = userMatch.user;
 
       if (user) {
         const userId = user._id.toString();
@@ -297,7 +300,7 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
           console.log(`🗑️ WA anket: ${user.name} ${dateStr} silindi ${targetGroupId}`);
         }
       } else {
-        console.warn(`⚠️ WA anket: ${phone} bulunamadı ${targetGroupId}`);
+        console.warn(`⚠️ WA anket: ${userMatch.reason} ${phone || voterLid} ${targetGroupId}`);
         return false;
       }
       return true;
@@ -308,7 +311,8 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
       let matched = false;
       for (const group of groups) {
         const { users, readingStatuses } = getGroupCollections(group.groupId);
-        const user = await users.findOne({ phone });
+        const userMatch = await findUserByPhoneOrVoterLid(users, phone, voterLid);
+        const user = userMatch.user;
 
         if (user) {
           matched = true;
@@ -335,12 +339,27 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
     }
   }
 
-  /** text_votes: telefona göre kullanıcı bul; yoksa yalnızca benzersiz pushName ↔ name eşleşmesini kabul et */
-  async function findUserForWhatsAppVote(usersCollection, phone, pushName) {
+  async function findUserByPhoneOrVoterLid(usersCollection, phone, voterLid) {
     if (phone) {
       const byPhone = await usersCollection.findOne({ phone });
       if (byPhone) return { user: byPhone, matchedBy: 'phone' };
     }
+
+    const lidVariants = voterLidVariants(voterLid);
+    if (lidVariants.length > 0) {
+      const byLid = await usersCollection.find({ voterLid: { $in: lidVariants } }).limit(2).toArray();
+      if (byLid.length === 1) return { user: byLid[0], matchedBy: 'voterLid' };
+      if (byLid.length > 1) return { user: null, reason: 'ambiguous_voter_lid' };
+    }
+
+    return { user: null, reason: 'user_not_found' };
+  }
+
+  /** text_votes: telefon/LID ile kullanıcı bul; yoksa yalnızca benzersiz pushName ↔ name eşleşmesini kabul et */
+  async function findUserForWhatsAppVote(usersCollection, phone, voterLid, pushName) {
+    const identityMatch = await findUserByPhoneOrVoterLid(usersCollection, phone, voterLid);
+    if (identityMatch.user || identityMatch.reason === 'ambiguous_voter_lid') return identityMatch;
+
     const nameHint = pushName != null ? String(pushName).trim() : '';
     if (!nameHint) return { user: null, reason: 'user_not_found' };
     const byName = await usersCollection.find({
@@ -366,8 +385,9 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
   async function syncTextVoteToReadingStatus(voteDoc) {
     if (!voteDoc) return { success: false, reason: 'vote_not_found' };
 
-    const rawPhone = voteDoc.voterPhone || voteDoc.voterJid || '';
+    const rawPhone = voteDoc.voterPhone || '';
     const phone = formatPhoneNumber(rawPhone);
+    const voterLid = normalizeVoterLid(voteDoc.voterLid);
     const pushName = voteDoc.pushName || '';
     const dateStr = resolveTextVoteDate(voteDoc);
     if (!dateStr) return { success: false, reason: 'invalid_date' };
@@ -384,11 +404,11 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
 
     async function applyToGroup(groupId, groupName) {
       const { users, readingStatuses } = getGroupCollections(groupId);
-      const userMatch = await findUserForWhatsAppVote(users, phone, pushName);
+      const userMatch = await findUserForWhatsAppVote(users, phone, voterLid, pushName);
       const user = userMatch.user;
 
       if (!user) {
-        console.warn(`⚠️ WA mesaj: ${userMatch.reason} ${phone || pushName || '—'} ${groupId}`);
+        console.warn(`⚠️ WA mesaj: ${userMatch.reason} ${phone || voterLid || pushName || '—'} ${groupId}`);
         return { success: false, reason: userMatch.reason };
       }
 
@@ -438,7 +458,9 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
       for (const group of groups) {
         const outcome = await applyToGroup(group.groupId, group.groupName);
         if (outcome.success) matched = true;
-        else if (outcome.reason === 'ambiguous_push_name') unmatchedReason = outcome.reason;
+        else if (outcome.reason === 'ambiguous_push_name' || outcome.reason === 'ambiguous_voter_lid') {
+          unmatchedReason = outcome.reason;
+        }
       }
       return matched
         ? { success: true }

@@ -9,6 +9,7 @@ const { MongoClient } = require('mongodb');
 const { randomUUID, createHash } = require('crypto');
 const bcrypt = require('bcryptjs');
 const { createReadingSync } = require('./readingSync');
+const { normalizeVoterLid, voterLidVariants } = require('./whatsappIdentity');
 let readingSync = null;
 let promotionHandler = () => {};
 function setPromotionHandler(handler) { promotionHandler = handler; }
@@ -33,6 +34,7 @@ let dbEnabled = false;
 const DASHBOARD_AUTH_COLLECTION = 'auth-wob';
 const REMINDER_STATE_COLLECTION = 'reminder_delivery_state';
 const GROUP_CONFIG_COLLECTION = 'group_configs';
+const UNRESOLVED_VOTER_LIDS_COLLECTION = 'unresolved_voter_lids';
 
 /**
  * MONGO_URI ve DB_NAME tanımlı mı kontrol eder.
@@ -131,6 +133,12 @@ async function ensureCollectionIndexes() {
   await createSafeIndex('poll_votes', { pollId: 1 });
   await createSafeIndex('poll_votes', { configKey: 1, syncedVersion: 1 });
   await createSafeIndex('poll_votes', { pollId: 1, configKey: 1, readingGroupId: 1, groupId: 1, updatedAt: -1 });
+  await createSafeIndex(
+    UNRESOLVED_VOTER_LIDS_COLLECTION,
+    { configKey: 1, readingGroupId: 1, groupId: 1, voterLid: 1 },
+    { unique: true }
+  );
+  await createSafeIndex(UNRESOLVED_VOTER_LIDS_COLLECTION, { updatedAt: -1 });
   await createSafeIndex('pending_league_congratulations', { userId: 1, groupId: 1, league: 1 }, { unique: true });
   await createSafeIndex('pending_league_congratulations', { createdAt: 1 }, { expireAfterSeconds: 3600 });
   await createSafeIndex(REMINDER_STATE_COLLECTION, { configKey: 1, groupId: 1 }, { unique: true });
@@ -338,10 +346,14 @@ async function saveTextVote(voteData) {
   if (!dbEnabled || !db) return null;
 
   try {
-    const voterPhone = voteData.voterPhone || voteData.voterJid;
+    const voterLid = normalizeVoterLid(voteData.voterLid || voteData.rawLid);
+    const rawPhone = voteData.voterPhone || (!voterLid ? voteData.voterJid : '');
+    const voterPhone = String(rawPhone || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+    const validVoterPhone = /^\d{10,15}$/.test(voterPhone) ? voterPhone : '';
+    const voterIdentity = validVoterPhone || voterLid;
     const configKey = String(voteData.configKey || '').trim();
     const date = voteData.date;
-    if (!date || !voterPhone || !configKey) return null;
+    if (!date || !voterIdentity || !configKey) return null;
 
     let readingGroupId = voteData.readingGroupId;
     let groupId = voteData.groupId;
@@ -350,13 +362,13 @@ async function saveTextVote(voteData) {
     if (!readingGroupId || !groupId) return null;
 
     // Eski LID kaydı varsa ve telefon çözüldüyse temizle
-    if (voteData.rawLid && voteData.rawLid !== voterPhone && /^\d{10,15}$/.test(voterPhone)) {
+    if (voterLid && voterLid !== validVoterPhone && validVoterPhone) {
       try {
         const lidFilter = {
           date,
           readingGroupId,
           groupId,
-          $or: [{ voterJid: voteData.rawLid }, { voterPhone: voteData.rawLid }]
+          $or: [{ voterJid: voterLid }, { voterPhone: voterLid }, { voterLid }]
         };
         if (configKey) lidFilter.configKey = configKey;
         await db.collection('text_votes').deleteMany(lidFilter);
@@ -367,16 +379,17 @@ async function saveTextVote(voteData) {
       syncVersion: randomUUID(),
       syncStatus: 'pending',
       syncAttempts: 0,
-      voterPhone,
       selectedOptions: voteData.selectedOptions,
       readingGroupId,
       groupId,
       updatedAt: getTRDateString(voteData.updatedAt)
     };
+    if (validVoterPhone) setFields.voterPhone = validVoterPhone;
+    if (voterLid) setFields.voterLid = voterLid;
     if (voteData.pushName) setFields.pushName = voteData.pushName;
     setFields.configKey = configKey;
 
-    const filter = { voterJid: voterPhone, date, readingGroupId, groupId, configKey };
+    const filter = { voterJid: voterIdentity, date, readingGroupId, groupId, configKey };
 
     const result = await db.collection('text_votes').updateOne(
       filter,
@@ -467,14 +480,19 @@ async function saveVote(voteData) {
   if (!dbEnabled || !db) return null;
 
   try {
-    const voterPhone = voteData.voterPhone || voteData.voterJid;
+    const voterLid = normalizeVoterLid(voteData.voterLid || voteData.rawLid);
+    const rawPhone = voteData.voterPhone || (!voterLid ? voteData.voterJid : '');
+    const voterPhone = String(rawPhone || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+    const validVoterPhone = /^\d{10,15}$/.test(voterPhone) ? voterPhone : '';
+    const voterIdentity = validVoterPhone || voterLid;
+    if (!voterIdentity) return null;
 
     // Eğer önceden LID (ör: 114345098911975) olarak saklanmış eski bir oy varsa ve simdi telefon çözüldüyse eski kaydı temizle
-    if (voteData.rawLid && voteData.rawLid !== voterPhone && /^\d{10,15}$/.test(voterPhone)) {
+    if (voterLid && voterLid !== validVoterPhone && validVoterPhone) {
       try {
         await db.collection('poll_votes').deleteMany({
           pollId: voteData.pollId,
-          $or: [{ voterJid: voteData.rawLid }, { voterPhone: voteData.rawLid }]
+          $or: [{ voterJid: voterLid }, { voterPhone: voterLid }, { voterLid }]
         });
       } catch (cleanErr) { }
     }
@@ -490,12 +508,13 @@ async function saveVote(voteData) {
       syncVersion: randomUUID(),
       syncStatus: 'pending',
       syncAttempts: 0,
-      voterPhone: voterPhone,
       selectedOptions: voteData.selectedOptions,
       readingGroupId: readingGroupId,
       groupId: groupId,
       updatedAt: getTRDateString(voteData.updatedAt)
     };
+    if (validVoterPhone) setFields.voterPhone = validVoterPhone;
+    if (voterLid) setFields.voterLid = voterLid;
     if (voteData.pushName) {
       setFields.pushName = voteData.pushName;
     }
@@ -503,14 +522,14 @@ async function saveVote(voteData) {
     setFields.configKey = configKey;
 
     const result = await db.collection('poll_votes').updateOne(
-      { pollId: voteData.pollId, voterJid: voterPhone },
+      { pollId: voteData.pollId, voterJid: voterIdentity },
       {
         $set: setFields,
         $unset: { syncReason: 1, lastSyncError: 1, failedAt: 1, syncedVersion: 1 }
       },
       { upsert: true }
     );
-    await syncSavedVote('poll_votes', { pollId: voteData.pollId, voterJid: voterPhone });
+    await syncSavedVote('poll_votes', { pollId: voteData.pollId, voterJid: voterIdentity });
     const action = result.upsertedCount > 0 ? 'Yeni oy' : 'Oy güncelleme';
     // console.log(`🗳️ ${action}: ${voterPhone} → [${voteData.selectedOptions.join(', ')}] (readingGroupId: ${readingGroupId})`);
     return result;
@@ -1023,6 +1042,138 @@ function getConfigKey() {
 }
 
 /**
+ * Bir okuma grubunda WhatsApp LID ile kullanıcı arar. Aynı LID birden fazla
+ * kullanıcıya yanlışlıkla yazılmışsa güvenli biçimde eşleştirme yapmaz.
+ */
+async function findReadingGroupUserByVoterLid(readingGroupId, voterLid) {
+  if (!dbEnabled || !db || !readingGroupId) {
+    return { user: null, reason: 'db_not_ready' };
+  }
+
+  const gid = String(readingGroupId).trim();
+  const bareLid = normalizeVoterLid(voterLid);
+  const variants = voterLidVariants(bareLid);
+  if (!gid || !bareLid || variants.length === 0) {
+    return { user: null, reason: 'invalid_voter_lid' };
+  }
+
+  try {
+    const matches = await db.collection(`users_${gid}`)
+      .find({ voterLid: { $in: variants } })
+      .limit(2)
+      .toArray();
+    if (matches.length === 1) return { user: matches[0], voterLid: bareLid };
+    if (matches.length > 1) return { user: null, voterLid: bareLid, reason: 'ambiguous_voter_lid' };
+    return { user: null, voterLid: bareLid, reason: 'user_not_found' };
+  } catch (error) {
+    console.error('❌ voterLid kullanıcı arama hatası:', error.message);
+    return { user: null, voterLid: bareLid, reason: 'lookup_error' };
+  }
+}
+
+/**
+ * Telefonu çözülemeyen ve users_ içinde voterLid eşleşmesi bulunmayan kişiyi
+ * denetim amacıyla kaydeder. Oy seçimi/poll içeriği bilerek saklanmaz.
+ */
+async function saveUnresolvedVoterLid(data) {
+  if (!dbEnabled || !db) return null;
+
+  const configKey = String(data?.configKey || '').trim();
+  const readingGroupId = String(data?.readingGroupId || '').trim();
+  const groupId = String(data?.groupId || '').trim();
+  const voterLid = normalizeVoterLid(data?.voterLid);
+  if (!configKey || !readingGroupId || !groupId || !voterLid) return null;
+
+  const now = getTRDateString(data?.seenAt || new Date());
+  const setFields = {
+    date: String(data?.date || now.slice(0, 10)).slice(0, 10),
+    source: String(data?.source || 'poll').slice(0, 32),
+    reason: String(data?.reason || 'user_not_found').slice(0, 64),
+    updatedAt: now
+  };
+  const pushName = String(data?.pushName || '').trim().slice(0, 128);
+  const voterUsername = String(data?.voterUsername || '').trim().replace(/^@/, '').slice(0, 128);
+  if (pushName) setFields.pushName = pushName;
+  if (voterUsername) setFields.voterUsername = voterUsername;
+
+  const filter = { configKey, readingGroupId, groupId, voterLid };
+  try {
+    return await db.collection(UNRESOLVED_VOTER_LIDS_COLLECTION).updateOne(
+      filter,
+      {
+        $set: setFields,
+        $setOnInsert: { createdAt: now }
+      },
+      { upsert: true }
+    );
+  } catch (error) {
+    console.error('❌ Çözülemeyen voterLid kaydetme hatası:', error.message);
+    return null;
+  }
+}
+
+async function deleteUnresolvedVoterLid({ configKey, readingGroupId, groupId, voterLid }) {
+  if (!dbEnabled || !db) return null;
+  const bareLid = normalizeVoterLid(voterLid);
+  const filter = {
+    configKey: String(configKey || '').trim(),
+    readingGroupId: String(readingGroupId || '').trim(),
+    groupId: String(groupId || '').trim(),
+    voterLid: bareLid
+  };
+  if (Object.values(filter).some(value => !value)) return null;
+  try {
+    return await db.collection(UNRESOLVED_VOTER_LIDS_COLLECTION).deleteOne(filter);
+  } catch (error) {
+    console.error('❌ Çözülemeyen voterLid temizleme hatası:', error.message);
+    return null;
+  }
+}
+
+async function listUnresolvedVoterLids({ configKey, readingGroupId, groupId, limit = 100 }) {
+  if (!dbEnabled || !db) return [];
+  const filter = {
+    configKey: String(configKey || '').trim(),
+    readingGroupId: String(readingGroupId || '').trim(),
+    groupId: String(groupId || '').trim()
+  };
+  if (Object.values(filter).some(value => !value)) return [];
+
+  const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 250);
+  try {
+    const rows = await db.collection(UNRESOLVED_VOTER_LIDS_COLLECTION)
+      .find(filter, {
+        projection: {
+          voterLid: 1,
+          voterUsername: 1,
+          pushName: 1,
+          date: 1,
+          source: 1,
+          reason: 1,
+          createdAt: 1,
+          updatedAt: 1
+        }
+      })
+      .sort({ updatedAt: -1 })
+      .limit(safeLimit)
+      .toArray();
+    return rows.map(row => ({
+      voterLid: normalizeVoterLid(row.voterLid),
+      voterUsername: row.voterUsername || '',
+      pushName: row.pushName || '',
+      date: row.date || '',
+      source: row.source || '',
+      reason: row.reason || '',
+      createdAt: row.createdAt || '',
+      updatedAt: row.updatedAt || ''
+    })).filter(row => row.voterLid);
+  } catch (error) {
+    console.error('❌ Çözülemeyen voterLid listeleme hatası:', error.message);
+    return [];
+  }
+}
+
+/**
  * LID -> Telefon Numarası eşleşmesini MongoDB'deki lid_mappings koleksiyonuna kalıcı kaydeder.
  * configKey ile izole edilir: farklı kullanıcıların LID eşleşmeleri karışmaz.
  * @param {string} lid - LID değeri
@@ -1096,6 +1247,25 @@ async function getReadingGroupPhones(readingGroupId) {
     return [...phones];
   } catch (e) {
     console.error('❌ getReadingGroupPhones hatası:', e.message);
+    return [];
+  }
+}
+
+/**
+ * users_<readingGroupId> içindeki geçerli voterLid değerlerini normalize eder.
+ */
+async function getReadingGroupVoterLids(readingGroupId) {
+  if (!dbEnabled || !db || !readingGroupId) return [];
+  const gid = String(readingGroupId).trim();
+  if (!gid) return [];
+  try {
+    const users = await db.collection(`users_${gid}`).find(
+      { voterLid: { $exists: true, $nin: [null, ''] } },
+      { projection: { voterLid: 1 } }
+    ).toArray();
+    return [...new Set(users.map(user => normalizeVoterLid(user.voterLid)).filter(Boolean))];
+  } catch (error) {
+    console.error('❌ getReadingGroupVoterLids hatası:', error.message);
     return [];
   }
 }
@@ -1204,7 +1374,7 @@ async function listReadingGroupUsersForPhoneEdit(readingGroupId) {
   try {
     const usersCollName = `users_${String(readingGroupId).trim()}`;
     const users = await db.collection(usersCollName)
-      .find({}, { projection: { name: 1, username: 1, phone: 1, authority: 1 } })
+      .find({}, { projection: { name: 1, username: 1, phone: 1, voterLid: 1, authority: 1 } })
       .toArray();
 
     return users
@@ -1216,6 +1386,7 @@ async function listReadingGroupUsersForPhoneEdit(readingGroupId) {
           id: u._id.toString(),
           name: (u.name || u.username || 'Bilinmeyen').trim(),
           phone: /^\d{10,15}$/.test(barePhone) ? barePhone : (barePhone || ''),
+          voterLid: normalizeVoterLid(u.voterLid) || String(u.voterLid || '').trim(),
           authority: u.authority || null
         };
       })
@@ -1261,6 +1432,60 @@ async function updateReadingGroupUserPhone(readingGroupId, userId, phone) {
   } catch (err) {
     console.error('❌ updateReadingGroupUserPhone hatası:', err.message);
     return { success: false, message: 'Telefon numarası güncellenemedi.' };
+  }
+}
+
+/**
+ * Kullanıcının WhatsApp LID kimliğini günceller. Aynı normalize LID'nin aynı
+ * okuma grubunda iki kullanıcıya atanmasına izin verilmez.
+ */
+async function updateReadingGroupUserVoterLid(readingGroupId, userId, voterLid) {
+  if (!dbEnabled || !db) {
+    return { success: false, message: 'Veritabanı bağlantısı aktif değil.' };
+  }
+  const gid = String(readingGroupId || '').trim();
+  const uid = String(userId || '').trim();
+  if (!gid) return { success: false, message: 'readingGroupId gerekli.' };
+  if (!uid) return { success: false, message: 'userId gerekli.' };
+
+  const rawValue = String(voterLid || '').trim();
+  const bareLid = rawValue ? normalizeVoterLid(rawValue) : '';
+  if (rawValue && !bareLid) {
+    return { success: false, message: 'Geçerli bir LID girin (12–20 rakam veya ...@lid).' };
+  }
+
+  try {
+    const { ObjectId } = require('mongodb');
+    if (!ObjectId.isValid(uid)) return { success: false, message: 'Geçersiz kullanıcı kimliği.' };
+    const objectId = new ObjectId(uid);
+    const users = db.collection(`users_${gid}`);
+
+    if (bareLid) {
+      const existingLids = await users.find(
+        { _id: { $ne: objectId }, voterLid: { $exists: true, $nin: [null, ''] } },
+        { projection: { voterLid: 1, name: 1, username: 1 } }
+      ).toArray();
+      const duplicate = existingLids.find(user => normalizeVoterLid(user.voterLid) === bareLid);
+      if (duplicate) {
+        return {
+          success: false,
+          code: 'DUPLICATE_VOTER_LID',
+          message: `Bu LID zaten ${duplicate.name || duplicate.username || 'başka bir üye'} için kayıtlı.`
+        };
+      }
+    }
+
+    const result = await users.updateOne(
+      { _id: objectId },
+      { $set: { voterLid: bareLid } }
+    );
+    if (result.matchedCount === 0) {
+      return { success: false, message: 'Kullanıcı bulunamadı.' };
+    }
+    return { success: true, voterLid: bareLid };
+  } catch (error) {
+    console.error('❌ updateReadingGroupUserVoterLid hatası:', error.message);
+    return { success: false, message: 'LID bilgisi güncellenemedi.' };
   }
 }
 
@@ -1873,7 +2098,12 @@ module.exports = {
   isValidReadingGroupId,
   saveLidMapping,
   getAllLidMappings,
+  findReadingGroupUserByVoterLid,
+  saveUnresolvedVoterLid,
+  deleteUnresolvedVoterLid,
+  listUnresolvedVoterLids,
   getReadingGroupPhones,
+  getReadingGroupVoterLids,
   getMappedPhonesByConfigKey,
   deleteLidMappingsByConfigKey,
   getReadingGroups,
@@ -1890,6 +2120,7 @@ module.exports = {
   verifyReadingGroupAdmin,
   listReadingGroupUsersForPhoneEdit,
   updateReadingGroupUserPhone,
+  updateReadingGroupUserVoterLid,
   reserveRandomReminder,
   releaseReminderReservation
 };

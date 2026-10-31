@@ -16,13 +16,16 @@ const {
   updateGroupConfig, deleteGroupConfig, updateGroupConfigRuntimeState,
   claimGroupConfigScheduleRun, DEFAULT_GROUP_CONFIG_FEATURES,
   saveLidMapping, getAllLidMappings,
-  getReadingGroupPhones, getMappedPhonesByConfigKey,
+  findReadingGroupUserByVoterLid, saveUnresolvedVoterLid, deleteUnresolvedVoterLid,
+  listUnresolvedVoterLids,
+  getReadingGroupPhones, getReadingGroupVoterLids, getMappedPhonesByConfigKey,
   deleteLidMappingsByConfigKey, getReadingGroups, getRandomSentence,
   calculateReadingStreaks, getPendingCongratulations,
   completeCongratulation, getReadingGroupUser,
   listReadingGroupUsersForLeaguePrefs, updateLeagueCongratulationDelivery,
   normalizeLeagueCongratulationDelivery, verifyReadingGroupAdmin,
   listReadingGroupUsersForPhoneEdit, updateReadingGroupUserPhone,
+  updateReadingGroupUserVoterLid,
   reserveRandomReminder, releaseReminderReservation
 } = require('./db');
 const { generateWeeklyTableCanvas } = require('./weeklyTableImage');
@@ -31,6 +34,7 @@ const {
   getMaxReadingAmount,
   validateTextVoteSelectedOptions
 } = require('./readingVoteValidation');
+const { normalizeVoterLid } = require('./whatsappIdentity');
 const { encryptBaileysAuthValue, decryptBaileysAuthValue } = require('./security');
 
 // ============================================================================
@@ -607,6 +611,38 @@ async function getPhoneNumberFromJid(jid, groupId = null) {
   return null;
 }
 
+function getVoterLid(explicitLidCandidates = [], jidCandidates = []) {
+  for (const candidate of explicitLidCandidates) {
+    const voterLid = normalizeVoterLid(candidate);
+    if (voterLid) return voterLid;
+  }
+  for (const candidate of jidCandidates) {
+    const value = String(candidate || '').toLowerCase();
+    if (!value.includes('@lid') && !value.includes('@hosted.lid')) continue;
+    const voterLid = normalizeVoterLid(candidate);
+    if (voterLid) return voterLid;
+  }
+  return '';
+}
+
+async function getPhoneNumberFromCandidates(candidates, groupId) {
+  const seen = new Set();
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const value = String(candidate).trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    const phone = await getPhoneNumberFromJid(value, groupId);
+    if (phone) return phone;
+  }
+  return null;
+}
+
+async function resolveUserByVoterLid(readingGroupId, voterLid) {
+  if (!voterLid) return { user: null, reason: 'invalid_voter_lid' };
+  return findReadingGroupUserByVoterLid(readingGroupId, voterLid);
+}
+
 /**
  * Verilen JID/ID girdileri için (LID, PN JID, bare ID, :0 cihaz uzantısı vb.) tüm olası JID varyasyonlarını türetir.
  */
@@ -852,30 +888,65 @@ async function processPollVoteUpdate(pollUpdateMsg) {
     }
   }
 
-  // 5) Telefon numarasını çöz ve veritabanına kaydet / güncelle / sil
+  // 5) Telefon numarasını veya users_ içindeki voterLid kimliğini çöz.
   const activeVoterJid = successfulVoterJid || voterJid;
   const currentGroupId = pollDoc.groupId || pollMsg.key?.remoteJid;
-  const voterPhone = await getPhoneNumberFromJid(activeVoterJid, currentGroupId);
-  const rawLid = (activeVoterJid || '').split('@')[0].split(':')[0];
+  const currentReadingGroupId = pollDoc.readingGroupId;
+  const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
+  const voterLid = getVoterLid(
+    [pollUpdateMsg.key?.participantLid, pollUpdateMsg.key?.senderLid, isFromMe ? selfLid : null],
+    [pollUpdateMsg.key?.participant, activeVoterJid, rawVoterJid]
+  );
+  const voterPhone = await getPhoneNumberFromCandidates([
+    pollUpdateMsg.key?.participantPn,
+    pollUpdateMsg.key?.senderPn,
+    pollUpdateMsg.key?.participantAlt,
+    activeVoterJid,
+    rawVoterJid
+  ], currentGroupId);
   const pushName = pollUpdateMsg.pushName || pollUpdateMsg.verifiedBizName || (isFromMe ? (sock?.user?.name || 'Kendi Oyunuz') : null);
+  const voterUsername = pollUpdateMsg.key?.participantUsername || pollUpdateMsg.key?.remoteJidUsername || null;
 
-  console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone || 'ÇÖZÜLEMEDİ'} (JID: ${activeVoterJid}) → Seçimler:`, selectedOptionNames);
+  console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone || 'ÇÖZÜLEMEDİ'} (JID: ${activeVoterJid}, LID: ${voterLid || 'YOK'}) → Seçimler:`, selectedOptionNames);
 
   if (!voterPhone) {
-    console.warn(`⚠️ Oy kaydedilmedi — LID telefon numarasına çözülemedi (JID: ${activeVoterJid})`);
-    return;
+    const lidMatch = await resolveUserByVoterLid(currentReadingGroupId, voterLid);
+    if (!lidMatch.user) {
+      if (voterLid) {
+        await saveUnresolvedVoterLid({
+          configKey,
+          readingGroupId: currentReadingGroupId,
+          groupId: currentGroupId,
+          voterLid,
+          voterUsername,
+          pushName,
+          source: 'poll',
+          reason: lidMatch.reason,
+          date: getTRDateString().slice(0, 10)
+        });
+      }
+      console.warn(
+        `⚠️ Oy kaydedilmedi — telefon ve voterLid eşleşmesi bulunamadı ` +
+        `(JID: ${activeVoterJid}, LID: ${voterLid || 'YOK'}, neden: ${lidMatch.reason})`
+      );
+      return;
+    }
+    await deleteUnresolvedVoterLid({
+      configKey,
+      readingGroupId: currentReadingGroupId,
+      groupId: currentGroupId,
+      voterLid
+    });
   }
 
   // Oy, ayarlar sonradan değişmiş olsa bile anket oluşturulurken seçili olan
   // okuma grubuna yazılmalı.
-  const currentReadingGroupId = pollDoc.readingGroupId;
-  const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
-
   await saveVote({
     pollId: pollMsgId,
-    voterJid: voterPhone,
-    voterPhone: voterPhone,
-    rawLid: rawLid,
+    voterJid: voterPhone || voterLid,
+    voterPhone: voterPhone || undefined,
+    voterLid: voterLid || undefined,
+    rawLid: voterLid || undefined,
     pushName: pushName,
     selectedOptions: selectedOptionNames,
     readingGroupId: currentReadingGroupId,
@@ -885,9 +956,9 @@ async function processPollVoteUpdate(pollUpdateMsg) {
   });
 
   if (selectedOptionNames.length > 0) {
-    console.log(`💾 Oy DB'ye kaydedildi! (${voterPhone} -> ${selectedOptionNames.join(', ')})`);
+    console.log(`💾 Oy DB'ye kaydedildi! (${voterPhone || voterLid} -> ${selectedOptionNames.join(', ')})`);
   } else {
-    console.log(`🗑️ Oy geri çekildi, DB güncellendi (boş dizi)! (${voterPhone} -> [])`);
+    console.log(`🗑️ Oy geri çekildi, DB güncellendi (boş dizi)! (${voterPhone || voterLid} -> [])`);
   }
 }
 
@@ -989,22 +1060,56 @@ async function processReadingMessage(msg) {
   }
 
   const participantJid = msg.key?.participant || msg.participant || msg.key?.remoteJid;
-  const rawLid = participantJid ? (jidNormalizedUser ? jidNormalizedUser(participantJid) : participantJid).split('@')[0].split(':')[0] : null;
-  const voterPhone = await getPhoneNumberFromJid(participantJid, incomingGroupId);
-  if (!voterPhone) {
-    console.warn(`⚠️ Okuma mesajı kaydedilmedi — LID telefon numarasına çözülemedi (JID: ${participantJid})`);
-    return;
-  }
-
+  const voterLid = getVoterLid(
+    [msg.key?.participantLid, msg.key?.senderLid],
+    [msg.key?.participant, msg.participant]
+  );
+  const voterPhone = await getPhoneNumberFromCandidates([
+    msg.key?.participantPn,
+    msg.key?.senderPn,
+    msg.key?.participantAlt,
+    participantJid
+  ], incomingGroupId);
   const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
   const readingGroupId = groupConfig.readingGroupId;
+  if (!voterPhone) {
+    const lidMatch = await resolveUserByVoterLid(readingGroupId, voterLid);
+    if (!lidMatch.user) {
+      if (voterLid) {
+        await saveUnresolvedVoterLid({
+          configKey,
+          readingGroupId,
+          groupId: incomingGroupId,
+          voterLid,
+          voterUsername: msg.key?.participantUsername || msg.key?.remoteJidUsername,
+          pushName: msg.pushName,
+          source: 'message',
+          reason: lidMatch.reason,
+          date: getLogicalReadingDate(msg.messageTimestamp, parsed.isYesterday)
+        });
+      }
+      console.warn(
+        `⚠️ Okuma mesajı kaydedilmedi — telefon ve voterLid eşleşmesi bulunamadı ` +
+        `(JID: ${participantJid}, LID: ${voterLid || 'YOK'}, neden: ${lidMatch.reason})`
+      );
+      return;
+    }
+    await deleteUnresolvedVoterLid({
+      configKey,
+      readingGroupId,
+      groupId: incomingGroupId,
+      voterLid
+    });
+  }
+
   const date = getLogicalReadingDate(msg.messageTimestamp, parsed.isYesterday);
   const selectedOptions = parsed.clear ? [] : [parsed.pages];
 
   const result = await saveTextVote({
-    voterJid: voterPhone,
-    voterPhone,
-    rawLid: rawLid && rawLid !== voterPhone ? rawLid : undefined,
+    voterJid: voterPhone || voterLid,
+    voterPhone: voterPhone || undefined,
+    voterLid: voterLid || undefined,
+    rawLid: voterLid || undefined,
     selectedOptions,
     pushName: msg.pushName || undefined,
     readingGroupId,
@@ -1548,10 +1653,44 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
               ? (sock.user?.id || sock.user?.lid)
               : (voteKey.participant || voteKey.remoteJid);
             if (!voterJid) continue;
-            const voterPhone = await getPhoneNumberFromJid(voterJid, pollDoc.groupId || key.remoteJid);
+            const currentGroupId = pollDoc.groupId || key.remoteJid;
+            const voterLid = getVoterLid(
+              [voteKey.participantLid, voteKey.senderLid, voteKey.fromMe ? sock.user?.lid : null],
+              [voteKey.participant, voterJid]
+            );
+            const voterPhone = await getPhoneNumberFromCandidates([
+              voteKey.participantPn,
+              voteKey.senderPn,
+              voteKey.participantAlt,
+              voterJid
+            ], currentGroupId);
             if (!voterPhone) {
-              console.warn(`⚠️ Yedek oy atlandı — LID çözülemedi (JID: ${voterJid})`);
-              continue;
+              const lidMatch = await resolveUserByVoterLid(currentReadingGroupId, voterLid);
+              if (!lidMatch.user) {
+                if (voterLid) {
+                  await saveUnresolvedVoterLid({
+                    configKey,
+                    readingGroupId: currentReadingGroupId,
+                    groupId: currentGroupId,
+                    voterLid,
+                    voterUsername: voteKey.participantUsername || voteKey.remoteJidUsername,
+                    source: 'poll-update',
+                    reason: lidMatch.reason,
+                    date: getTRDateString().slice(0, 10)
+                  });
+                }
+                console.warn(
+                  `⚠️ Yedek oy atlandı — telefon ve voterLid eşleşmesi bulunamadı ` +
+                  `(JID: ${voterJid}, LID: ${voterLid || 'YOK'}, neden: ${lidMatch.reason})`
+                );
+                continue;
+              }
+              await deleteUnresolvedVoterLid({
+                configKey,
+                readingGroupId: currentReadingGroupId,
+                groupId: currentGroupId,
+                voterLid
+              });
             }
 
             const aggregatedVotes = getAggregateVotesInPollMessage({
@@ -1566,12 +1705,13 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
 
             await saveVote({
               pollId: key.id,
-              voterJid: voterPhone,
-              voterPhone,
-              rawLid: voterJid.split('@')[0].split(':')[0],
+              voterJid: voterPhone || voterLid,
+              voterPhone: voterPhone || undefined,
+              voterLid: voterLid || undefined,
+              rawLid: voterLid || undefined,
               selectedOptions,
               readingGroupId: currentReadingGroupId,
-              groupId: pollDoc.groupId || key.remoteJid,
+              groupId: currentGroupId,
               configKey,
               updatedAt: getTRDateString()
             });
@@ -3171,11 +3311,13 @@ async function validateFeaturePhoneReadiness(readingGroupId, nextFeatures = {}, 
   if (!requiresPhones) return { success: true };
   const phones = await getReadingGroupPhones(readingGroupId);
   if (phones.length > 0) return { success: true };
+  const voterLids = await getReadingGroupVoterLids(readingGroupId);
+  if (voterLids.length > 0) return { success: true };
   return {
     success: false,
     status: 400,
     code: 'READING_GROUP_PHONE_REQUIRED',
-    message: 'Oy takibi veya mesajlardan okuma tespiti için önce telefon numaralarını düzenleyin.'
+    message: 'Oy takibi veya mesajlardan okuma tespiti için önce telefon numarası ya da voterLid tanımlayın.'
   };
 }
 
@@ -3410,6 +3552,102 @@ app.put('/api/reading-group-phones/:userId', async (req, res) => {
   } catch (error) {
     console.error('Okuma grubu telefon güncelleme hatası:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Telefonu çözülemeyen WhatsApp LID kayıtları (admin doğrulaması zorunlu)
+app.post('/api/reading-group-unresolved-lids', async (req, res) => {
+  try {
+    const readingGroupId = req.body?.readingGroupId;
+    const scope = await getAuthorizedReadingGroup(req, readingGroupId, true, req.body?.groupConfigId);
+    if (!scope.success) return res.status(scope.status).json(scope);
+
+    const groupId = String(scope.groupConfig?.groupId || '').trim();
+    if (!groupId) {
+      return res.json({ success: true, readingGroupId: scope.readingGroupId, records: [] });
+    }
+    const records = await listUnresolvedVoterLids({
+      configKey: getConfiguredConfigKey(),
+      readingGroupId: scope.readingGroupId,
+      groupId,
+      limit: 200
+    });
+    return res.json({ success: true, readingGroupId: scope.readingGroupId, records });
+  } catch (error) {
+    console.error('Çözülemeyen voterLid listesi hatası:', error);
+    return res.status(500).json({ success: false, message: 'LID kayıtları alınamadı.' });
+  }
+});
+
+// Seçili çözülemeyen LID kaydını sil (admin doğrulaması zorunlu)
+app.delete('/api/reading-group-unresolved-lids/:voterLid', async (req, res) => {
+  try {
+    const voterLid = normalizeVoterLid(req.params.voterLid);
+    if (!voterLid) {
+      return res.status(400).json({ success: false, message: 'Geçerli bir LID gerekli.' });
+    }
+
+    const readingGroupId = req.body?.readingGroupId;
+    const scope = await getAuthorizedReadingGroup(req, readingGroupId, true, req.body?.groupConfigId);
+    if (!scope.success) return res.status(scope.status).json(scope);
+
+    const groupId = String(scope.groupConfig?.groupId || '').trim();
+    if (!groupId) {
+      return res.status(400).json({ success: false, message: 'Hedef WhatsApp grubu bulunamadı.' });
+    }
+
+    const result = await deleteUnresolvedVoterLid({
+      configKey: getConfiguredConfigKey(),
+      readingGroupId: scope.readingGroupId,
+      groupId,
+      voterLid
+    });
+    if (!result) {
+      return res.status(500).json({ success: false, message: 'LID kaydı silinemedi.' });
+    }
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ success: false, message: 'LID kaydı bulunamadı.' });
+    }
+    return res.json({ success: true, voterLid });
+  } catch (error) {
+    console.error('Çözülemeyen voterLid silme hatası:', error);
+    return res.status(500).json({ success: false, message: 'LID kaydı silinemedi.' });
+  }
+});
+
+// Üye voterLid güncelle (admin doğrulaması zorunlu)
+app.put('/api/reading-group-voter-lids/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const readingGroupId = req.body?.readingGroupId;
+    const scope = await getAuthorizedReadingGroup(req, readingGroupId, true, req.body?.groupConfigId);
+    if (!scope.success) return res.status(scope.status).json(scope);
+
+    const result = await updateReadingGroupUserVoterLid(
+      scope.readingGroupId,
+      userId,
+      req.body?.voterLid
+    );
+    if (!result.success) return res.status(400).json(result);
+
+    const groupId = String(scope.groupConfig?.groupId || '').trim();
+    if (result.voterLid && groupId) {
+      await deleteUnresolvedVoterLid({
+        configKey: getConfiguredConfigKey(),
+        readingGroupId: scope.readingGroupId,
+        groupId,
+        voterLid: result.voterLid
+      });
+    }
+    return res.json({
+      success: true,
+      readingGroupId: scope.readingGroupId,
+      userId,
+      voterLid: result.voterLid
+    });
+  } catch (error) {
+    console.error('Okuma grubu voterLid güncelleme hatası:', error);
+    return res.status(500).json({ success: false, message: 'LID bilgisi güncellenemedi.' });
   }
 });
 

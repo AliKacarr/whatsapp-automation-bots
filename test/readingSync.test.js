@@ -37,6 +37,9 @@ function createFixture({ vote, users }) {
         return users.find(user => filter.phone && user.phone === filter.phone) || null;
       },
       find(filter) {
+        if (filter.voterLid?.$in) {
+          return makeCursor(users.filter(user => filter.voterLid.$in.includes(user.voterLid)));
+        }
         const regex = new RegExp(filter.name.$regex, filter.name.$options);
         return makeCursor(users.filter(user => regex.test(user.name)));
       }
@@ -60,6 +63,77 @@ function createFixture({ vote, users }) {
       },
       find() {
         return makeCursor([{ groupId: 'group1', groupName: 'Test Grubu' }]);
+      }
+    },
+    pending_league_congratulations: {
+      async findOneAndUpdate() {
+        return {};
+      }
+    }
+  };
+
+  return {
+    db: {
+      collection(name) {
+        if (!collections[name]) throw new Error(`Beklenmeyen koleksiyon: ${name}`);
+        return collections[name];
+      }
+    },
+    getReadingStatusWrites: () => readingStatusWrites
+  };
+}
+
+function createPollFixture({ vote, users }) {
+  let readingStatusWrites = 0;
+  const collections = {
+    poll_votes: {
+      async findOne(filter) {
+        return filter._id === vote._id ? vote : null;
+      },
+      async updateOne(filter, update) {
+        if (filter._id !== vote._id || (filter.syncVersion && filter.syncVersion !== vote.syncVersion)) {
+          return { matchedCount: 0 };
+        }
+        Object.assign(vote, update.$set || {});
+        for (const key of Object.keys(update.$unset || {})) delete vote[key];
+        return { matchedCount: 1 };
+      }
+    },
+    polls: {
+      async findOne() {
+        return {
+          pollId: vote.pollId,
+          readingGroupId: 'group1',
+          groupId: vote.groupId,
+          configKey: vote.configKey,
+          createdAt: new Date('2026-10-18T09:00:00Z')
+        };
+      }
+    },
+    users_group1: {
+      async findOne(filter) {
+        return users.find(user => filter.phone && user.phone === filter.phone) || null;
+      },
+      find(filter) {
+        return makeCursor(users.filter(user => filter.voterLid?.$in?.includes(user.voterLid)));
+      }
+    },
+    readingstatuses_group1: {
+      async findOneAndUpdate() {
+        readingStatusWrites += 1;
+        return {};
+      },
+      async findOneAndDelete() {
+        readingStatusWrites += 1;
+        return {};
+      },
+      async countDocuments() {
+        return 1;
+      }
+    },
+    usergroups: {
+      async findOne() {
+        return { groupId: 'group1', groupName: 'Test Grubu' };
       }
     },
     pending_league_congratulations: {
@@ -111,6 +185,71 @@ test('successful text vote remains stored as synced', async () => {
   assert.deepEqual(result, { status: 'synced' });
   assert.equal(vote.syncStatus, 'synced');
   assert.equal(vote.syncedVersion, 'version1');
+  assert.equal(fixture.getReadingStatusWrites(), 1);
+});
+
+test('text vote without phone matches a unique users_ voterLid', async () => {
+  const vote = baseVote({
+    voterJid: '280762146414598',
+    voterPhone: undefined,
+    voterLid: '280762146414598',
+    pushName: undefined
+  });
+  const fixture = createFixture({
+    vote,
+    users: [{ _id: 'user1', name: 'Ali', phone: '', voterLid: '280762146414598' }]
+  });
+  const sync = createReadingSync({ db: fixture.db });
+
+  const result = await sync.processVote('text_votes', { _id: vote._id });
+
+  assert.deepEqual(result, { status: 'synced' });
+  assert.equal(vote.syncStatus, 'synced');
+  assert.equal(fixture.getReadingStatusWrites(), 1);
+});
+
+test('duplicate users_ voterLid values are rejected as ambiguous', async () => {
+  const vote = baseVote({
+    voterJid: '280762146414598',
+    voterPhone: undefined,
+    voterLid: '280762146414598',
+    pushName: undefined
+  });
+  const fixture = createFixture({
+    vote,
+    users: [
+      { _id: 'user1', name: 'Ali 1', phone: '', voterLid: '280762146414598' },
+      { _id: 'user2', name: 'Ali 2', phone: '', voterLid: '280762146414598@lid' }
+    ]
+  });
+  const sync = createReadingSync({ db: fixture.db });
+
+  const result = await sync.processVote('text_votes', { _id: vote._id });
+
+  assert.deepEqual(result, { status: 'ignored', reason: 'ambiguous_voter_lid' });
+  assert.equal(fixture.getReadingStatusWrites(), 0);
+});
+
+test('poll vote without phone matches users_ voterLid', async () => {
+  const vote = {
+    ...baseVote({
+      voterJid: '280762146414598',
+      voterPhone: undefined,
+      voterLid: '280762146414598',
+      pushName: undefined
+    }),
+    pollId: 'poll1'
+  };
+  const fixture = createPollFixture({
+    vote,
+    users: [{ _id: 'user1', name: 'Ali', phone: '', voterLid: '280762146414598' }]
+  });
+  const sync = createReadingSync({ db: fixture.db });
+
+  const result = await sync.processVote('poll_votes', { _id: vote._id });
+
+  assert.deepEqual(result, { status: 'synced' });
+  assert.equal(vote.syncStatus, 'synced');
   assert.equal(fixture.getReadingStatusWrites(), 1);
 });
 
