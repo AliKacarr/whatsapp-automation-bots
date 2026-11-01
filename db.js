@@ -1203,18 +1203,22 @@ async function saveLidMapping(lid, phone, configKey) {
   const barePhone = String(phone).split('@')[0].split(':')[0];
   if (bareLid === barePhone || !/^\d{7,15}$/.test(barePhone)) return;
 
+  const normalizedConfigKey = String(configKey || '').trim();
   const setFields = { phone: barePhone, updatedAt: getTRDateString() };
-  if (configKey && String(configKey).trim()) {
-    setFields.configKey = String(configKey).trim();
+  if (normalizedConfigKey) {
+    setFields.configKey = normalizedConfigKey;
   }
 
   try {
-    await db.collection('lid_mappings').updateOne(
-      { _id: bareLid },
+    return await db.collection('lid_mappings').updateOne(
+      normalizedConfigKey ? { configKey: normalizedConfigKey, _id: bareLid } : { _id: bareLid },
       { $set: setFields },
       { upsert: true }
     );
-  } catch (e) { }
+  } catch (e) {
+    console.error(`❌ LID eşlemesi kaydedilemedi (${normalizedConfigKey || 'config-yok'}/${bareLid}):`, e.message);
+    return null;
+  }
 }
 
 /**

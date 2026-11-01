@@ -1617,6 +1617,8 @@
           LID Ayarla
           <span id="unresolvedVoterLidPanelCount" title="Eşleştirme bekleyen LID kaydı"
             style="display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:rgba(15,23,42,.8);border:1px solid rgba(255,255,255,.28);color:#fff;font-size:10px;font-weight:800;line-height:1;">—</span>
+          <span id="suggestedVoterLidPanelCount" title="WhatsApp grubundan hızlı LID önerisi"
+            style="display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:rgba(88,28,135,.72);border:1px solid rgba(216,180,254,.42);color:#f3e8ff;font-size:10px;font-weight:800;line-height:1;">—</span>
         </button>
       </div>
       <input type="text" id="readingGroupPhoneSearch" class="phone-input" style="width: 100%; margin-bottom: 10px;"
@@ -1636,7 +1638,7 @@
       </div>
       <div style="background:rgba(14,165,233,.08);border:1px solid rgba(56,189,248,.2);border-radius:10px;padding:10px 12px;margin-bottom:10px;text-align:left;">
         <div style="font-size:13px;font-weight:700;color:#bae6fd;margin-bottom:5px;">Nasıl kullanılır?</div>
-        <div style="font-size:12px;color:#b2c2d2;line-height:1.55;"> Telefon numarasını bilmediğiniz bir üye <u>ankete oy verdiğinde veya okuma mesajı yazdığında</u> LID kaydı oluşur. Aşağıdan bu LID bilgisini kopyalayıp doğru üyenin alanına yapıştırın. </div>
+        <div style="font-size:12px;color:#b2c2d2;line-height:1.55;"> Mesaj ve anket oylarından algılanan LID kayıtlarını veya WhatsApp grubundan gelen hızlı önerileri kopyalayıp doğru üyenin alanına yapıştırın. Ek bilgi bulunmayan öneriler için kişinin mesaj ya da oy vermesini bekleyebilirsiniz. </div>
 
       </div>
       <div style="background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;margin-bottom:10px;text-align:left;">
@@ -1645,6 +1647,14 @@
           <button type="button" class="copy-btn" style="font-size:11px;padding:6px 9px;" onclick="loadUnresolvedVoterLids()">↻ Yenile</button>
         </div>
         <div id="unresolvedVoterLidList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+      <div style="background:rgba(88,28,135,.12);border:1px solid rgba(216,180,254,.18);border-radius:10px;padding:10px;margin-bottom:10px;text-align:left;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+          <div style="font-size:13px;font-weight:700;color:#e9d5ff;">Gruptan hızlı öneriler <span id="suggestedVoterLidCount"></span></div>
+          <button type="button" class="copy-btn" style="font-size:11px;padding:6px 9px;" onclick="loadSuggestedVoterLids()">↻ Yenile</button>
+        </div>
+        <div style="font-size:10.5px;color:#c4b5fd;line-height:1.4;margin-bottom:8px;">WhatsApp grubunda bulunan, henüz bir üyeye atanmamış ve telefon ya da kişi bilgisiyle ayırt edilebilen LID kayıtlarıdır.</div>
+        <div id="suggestedVoterLidList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
       </div>
       <input type="text" id="readingGroupLidSearch" class="phone-input" style="width:100%;margin-bottom:10px;"
         placeholder="Telefon numarası kaydedilmemiş üyelerde ara..." oninput="filterReadingGroupLidUsers(this.value)" />
@@ -1761,7 +1771,7 @@
   <div class="toast" id="toastMsg"></div>
 
   <script>
-    const APP_VERSION = '2.0.3';
+    const APP_VERSION = '2.0.4';
     console.warn(
       `%c🚀 RoTaKip WhatsApp Panel v${APP_VERSION}`,
       'color:#0284c7;font-weight:700;font-size:13px;'
@@ -2985,6 +2995,8 @@
     let readingGroupPhoneLoadVersion = 0;
     let unresolvedVoterLidCache = [];
     let unresolvedVoterLidDocumentCount = 0;
+    let suggestedVoterLidCache = [];
+    let suggestedVoterLidCount = 0;
 
     const readingGroupAdminGrants = new Map();
     // Sunucudaki 24 saatlik yetkiden bir dakika önce yerel kaydı yenilet.
@@ -3255,10 +3267,14 @@
       readingGroupPhoneCacheGroupId = '';
       unresolvedVoterLidCache = [];
       unresolvedVoterLidDocumentCount = 0;
+      suggestedVoterLidCache = [];
+      suggestedVoterLidCount = 0;
       const lidButton = document.getElementById('openReadingGroupLidBtn');
       if (lidButton) lidButton.disabled = true;
       const unresolvedCountEl = document.getElementById('unresolvedVoterLidPanelCount');
       if (unresolvedCountEl) unresolvedCountEl.textContent = '…';
+      const suggestedCountEl = document.getElementById('suggestedVoterLidPanelCount');
+      if (suggestedCountEl) suggestedCountEl.textContent = '…';
       document.getElementById('readingGroupPhoneModalSub').textContent =
         'Okuma tespiti için grup üyelerinin telefon numaralarını veya LID bilgilerini kaydedin.';
       document.getElementById('readingGroupPhoneSearch').value = '';
@@ -3266,6 +3282,7 @@
         '<div style="text-align:center;color:var(--text-sub);padding:20px;font-size:12px;">Yükleniyor...</div>';
       document.getElementById('readingGroupPhoneModal').style.display = 'flex';
       void loadUnresolvedVoterLids();
+      void loadSuggestedVoterLids();
 
       try {
         const res = await fetch('/api/reading-group-phones', {
@@ -3405,7 +3422,17 @@
         const cached = readingGroupPhoneCache.find(u => u.id === userId);
         if (cached) cached.phone = data.phone || '';
         filterReadingGroupPhones(document.getElementById('readingGroupPhoneSearch')?.value || '');
-        showToast('✅ Telefon kaydedildi');
+        void loadSuggestedVoterLids();
+        const mappingStatus = data.lidMapping?.status;
+        showToast(mappingStatus === 'saved'
+          ? '✅ Telefon ve LID eşlemesi kaydedildi'
+          : (data.phone && mappingStatus === 'lid_not_found'
+            ? '✅ Telefon kaydedildi · LID bulunamadı'
+            : (data.phone && mappingStatus === 'whatsapp_not_ready'
+              ? '✅ Telefon kaydedildi · WhatsApp bağlantısı hazır değil'
+              : (data.phone && (mappingStatus === 'lookup_error' || mappingStatus === 'save_failed')
+                ? '✅ Telefon kaydedildi · LID eşlemesi tamamlanamadı'
+                : '✅ Telefon kaydedildi'))));
       } catch (e) {
         showToast('❌ Sunucu hatası');
       }
@@ -3425,7 +3452,7 @@
       document.getElementById('readingGroupLidSearch').value = '';
       document.getElementById('readingGroupLidModal').style.display = 'flex';
       renderReadingGroupLidUsers(getReadingGroupUsersWithoutPhone());
-      await loadUnresolvedVoterLids();
+      await Promise.all([loadUnresolvedVoterLids(), loadSuggestedVoterLids()]);
     }
 
     function closeReadingGroupLidModal() {
@@ -3556,6 +3583,91 @@
       }).join('');
     }
 
+    async function loadSuggestedVoterLids() {
+      const groupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
+      if (!groupId || !getReadingGroupAdminAuth(groupId)) return;
+      const listEl = document.getElementById('suggestedVoterLidList');
+      if (listEl) {
+        listEl.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:12px;font-size:11px;">WhatsApp grubu taranıyor...</div>';
+      }
+
+      try {
+        const res = await fetch('/api/reading-group-lid-suggestions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            readingGroupId: groupId,
+            groupConfigId: getMatchingEditorGroupConfigId(groupId) || undefined
+          })
+        });
+        const data = await res.json();
+        if (!data.success) {
+          if (res.status === 401) {
+            clearReadingGroupAdminAuth(groupId);
+            closeReadingGroupPhoneModal();
+            showToast('⚠️ Yönetici oturumu geçersiz, yeniden giriş yapın.');
+            return;
+          }
+          throw new Error(data.message || 'LID önerileri alınamadı');
+        }
+
+        suggestedVoterLidCache = data.suggestions || [];
+        suggestedVoterLidCount = Number.isFinite(Number(data.count))
+          ? Number(data.count)
+          : suggestedVoterLidCache.length;
+        renderSuggestedVoterLids(data.available !== false, data.message || '');
+      } catch (error) {
+        suggestedVoterLidCache = [];
+        suggestedVoterLidCount = 0;
+        const badge = document.getElementById('suggestedVoterLidPanelCount');
+        if (badge) badge.textContent = '?';
+        if (listEl) {
+          listEl.innerHTML = `<div style="text-align:center;color:#f87171;padding:12px;font-size:11px;">${escapeHtml(error.message || 'Sunucu hatası')}</div>`;
+        }
+      }
+    }
+
+    function renderSuggestedVoterLids(available = true, unavailableMessage = '') {
+      const listEl = document.getElementById('suggestedVoterLidList');
+      const countEl = document.getElementById('suggestedVoterLidCount');
+      const panelCountEl = document.getElementById('suggestedVoterLidPanelCount');
+      if (countEl) countEl.textContent = suggestedVoterLidCount ? `(${suggestedVoterLidCount})` : '';
+      if (panelCountEl) panelCountEl.textContent = String(suggestedVoterLidCount);
+      if (!listEl) return;
+
+      if (!available) {
+        listEl.innerHTML = `<div style="text-align:center;color:#c4b5fd;padding:12px;font-size:11px;">${escapeHtml(unavailableMessage || 'WhatsApp bağlantısı hazır değil.')}</div>`;
+        return;
+      }
+      if (suggestedVoterLidCache.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:12px;font-size:11px;">Hızlı LID önerisi bulunamadı.</div>';
+        return;
+      }
+
+      listEl.innerHTML = suggestedVoterLidCache.map(record => {
+        const person = record.username
+          ? `@${escapeHtml(record.username)}`
+          : escapeHtml(record.name || 'İsim bilgisi yok');
+        const details = [];
+        if (record.phone) details.push(`Telefon: ${escapeHtml(record.phone)}`);
+        if (record.name && record.username) details.push(escapeHtml(record.name));
+        if (record.admin) details.push(record.admin === 'superadmin' ? 'Grup sahibi' : 'Grup yöneticisi');
+        return `
+          <div style="background:rgba(46,16,101,.34);border:1px solid rgba(216,180,254,.18);border-radius:8px;padding:8px 9px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
+              <div style="min-width:0;">
+                <div style="font-size:12px;font-weight:700;color:#f3e8ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${person}</div>
+                ${details.length ? `<div style="font-size:10.5px;line-height:1.4;color:#c4b5fd;margin-top:3px;">${details.join(' · ')}</div>` : ''}
+              </div>
+              <button type="button" class="copy-btn" style="font-size:11px;padding:5px 9px;flex-shrink:0;"
+                onclick="copyVoterLid('${record.voterLid}')">Kopyala</button>
+            </div>
+            <code style="display:block;font-size:12px;color:#d8b4fe;word-break:break-all;">${escapeHtml(record.voterLid)}</code>
+          </div>
+        `;
+      }).join('');
+    }
+
     async function copyVoterLid(voterLid) {
       try {
         await navigator.clipboard.writeText(String(voterLid || ''));
@@ -3653,6 +3765,7 @@
           }
           renderUnresolvedVoterLids();
         }
+        void loadSuggestedVoterLids();
         filterReadingGroupPhones(document.getElementById('readingGroupPhoneSearch')?.value || '');
         showToast(data.voterLid ? '✅ voterLid kaydedildi' : '✅ voterLid temizlendi');
       } catch (e) {
