@@ -553,6 +553,41 @@
       max-width: 550px;
     }
 
+    #groupSettingsModal .modal-card {
+      max-width: 550px;
+      min-height: min(720px, 88vh);
+      height: min(760px, 88vh);
+      display: flex;
+      flex-direction: column;
+    }
+
+    #groupConfigEditor {
+      flex: 1;
+    }
+
+    #readingGroupPhoneModal .modal-card {
+      max-width: 480px;
+      min-height: min(650px, 88vh);
+      height: min(720px, 88vh);
+      display: flex;
+      flex-direction: column;
+    }
+
+    #readingGroupPhoneList {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 250px;
+      padding-right: 4px;
+    }
+
+    #readingGroupLidModal .modal-card {
+      max-width: 520px;
+      min-height: min(720px, 88vh);
+      height: min(760px, 88vh);
+      display: flex;
+      flex-direction: column;
+    }
+
     .config-card-box {
       background: rgba(0, 0, 0, 0.35);
       border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1060,6 +1095,14 @@
         flex-direction: column;
       }
 
+      #groupSettingsModal .modal-card,
+      #readingGroupPhoneModal .modal-card,
+      #readingGroupLidModal .modal-card {
+        min-height: 100dvh;
+        height: 100dvh;
+        max-height: 100dvh;
+      }
+
       .picker-row {
         flex-direction: column;
         align-items: stretch;
@@ -1263,6 +1306,11 @@
         </div>
         <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;"
           onclick="closeGroupSettingsModal()">✕ Kapat</button>
+      </div>
+
+      <div id="groupConfigLoading" style="display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; min-height: 420px; gap: 14px; color: var(--text-sub);">
+        <div class="spinner" style="margin: 0;"></div>
+        <div style="font-size: 13px; font-weight: 500;">Grup ayarları yükleniyor...</div>
       </div>
 
       <div id="groupConfigEditor" class="config-card-box" style="padding: 20px; display: none; flex-direction: column; gap: 16px;">
@@ -2477,13 +2525,23 @@
       document.getElementById('ftEsmaulhusnaScheduleSubSettings').style.display = 'none';
       document.getElementById('ftWeeklyReportSubSettings').style.display = 'none';
       syncFeatureDependentControls();
+      const groupConfigLoader = document.getElementById('groupConfigLoading');
+      if (groupConfigLoader) groupConfigLoader.style.display = 'none';
       document.getElementById('groupConfigEditor').style.display = 'flex';
       refreshReadingGroupPhoneEditor();
     }
 
     async function showGroupSettings(startCreate = false) {
       const modal = document.getElementById('groupSettingsModal');
+      const editor = document.getElementById('groupConfigEditor');
+      const loader = document.getElementById('groupConfigLoading');
       modal.style.display = 'flex';
+      if (editor && editor.style.display !== 'flex') {
+        if (loader) {
+          loader.innerHTML = '<div class="spinner" style="margin: 0;"></div><div style="font-size: 13px; font-weight: 500;">Grup ayarları yükleniyor...</div>';
+          loader.style.display = 'flex';
+        }
+      }
       if (groupSettingsLoading) return;
       groupSettingsLoading = true;
       try {
@@ -2494,6 +2552,9 @@
         populateGroupConfigEditor(config);
       } catch (e) {
         console.error('Grup ayarlari yuklenemedi:', e);
+        if (loader) {
+          loader.innerHTML = '<div style="text-align:center;color:#f87171;font-size:13px;padding:20px;">❌ Grup ayarları yüklenemedi.<br><button class="btn btn-secondary" style="width:auto;margin-top:12px;padding:6px 14px;font-size:12px;" onclick="showGroupSettings()">Tekrar Dene</button></div>';
+        }
         showToast('❌ Grup ayarları yüklenemedi. Paneli kapatıp yeniden açın.');
       } finally {
         groupSettingsLoading = false;
@@ -2504,6 +2565,8 @@
       editingGroupConfigId = '';
       pendingReadingGroupSelect = null;
       document.getElementById('groupConfigEditor').style.display = 'none';
+      const loader = document.getElementById('groupConfigLoading');
+      if (loader) loader.style.display = 'flex';
       document.getElementById('groupSettingsModal').style.display = 'none';
     }
 
@@ -3278,7 +3341,7 @@
         'Okuma tespiti için grup üyelerinin telefon numaralarını veya LID bilgilerini kaydedin.';
       document.getElementById('readingGroupPhoneSearch').value = '';
       document.getElementById('readingGroupPhoneList').innerHTML =
-        '<div style="text-align:center;color:var(--text-sub);padding:20px;font-size:12px;">Yükleniyor...</div>';
+        '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;min-height:300px;gap:12px;color:var(--text-sub);"><div class="spinner" style="margin:0;"></div><div style="font-size:12px;">Üye telefon listesi yükleniyor...</div></div>';
       document.getElementById('readingGroupPhoneModal').style.display = 'flex';
       void loadUnresolvedVoterLids();
       void loadSuggestedVoterLids();
@@ -3338,7 +3401,7 @@
     function renderReadingGroupPhoneList(users) {
       const listEl = document.getElementById('readingGroupPhoneList');
       if (!users || users.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:12px;font-size:12px;">Üye bulunamadı</div>';
+        listEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;flex:1;min-height:200px;text-align:center;color:var(--text-sub);padding:12px;font-size:12px;">Üye bulunamadı</div>';
         return;
       }
 
@@ -3501,7 +3564,7 @@
       const groupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
       if (!groupId || !getReadingGroupAdminAuth(groupId)) return;
       const listEl = document.getElementById('unresolvedVoterLidList');
-      listEl.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:12px;font-size:11px;">Yükleniyor...</div>';
+      listEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;min-height:56px;color:var(--text-sub);font-size:11px;"><div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;"></div> Yükleniyor...</div>';
 
       try {
         const res = await fetch('/api/reading-group-unresolved-lids', {
@@ -3587,7 +3650,7 @@
       if (!groupId || !getReadingGroupAdminAuth(groupId)) return;
       const listEl = document.getElementById('suggestedVoterLidList');
       if (listEl) {
-        listEl.innerHTML = '<div style="text-align:center;color:var(--text-sub);padding:12px;font-size:11px;">WhatsApp grubu taranıyor...</div>';
+        listEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;min-height:56px;color:var(--text-sub);font-size:11px;"><div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;"></div> WhatsApp grubu taranıyor...</div>';
       }
 
       try {
