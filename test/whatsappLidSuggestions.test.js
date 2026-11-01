@@ -30,7 +30,8 @@ test('suggestions exclude registered phones and assigned lids but keep other gro
     {
       id: '333333333333333@lid',
       jid: '905333333333@s.whatsapp.net',
-      lid: '333333333333333@lid'
+      lid: '333333333333333@lid',
+      name: 'Mehmet'
     }
   ];
 
@@ -42,8 +43,7 @@ test('suggestions exclude registered phones and assigned lids but keep other gro
   assert.deepEqual(suggestions, [{
     voterLid: '333333333333333',
     phone: '905333333333',
-    name: '',
-    username: ''
+    name: 'Mehmet'
   }]);
 });
 
@@ -53,15 +53,14 @@ test('suggestions use config-scoped stored phone mappings', () => {
   ]);
 
   const suggestions = buildLidSuggestions(
-    [{ id: '444444444444444@lid', lid: '444444444444444@lid' }],
+    [{ id: '444444444444444@lid', lid: '444444444444444@lid', name: 'Fatma' }],
     { phoneByLid }
   );
 
   assert.deepEqual(suggestions, [{
     voterLid: '444444444444444',
     phone: '905444444444',
-    name: '',
-    username: ''
+    name: 'Fatma'
   }]);
 });
 
@@ -70,7 +69,8 @@ test('an unresolved event record does not suppress an information-rich live grou
     [{
       id: '555555555555555@lid',
       jid: '905555555555@s.whatsapp.net',
-      lid: '555555555555555@lid'
+      lid: '555555555555555@lid',
+      name: 'Ali'
     }],
     {
       registeredPhones: [],
@@ -84,7 +84,7 @@ test('an unresolved event record does not suppress an information-rich live grou
   assert.equal(suggestions[0].voterLid, '555555555555555');
 });
 
-test('a LID without phone is suggested when name or username exists', () => {
+test('a LID without phone is suggested when WhatsApp name exists', () => {
   const suggestions = buildLidSuggestions([
     {
       id: '666666666666666@lid',
@@ -97,15 +97,16 @@ test('a LID without phone is suggested when name or username exists', () => {
   assert.deepEqual(suggestions, [{
     voterLid: '666666666666666',
     phone: '',
-    name: 'Ayşe',
-    username: 'ayse'
+    name: 'Ayşe'
   }]);
 });
 
-test('a LID without phone, name or username is not suggested', () => {
+test('a LID without WhatsApp name is not suggested even when phone or username exists', () => {
   const suggestions = buildLidSuggestions([{
     id: '777777777777777@lid',
-    lid: '777777777777777@lid'
+    jid: '905777777777@s.whatsapp.net',
+    lid: '777777777777777@lid',
+    username: 'kullaniciadi'
   }]);
 
   assert.deepEqual(suggestions, []);

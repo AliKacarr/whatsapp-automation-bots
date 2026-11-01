@@ -58,23 +58,21 @@ function buildLidSuggestions(participants, {
       identity.phone || phoneByLid.get(identity.lid) || phoneByLid.get(`${identity.lid}@lid`)
     );
     if (mappedPhone && phoneSet.has(mappedPhone)) continue;
-    // Telefon numarası veya isim/kullanıcı adı bulunan katılımcılar elle
-    // eşleştirme için anlamlı bir ipucu sağlar. Yalnızca LID bulunan kayıtlar
-    // önerilere eklenmez.
-    if (!mappedPhone && !identity.name && !identity.username) continue;
+    // Hızlı önerinin üyeyi gerçekten ayırt edebilmesi için WhatsApp isim
+    // bilgisi zorunludur. Telefon numarası varsa ek ipucu olarak gösterilir.
+    if (!identity.name) continue;
 
     seen.add(identity.lid);
     suggestions.push({
       voterLid: identity.lid,
       phone: mappedPhone,
-      name: identity.name,
-      username: identity.username
+      name: identity.name
     });
   }
 
   return suggestions.sort((a, b) =>
-    (a.name || a.username || a.phone).localeCompare(
-      b.name || b.username || b.phone,
+    a.name.localeCompare(
+      b.name,
       'tr'
     ) || a.voterLid.localeCompare(b.voterLid)
   );
