@@ -42,31 +42,26 @@ test('suggestions exclude registered phones and assigned lids but keep other gro
   assert.deepEqual(suggestions, [{
     voterLid: '333333333333333',
     phone: '905333333333',
-    username: '',
     name: '',
-    admin: null
+    username: ''
   }]);
 });
 
-test('suggestions use config-scoped stored phone mappings and contact details', () => {
-  const details = new Map([
-    ['444444444444444', { name: 'Ayşe', username: 'ayse' }]
-  ]);
+test('suggestions use config-scoped stored phone mappings', () => {
   const phoneByLid = new Map([
     ['444444444444444', '905444444444']
   ]);
 
   const suggestions = buildLidSuggestions(
     [{ id: '444444444444444@lid', lid: '444444444444444@lid' }],
-    { detailsByIdentity: details, phoneByLid }
+    { phoneByLid }
   );
 
   assert.deepEqual(suggestions, [{
     voterLid: '444444444444444',
     phone: '905444444444',
-    username: 'ayse',
-    name: 'Ayşe',
-    admin: null
+    name: '',
+    username: ''
   }]);
 });
 
@@ -89,10 +84,29 @@ test('an unresolved event record does not suppress an information-rich live grou
   assert.equal(suggestions[0].voterLid, '555555555555555');
 });
 
-test('a bare LID without phone, name, or username is not suggested', () => {
+test('a LID without phone is suggested when name or username exists', () => {
   const suggestions = buildLidSuggestions([
-    { id: '666666666666666@lid', lid: '666666666666666@lid' }
+    {
+      id: '666666666666666@lid',
+      lid: '666666666666666@lid',
+      name: 'Ayşe',
+      username: 'ayse'
+    }
   ]);
+
+  assert.deepEqual(suggestions, [{
+    voterLid: '666666666666666',
+    phone: '',
+    name: 'Ayşe',
+    username: 'ayse'
+  }]);
+});
+
+test('a LID without phone, name or username is not suggested', () => {
+  const suggestions = buildLidSuggestions([{
+    id: '777777777777777@lid',
+    lid: '777777777777777@lid'
+  }]);
 
   assert.deepEqual(suggestions, []);
 });

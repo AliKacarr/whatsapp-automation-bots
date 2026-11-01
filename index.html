@@ -1623,7 +1623,7 @@
       </div>
       <input type="text" id="readingGroupPhoneSearch" class="phone-input" style="width: 100%; margin-bottom: 10px;"
         placeholder="İsim veya telefon ile ara..." oninput="filterReadingGroupPhones(this.value)" />
-      <div id="readingGroupPhoneList" style="max-height: 360px; display: flex; flex-direction: column; gap: 6px;"></div>
+      <div id="readingGroupPhoneList" style="display:flex;flex-direction:column;gap:6px;box-sizing:border-box;"></div>
     </div>
   </div>
 
@@ -1638,27 +1638,26 @@
       </div>
       <div style="background:rgba(14,165,233,.08);border:1px solid rgba(56,189,248,.2);border-radius:10px;padding:10px 12px;margin-bottom:10px;text-align:left;">
         <div style="font-size:13px;font-weight:700;color:#bae6fd;margin-bottom:5px;">Nasıl kullanılır?</div>
-        <div style="font-size:12px;color:#b2c2d2;line-height:1.55;"> Mesaj ve anket oylarından algılanan LID kayıtlarını veya WhatsApp grubundan gelen hızlı önerileri kopyalayıp doğru üyenin alanına yapıştırın. Ek bilgi bulunmayan öneriler için kişinin mesaj ya da oy vermesini bekleyebilirsiniz. </div>
+        <div style="font-size:12px;color:#b2c2d2;line-height:1.55;"> Telefon numarasını bilmediğiniz bir üyeyi okuma takip sisteminize ekleyebilmek için üyenin LID bilgisini kullanabilirsiniz. Bu bilgi üye <u>anketlere oy verdiğinde veya bir okuma mesajı yazdığında</u> oluşur. Hızlı önerilerden veya Algılanan LID kayıtlarından LID’yi kopyalayıp ilgili üyeye yapıştırın. </div>
 
+      </div>
+      <div style="background:rgba(88,28,135,.12);border:1px solid rgba(216,180,254,.18);border-radius:10px;padding:10px;margin-bottom:10px;text-align:left;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+          <div style="font-size:13px;font-weight:700;color:#e9d5ff;">Hızlı öneriler <span id="suggestedVoterLidCount"></span></div>
+          <button type="button" class="copy-btn" style="font-size:11px;padding:6px 9px;" onclick="loadSuggestedVoterLids()">↻ Yenile</button>
+        </div>
+        <div id="suggestedVoterLidList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
       </div>
       <div style="background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;margin-bottom:10px;text-align:left;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
-          <div style="font-size:13px;font-weight:700;color:#e2e8f0;">Algılanan LID kayıtları <span id="unresolvedVoterLidCount"></span></div>
+          <div style="font-size:13px;font-weight:700;color:#e2e8f0;">Algılanan LID kayıtları <span style="font-size:11px;font-weight:500;color:#94a3b8;">(anket / okuma mesajı)</span> <span id="unresolvedVoterLidCount"></span></div>
           <button type="button" class="copy-btn" style="font-size:11px;padding:6px 9px;" onclick="loadUnresolvedVoterLids()">↻ Yenile</button>
         </div>
         <div id="unresolvedVoterLidList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
       </div>
-      <div style="background:rgba(88,28,135,.12);border:1px solid rgba(216,180,254,.18);border-radius:10px;padding:10px;margin-bottom:10px;text-align:left;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
-          <div style="font-size:13px;font-weight:700;color:#e9d5ff;">Gruptan hızlı öneriler <span id="suggestedVoterLidCount"></span></div>
-          <button type="button" class="copy-btn" style="font-size:11px;padding:6px 9px;" onclick="loadSuggestedVoterLids()">↻ Yenile</button>
-        </div>
-        <div style="font-size:10.5px;color:#c4b5fd;line-height:1.4;margin-bottom:8px;">WhatsApp grubunda bulunan, henüz bir üyeye atanmamış ve telefon ya da kişi bilgisiyle ayırt edilebilen LID kayıtlarıdır.</div>
-        <div id="suggestedVoterLidList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
-      </div>
       <input type="text" id="readingGroupLidSearch" class="phone-input" style="width:100%;margin-bottom:10px;"
         placeholder="Telefon numarası kaydedilmemiş üyelerde ara..." oninput="filterReadingGroupLidUsers(this.value)" />
-      <div id="readingGroupLidUserList" style="max-height:300px;display:flex;flex-direction:column;gap:6px;"></div>
+      <div id="readingGroupLidUserList" style="display:flex;flex-direction:column;gap:6px;box-sizing:border-box;"></div>
     </div>
   </div>
 
@@ -3645,24 +3644,27 @@
       }
 
       listEl.innerHTML = suggestedVoterLidCache.map(record => {
-        const person = record.username
-          ? `@${escapeHtml(record.username)}`
-          : escapeHtml(record.name || 'İsim bilgisi yok');
-        const details = [];
-        if (record.phone) details.push(`Telefon: ${escapeHtml(record.phone)}`);
-        if (record.name && record.username) details.push(escapeHtml(record.name));
-        if (record.admin) details.push(record.admin === 'superadmin' ? 'Grup sahibi' : 'Grup yöneticisi');
+        const identityLines = [
+          record.name
+            ? `<div style="font-size:12px;font-weight:700;color:#f3e8ff;">İsim: ${escapeHtml(record.name)}</div>`
+            : '',
+          record.username
+            ? `<div style="font-size:11px;color:#ddd6fe;">Kullanıcı adı: @${escapeHtml(String(record.username).replace(/^@/, ''))}</div>`
+            : '',
+          record.phone
+            ? `<div style="font-size:12px;font-weight:700;color:#f3e8ff;">Telefon: ${escapeHtml(record.phone)}</div>`
+            : ''
+        ].filter(Boolean).join('');
         return `
           <div style="background:rgba(46,16,101,.34);border:1px solid rgba(216,180,254,.18);border-radius:8px;padding:8px 9px;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
               <div style="min-width:0;">
-                <div style="font-size:12px;font-weight:700;color:#f3e8ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${person}</div>
-                ${details.length ? `<div style="font-size:10.5px;line-height:1.4;color:#c4b5fd;margin-top:3px;">${details.join(' · ')}</div>` : ''}
+                ${identityLines}
               </div>
               <button type="button" class="copy-btn" style="font-size:11px;padding:5px 9px;flex-shrink:0;"
                 onclick="copyVoterLid('${record.voterLid}')">Kopyala</button>
             </div>
-            <code style="display:block;font-size:12px;color:#d8b4fe;word-break:break-all;">${escapeHtml(record.voterLid)}</code>
+            <div style="font-size:11px;color:#c4b5fd;">LID: <code style="font-size:12px;color:#d8b4fe;word-break:break-all;">${escapeHtml(record.voterLid)}</code></div>
           </div>
         `;
       }).join('');

@@ -37,7 +37,6 @@ const {
 const { normalizeVoterLid } = require('./whatsappIdentity');
 const {
   normalizeWhatsAppPhone,
-  getIdentityKeys,
   extractParticipantIdentity,
   buildLidSuggestions
 } = require('./whatsappLidSuggestions');
@@ -360,8 +359,6 @@ function deserializePollMessage(base64) {
 
 // LID -> Telefon numarası JID eşleşme önbelleği
 const lidToPhoneMap = new Map();
-// contacts.upsert/update üzerinden öğrenilen ad ve kullanıcı adı ipuçları.
-const whatsappIdentityDetails = new Map();
 /** Çözülemeyen LID'ler: her mesajda WA/users sync'i tekrarlamamak için */
 const unresolvedLidUntil = new Map();
 const UNRESOLVED_LID_TTL_MS = 30 * 60 * 1000;
@@ -415,24 +412,11 @@ function registerJidLidMapping(phoneCandidate, lidCandidate) {
   }
 }
 
-function rememberWhatsAppIdentityDetails(item) {
-  if (!item) return;
-  const name = String(item.name || item.notify || item.pushName || item.verifiedName || '').trim().slice(0, 128);
-  const username = String(item.username || item.participantUsername || '').trim().replace(/^@/, '').slice(0, 128);
-  if (!name && !username) return;
-  const details = { name, username };
-  for (const key of getIdentityKeys(item)) {
-    whatsappIdentityDetails.set(key, details);
-  }
-}
-
 /**
  * Herhangi bir katılımcı veya kişi objesinden LID ve Telefon Numarasını çıkarıp eşleştirir.
  */
 function processParticipantOrContact(item) {
   if (!item) return;
-
-  rememberWhatsAppIdentityDetails(item);
 
   let phoneJid = null;
   let lidJid = null;
@@ -558,7 +542,6 @@ async function collectReadingGroupLidSuggestions(readingGroupId, groupId) {
   const suggestions = buildLidSuggestions(participants, {
     registeredPhones,
     assignedLids: ownLid ? [...assignedLids, ownLid] : assignedLids,
-    detailsByIdentity: whatsappIdentityDetails,
     phoneByLid
   });
 
