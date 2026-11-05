@@ -4,7 +4,8 @@ const {
   isValidReadingGroupId,
   DEFAULT_GROUP_CONFIG_FEATURES,
   DEFAULT_GROUP_CONFIG_SCHEDULES,
-  validateGroupConfigSchedules
+  validateGroupConfigSchedules,
+  normalizeGroupConfigFeatures
 } = require('../db');
 
 test('RoTaKip group ids accept Turkish and other Unicode letters', () => {
@@ -24,6 +25,8 @@ test('new group pairs use the agreed automation defaults', () => {
     pollEnabled: false,
     voteTrackingEnabled: false,
     messageReadingEnabled: false,
+    pollAutoUserProvisioningEnabled: false,
+    messageAutoUserProvisioningEnabled: false,
     sentenceEnabled: true,
     weeklyReportEnabled: true,
     weeklyReportQuoteEnabled: true,
@@ -39,6 +42,17 @@ test('new group pairs preserve the legacy delivery times by default', () => {
     sentence: { weekdays: [2, 4], hour: 22, minute: 30 },
     esmaulhusna: { weekdays: [3, 5], hour: 22, minute: 30 }
   });
+});
+
+test('automatic provisioning is disabled when its parent detector is disabled', () => {
+  const features = normalizeGroupConfigFeatures({
+    featureVoteTrackingEnabled: false,
+    featurePollAutoUserProvisioningEnabled: true,
+    featureMessageReadingEnabled: false,
+    featureMessageAutoUserProvisioningEnabled: true
+  });
+  assert.equal(features.pollAutoUserProvisioningEnabled, false);
+  assert.equal(features.messageAutoUserProvisioningEnabled, false);
 });
 
 test('group schedules require valid times and two different weekly days', () => {

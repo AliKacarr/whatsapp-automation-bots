@@ -5,7 +5,7 @@
 // sessizce atlanır (no-op). Mevcut bot işleyişi etkilenmez.
 // ============================================================================
 
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const { randomUUID, createHash } = require('crypto');
 const bcrypt = require('bcryptjs');
 const { createReadingSync } = require('./readingSync');
@@ -35,6 +35,7 @@ const DASHBOARD_AUTH_COLLECTION = 'auth-wob';
 const REMINDER_STATE_COLLECTION = 'reminder_delivery_state';
 const GROUP_CONFIG_COLLECTION = 'group_configs';
 const UNRESOLVED_VOTER_LIDS_COLLECTION = 'unresolved_voter_lids';
+const LOCAL_ID_MAPPINGS_COLLECTION = 'local_id_mappings';
 
 /**
  * MONGO_URI ve DB_NAME tanımlı mı kontrol eder.
@@ -77,6 +78,9 @@ async function connectDB() {
     readingSync = createReadingSync({
       db,
       onPromotion: groupId => promotionHandler(groupId),
+      getGroupConfig: async ({ groupId, readingGroupId, configKey }) =>
+        findGroupConfigByPair(groupId, readingGroupId, configKey),
+      clearUnresolvedVoterLid: async data => deleteUnresolvedVoterLid(data),
       getScope: async () => {
         const configKey = getConfigKey();
         if (!configKey) return null;
@@ -151,6 +155,19 @@ async function ensureCollectionIndexes() {
     partialFilterExpression: { configKey: { $type: 'string' } }
   });
   await createSafeIndex(GROUP_CONFIG_COLLECTION, { configKey: 1, createdAt: 1 });
+  await createRequiredIndex(
+    LOCAL_ID_MAPPINGS_COLLECTION,
+    { configKey: 1, groupId: 1, lid: 1 },
+    {
+      unique: true,
+      partialFilterExpression: {
+        configKey: { $type: 'string' },
+        groupId: { $type: 'string' },
+        lid: { $type: 'string' }
+      }
+    }
+  );
+  await createSafeIndex(LOCAL_ID_MAPPINGS_COLLECTION, { configKey: 1, groupId: 1, phone: 1 });
   await createRequiredIndex(GROUP_CONFIG_COLLECTION, { configKey: 1, groupId: 1 }, {
     unique: true,
     partialFilterExpression: {
@@ -574,6 +591,8 @@ const DEFAULT_GROUP_CONFIG_FEATURES = Object.freeze({
   pollEnabled: false,
   voteTrackingEnabled: false,
   messageReadingEnabled: false,
+  pollAutoUserProvisioningEnabled: false,
+  messageAutoUserProvisioningEnabled: false,
   sentenceEnabled: true,
   weeklyReportEnabled: true,
   weeklyReportQuoteEnabled: true,
@@ -594,6 +613,8 @@ const GROUP_CONFIG_FEATURE_FIELDS = Object.freeze({
   pollEnabled: 'featurePollEnabled',
   voteTrackingEnabled: 'featureVoteTrackingEnabled',
   messageReadingEnabled: 'featureMessageReadingEnabled',
+  pollAutoUserProvisioningEnabled: 'featurePollAutoUserProvisioningEnabled',
+  messageAutoUserProvisioningEnabled: 'featureMessageAutoUserProvisioningEnabled',
   sentenceEnabled: 'featureSentenceEnabled',
   weeklyReportEnabled: 'featureWeeklyReportEnabled',
   weeklyReportQuoteEnabled: 'featureWeeklyReportQuoteEnabled',
@@ -621,6 +642,8 @@ function normalizeGroupConfigFeatures(doc = {}) {
       ? doc[fieldName] !== false
       : doc[fieldName] === true;
   }
+  if (!features.voteTrackingEnabled) features.pollAutoUserProvisioningEnabled = false;
+  if (!features.messageReadingEnabled) features.messageAutoUserProvisioningEnabled = false;
   return features;
 }
 
@@ -855,6 +878,8 @@ async function createGroupConfig(configData = {}) {
       ? requestedFeatures[featureName]
       : DEFAULT_GROUP_CONFIG_FEATURES[featureName];
   }
+  if (!doc.featureVoteTrackingEnabled) doc.featurePollAutoUserProvisioningEnabled = false;
+  if (!doc.featureMessageReadingEnabled) doc.featureMessageAutoUserProvisioningEnabled = false;
   if (configData.migratedFromLegacy === true) doc.migratedFromLegacy = true;
 
   try {
@@ -910,11 +935,18 @@ async function updateGroupConfig(id, configData = {}, passedConfigKey = null) {
   for (const [featureName, fieldName] of Object.entries(GROUP_CONFIG_FEATURE_FIELDS)) {
     if (typeof features[featureName] === 'boolean') setFields[fieldName] = features[featureName];
   }
+  const nextVoteTrackingEnabled = setFields.featureVoteTrackingEnabled ?? current.featureVoteTrackingEnabled === true;
+  const nextMessageReadingEnabled = setFields.featureMessageReadingEnabled ?? current.featureMessageReadingEnabled === true;
+  if (!nextVoteTrackingEnabled) setFields.featurePollAutoUserProvisioningEnabled = false;
+  if (!nextMessageReadingEnabled) setFields.featureMessageAutoUserProvisioningEnabled = false;
   if (Number.isInteger(configData.esmaulhusnaIndex) && configData.esmaulhusnaIndex >= 1) {
     setFields.esmaulhusnaIndex = configData.esmaulhusnaIndex;
   }
 
   try {
+    if (groupId !== String(current.groupId || '').trim()) {
+      await deleteLocalIdMappingsByScope(configKey, current.groupId);
+    }
     const result = await collection.updateOne({ _id: String(id), configKey }, { $set: setFields });
     if (result.matchedCount !== 1) {
       return { success: false, status: 404, code: 'GROUP_CONFIG_NOT_FOUND', message: 'Grup eşleşmesi bulunamadı.' };
@@ -931,7 +963,13 @@ async function deleteGroupConfig(id, passedConfigKey = null) {
   if (!dbEnabled || !db) return { success: false, status: 503, message: 'Veritabanı bağlantısı aktif değil.' };
   const configKey = normalizeConfigKey(passedConfigKey);
   if (!configKey || !id) return { success: false, status: 400, message: 'Eşleşme kimliği ve CONFIG_KEY gereklidir.' };
-  const result = await db.collection(GROUP_CONFIG_COLLECTION).deleteOne({ _id: String(id), configKey });
+  const collection = db.collection(GROUP_CONFIG_COLLECTION);
+  const current = await collection.findOne({ _id: String(id), configKey });
+  if (!current) {
+    return { success: false, status: 404, code: 'GROUP_CONFIG_NOT_FOUND', message: 'Grup eşleşmesi bulunamadı.' };
+  }
+  await deleteLocalIdMappingsByScope(configKey, current.groupId);
+  const result = await collection.deleteOne({ _id: String(id), configKey });
   if (result.deletedCount !== 1) {
     return { success: false, status: 404, code: 'GROUP_CONFIG_NOT_FOUND', message: 'Grup eşleşmesi bulunamadı.' };
   }
@@ -1190,58 +1228,61 @@ async function countUnresolvedVoterLids({ configKey, readingGroupId, groupId }) 
   }
 }
 
-/**
- * LID -> Telefon Numarası eşleşmesini MongoDB'deki lid_mappings koleksiyonuna kalıcı kaydeder.
- * configKey ile izole edilir: farklı kullanıcıların LID eşleşmeleri karışmaz.
- * @param {string} lid - LID değeri
- * @param {string} phone - Telefon numarası
- * @param {string} [configKey] - Konfigürasyon anahtarı (process.env.CONFIG_KEY)
- */
-async function saveLidMapping(lid, phone, configKey) {
-  if (!dbEnabled || !db || !lid || !phone) return;
-  const bareLid = String(lid).split('@')[0].split(':')[0];
-  const barePhone = String(phone).split('@')[0].split(':')[0];
-  if (bareLid === barePhone || !/^\d{7,15}$/.test(barePhone)) return;
-
+function normalizeLocalIdMappingValues(lid, phone, configKey, groupId) {
+  const bareLid = normalizeVoterLid(lid);
+  const barePhone = String(phone || '').split('@')[0].split(':')[0].replace(/\D/g, '');
   const normalizedConfigKey = String(configKey || '').trim();
-  const setFields = { phone: barePhone, updatedAt: getTRDateString() };
-  if (normalizedConfigKey) {
-    setFields.configKey = normalizedConfigKey;
-  }
+  const normalizedGroupId = String(groupId || '').trim();
+  if (!bareLid || !/^\d{7,15}$/.test(barePhone) || bareLid === barePhone ||
+      !normalizedConfigKey || !normalizedGroupId) return null;
+  return { lid: bareLid, phone: barePhone, configKey: normalizedConfigKey, groupId: normalizedGroupId };
+}
+
+async function saveLocalIdMapping(lid, phone, configKey, groupId) {
+  if (!dbEnabled || !db) return null;
+  const mapping = normalizeLocalIdMappingValues(lid, phone, configKey, groupId);
+  if (!mapping) return null;
 
   try {
-    return await db.collection('lid_mappings').updateOne(
-      normalizedConfigKey ? { configKey: normalizedConfigKey, _id: bareLid } : { _id: bareLid },
-      { $set: setFields },
+    return await db.collection(LOCAL_ID_MAPPINGS_COLLECTION).updateOne(
+      { configKey: mapping.configKey, groupId: mapping.groupId, lid: mapping.lid },
+      {
+        $set: { phone: mapping.phone, updatedAt: getTRDateString() },
+        $setOnInsert: {
+          _id: new ObjectId(),
+          configKey: mapping.configKey,
+          groupId: mapping.groupId,
+          lid: mapping.lid,
+          createdAt: getTRDateString()
+        }
+      },
       { upsert: true }
     );
-  } catch (e) {
-    console.error(`❌ LID eşlemesi kaydedilemedi (${normalizedConfigKey || 'config-yok'}/${bareLid}):`, e.message);
+  } catch (error) {
+    console.error(
+      `❌ Local ID eşlemesi kaydedilemedi (${mapping.configKey}/${mapping.groupId}/${mapping.lid}):`,
+      error.message
+    );
     return null;
   }
 }
 
-/**
- * MongoDB'de saklanan kalıcı LID -> Telefon Numarası haritasını getirir.
- * configKey verilirse sadece o kullanıcıya ait eşleşmeleri getirir.
- * @param {string} [configKey] - Konfigürasyon anahtarı ile filtrele (opsiyonel)
- */
-async function getAllLidMappings(configKey) {
+async function getAllLocalIdMappings(configKey, groupId = null) {
   if (!dbEnabled || !db) return {};
+  const normalizedConfigKey = String(configKey || '').trim();
+  const normalizedGroupId = String(groupId || '').trim();
+  if (!normalizedConfigKey) return {};
   try {
-    const query = {};
-    if (configKey && String(configKey).trim()) {
-      query.configKey = String(configKey).trim();
-    }
-    const list = await db.collection('lid_mappings').find(query).toArray();
+    const query = { configKey: normalizedConfigKey };
+    if (normalizedGroupId) query.groupId = normalizedGroupId;
+    const list = await db.collection(LOCAL_ID_MAPPINGS_COLLECTION).find(query).toArray();
     const map = {};
     for (const item of list) {
-      if (item._id && item.phone) {
-        map[item._id] = item.phone;
-      }
+      if (item.lid && item.phone) map[item.lid] = item.phone;
     }
     return map;
-  } catch (e) {
+  } catch (error) {
+    console.error('❌ Local ID eşleşmeleri okunamadı:', error.message);
     return {};
   }
 }
@@ -1291,31 +1332,26 @@ async function getReadingGroupVoterLids(readingGroupId) {
   }
 }
 
-/**
- * Bu configKey için lid_mappings'te kayıtlı telefon numaralarının set'ini döner.
- * @param {string} [configKey]
- * @returns {Promise<Set<string>>}
- */
-async function getMappedPhonesByConfigKey(configKey) {
-  const map = await getAllLidMappings(configKey);
+/** Belirli configKey + WhatsApp grubu kapsamındaki eşlenmiş telefonları döndürür. */
+async function getMappedPhonesByScope(configKey, groupId) {
+  const map = await getAllLocalIdMappings(configKey, groupId);
   return new Set(Object.values(map).filter(Boolean).map(p => String(p).split('@')[0].split(':')[0]));
 }
 
 /**
- * Belirli bir configKey'e ait tüm LID eşleşmelerini siler.
- * Kullanıcı WhatsApp oturumunu kapattığında çağrılır.
- * @param {string} configKey - Konfigürasyon anahtarı
+ * Yalnız silinen WhatsApp grup eşleşmesine ait Local ID kayıtlarını temizler.
  */
-async function deleteLidMappingsByConfigKey(configKey) {
-  if (!dbEnabled || !db || !configKey) return;
-  try {
-    const result = await db.collection('lid_mappings').deleteMany({
-      configKey: String(configKey).trim()
-    });
-    console.log(`🗑️ lid_mappings temizlendi (configKey: ${configKey}): ${result.deletedCount} doküman silindi.`);
-  } catch (e) {
-    console.error('❌ lid_mappings silme hatası:', e.message);
-  }
+async function deleteLocalIdMappingsByScope(configKey, groupId) {
+  if (!dbEnabled || !db || !configKey || !groupId) return { deletedCount: 0 };
+  const result = await db.collection(LOCAL_ID_MAPPINGS_COLLECTION).deleteMany({
+    configKey: String(configKey).trim(),
+    groupId: String(groupId).trim()
+  });
+  console.log(
+    `🗑️ ${LOCAL_ID_MAPPINGS_COLLECTION} temizlendi (${configKey}/${groupId}): ` +
+    `${result.deletedCount} belge.`
+  );
+  return result;
 }
 
 /**
@@ -1445,11 +1481,31 @@ async function updateReadingGroupUserPhone(readingGroupId, userId, phone) {
   }
 
   try {
-    const { ObjectId } = require('mongodb');
+    if (!ObjectId.isValid(uid)) return { success: false, message: 'Geçersiz kullanıcı kimliği.' };
+    const objectId = new ObjectId(uid);
     const usersCollName = `users_${gid}`;
+    const users = db.collection(usersCollName);
+
+    if (bare) {
+      const existingPhones = await users.find(
+        { _id: { $ne: objectId }, phone: { $exists: true, $nin: [null, ''] } },
+        { projection: { phone: 1, name: 1, username: 1 } }
+      ).toArray();
+      const duplicate = existingPhones.find(user =>
+        String(user.phone || '').split('@')[0].split(':')[0].replace(/\D/g, '') === bare
+      );
+      if (duplicate) {
+        return {
+          success: false,
+          code: 'DUPLICATE_PHONE',
+          message: `Bu telefon numarası zaten ${duplicate.name || duplicate.username || 'başka bir üye'} için kayıtlı.`
+        };
+      }
+    }
+
     const setFields = bare === null ? { phone: '' } : { phone: bare };
-    const result = await db.collection(usersCollName).updateOne(
-      { _id: new ObjectId(uid) },
+    const result = await users.updateOne(
+      { _id: objectId },
       { $set: setFields }
     );
     if (result.matchedCount === 0) {
@@ -1482,7 +1538,6 @@ async function updateReadingGroupUserVoterLid(readingGroupId, userId, voterLid) 
   }
 
   try {
-    const { ObjectId } = require('mongodb');
     if (!ObjectId.isValid(uid)) return { success: false, message: 'Geçersiz kullanıcı kimliği.' };
     const objectId = new ObjectId(uid);
     const users = db.collection(`users_${gid}`);
@@ -1824,8 +1879,6 @@ async function getPendingCongratulations(filterGroupId = null) {
 async function completeCongratulation(docId, userId, groupId, league) {
   if (!dbEnabled || !db) return false;
   try {
-    const { ObjectId } = require('mongodb');
-
     // 1. Kuyruğu'ndan sil
     await db.collection('pending_league_congratulations').deleteOne({
       _id: typeof docId === 'string' ? new ObjectId(docId) : docId
@@ -1871,7 +1924,6 @@ function normalizeLeagueCongratulationDelivery(value) {
 async function getReadingGroupUser(readingGroupId, userId) {
   if (!dbEnabled || !db || !readingGroupId || !userId) return null;
   try {
-    const { ObjectId } = require('mongodb');
     const usersCollName = `users_${String(readingGroupId).trim()}`;
     const doc = await db.collection(usersCollName).findOne(
       { _id: typeof userId === 'string' ? new ObjectId(userId) : userId },
@@ -1947,7 +1999,6 @@ async function updateLeagueCongratulationDelivery(readingGroupId, userId, delive
   }
 
   try {
-    const { ObjectId } = require('mongodb');
     const usersCollName = `users_${gid}`;
     const result = await db.collection(usersCollName).updateOne(
       { _id: new ObjectId(uid) },
@@ -2121,10 +2172,13 @@ module.exports = {
   claimGroupConfigScheduleRun,
   DEFAULT_GROUP_CONFIG_FEATURES,
   DEFAULT_GROUP_CONFIG_SCHEDULES,
+  LOCAL_ID_MAPPINGS_COLLECTION,
+  normalizeLocalIdMappingValues,
   validateGroupConfigSchedules,
+  normalizeGroupConfigFeatures,
   isValidReadingGroupId,
-  saveLidMapping,
-  getAllLidMappings,
+  saveLocalIdMapping,
+  getAllLocalIdMappings,
   findReadingGroupUserByVoterLid,
   saveUnresolvedVoterLid,
   deleteUnresolvedVoterLid,
@@ -2132,8 +2186,8 @@ module.exports = {
   countUnresolvedVoterLids,
   getReadingGroupPhones,
   getReadingGroupVoterLids,
-  getMappedPhonesByConfigKey,
-  deleteLidMappingsByConfigKey,
+  getMappedPhonesByScope,
+  deleteLocalIdMappingsByScope,
   getReadingGroups,
   getRandomSentence,
   calculateReadingStreaks,

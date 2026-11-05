@@ -159,6 +159,7 @@
       position: relative;
       overflow: hidden;
       text-align: center;
+      min-height: 400px;
     }
 
     .auth-card::before {
@@ -588,6 +589,24 @@
       flex-direction: column;
     }
 
+    #unresolvedVoterLidList {
+      min-height: 56px;
+      box-sizing: border-box;
+    }
+
+    .lid-list-state {
+      width: 100%;
+      min-height: 56px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 8px;
+      text-align: center;
+      font-size: 11px;
+    }
+
     .config-card-box {
       background: rgba(0, 0, 0, 0.35);
       border: 1px solid rgba(255, 255, 255, 0.08);
@@ -989,6 +1008,7 @@
       .auth-card {
         padding: 24px 18px;
         border-radius: 18px;
+        min-height: min(400px, calc(100dvh - 20px));
       }
 
       .dashboard-account-actions {
@@ -1409,29 +1429,67 @@
             </div>
 
             <div
-              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Anketlerden Oy Tespiti</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Anketlere gelen oyları veri tabanına
-                  kaydeder</div>
+              style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                <div style="min-width: 0;">
+                  <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">🗳️ Anketlerden Oy Tespiti</div>
+                  <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Anketlere gelen oyları veri tabanına kaydeder</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <button type="button" id="ftVoteTrackingGearBtn" onclick="toggleDetectionSubSettings('poll')"
+                    title="Anket Oy Tespiti Ayarları"
+                    style="background:transparent;border:none;width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;line-height:1;flex-shrink:0;">⚙️</button>
+                  <label class="feature-toggle">
+                    <input type="checkbox" id="ftVoteTrackingEnabled" onchange="onDetectionFeatureEnabledChange('poll')" />
+                    <span class="feature-slider"></span>
+                  </label>
+                </div>
               </div>
-              <label class="feature-toggle">
-                <input type="checkbox" id="ftVoteTrackingEnabled" />
-                <span class="feature-slider"></span>
-              </label>
+              <div id="ftPollDetectionSubSettings"
+                style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.1);">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                  <div>
+                    <div style="font-size:12px;font-weight:600;color:#e2e8f0;">Otomatik Üye Ekle veya Güncelle</div>
+                    <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">Okuma yapan kişi yeni ise gruba ekler, kayıtlı ancak pasif durumdaysa aktifleştirir.</div>
+                  </div>
+                  <label class="feature-toggle">
+                    <input type="checkbox" id="ftPollAutoUserProvisioningEnabled" />
+                    <span class="feature-slider"></span>
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div
-              style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📝 Mesajlardan Okuma Bilgisi Tespiti</div>
-                <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Mesajlardaki okuma bilgilerini veri tabanına
-                  kaydeder</div>
+              style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 14px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                <div style="min-width:0;">
+                  <div style="font-size: 13px; font-weight: 600; color: #e2e8f0;">📝 Mesajlardan Okuma Tespiti</div>
+                  <div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">Mesajlardaki okuma bilgilerini veri tabanına kaydeder</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <button type="button" id="ftMessageReadingGearBtn" onclick="toggleDetectionSubSettings('message')"
+                    title="Mesaj Okuma Tespiti Ayarları"
+                    style="background:transparent;border:none;width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;line-height:1;flex-shrink:0;">⚙️</button>
+                  <label class="feature-toggle">
+                    <input type="checkbox" id="ftMessageReadingEnabled" onchange="onDetectionFeatureEnabledChange('message')" />
+                    <span class="feature-slider"></span>
+                  </label>
+                </div>
               </div>
-              <label class="feature-toggle">
-                <input type="checkbox" id="ftMessageReadingEnabled" />
-                <span class="feature-slider"></span>
-              </label>
+              <div id="ftMessageDetectionSubSettings"
+                style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.1);">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                  <div>
+                    <div style="font-size:12px;font-weight:600;color:#e2e8f0;">Otomatik Üye Ekle veya Güncelle</div>
+                    <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">Okuma yapan kişi yeni ise gruba ekler, kayıtlı ancak pasif durumdaysa aktifleştirir.</div>
+                  </div>
+                  <label class="feature-toggle">
+                    <input type="checkbox" id="ftMessageAutoUserProvisioningEnabled" />
+                    <span class="feature-slider"></span>
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div
@@ -1665,8 +1723,6 @@
           LID Ayarla
           <span id="unresolvedVoterLidPanelCount" title="Eşleştirme bekleyen LID kaydı"
             style="display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:rgba(15,23,42,.8);border:1px solid rgba(255,255,255,.28);color:#fff;font-size:10px;font-weight:800;line-height:1;">—</span>
-          <span id="suggestedVoterLidPanelCount" title="WhatsApp grubundan hızlı LID önerisi"
-            style="display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:rgba(88,28,135,.72);border:1px solid rgba(216,180,254,.42);color:#f3e8ff;font-size:10px;font-weight:800;line-height:1;">—</span>
         </button>
       </div>
       <input type="text" id="readingGroupPhoneSearch" class="phone-input" style="width: 100%; margin-bottom: 10px;"
@@ -1686,15 +1742,8 @@
       </div>
       <div style="background:rgba(14,165,233,.08);border:1px solid rgba(56,189,248,.2);border-radius:10px;padding:10px 12px;margin-bottom:10px;text-align:left;">
         <div style="font-size:13px;font-weight:700;color:#bae6fd;margin-bottom:5px;">Nasıl kullanılır?</div>
-        <div style="font-size:12px;color:#b2c2d2;line-height:1.55;"> Telefon numarasını bilmediğiniz bir üyeyi okuma takip sisteminize ekleyebilmek için üyenin LID bilgisini kullanabilirsiniz. Bu bilgi üye <u>anketlere oy verdiğinde veya bir okuma mesajı yazdığında</u> oluşur. Hızlı önerilerden veya Algılanan LID kayıtlarından LID’yi kopyalayıp ilgili üyeye yapıştırın. </div>
+        <div style="font-size:12px;color:#b2c2d2;line-height:1.55;"> Telefon numarasını bilmediğiniz bir üyeyi okuma takip sisteminize ekleyebilmek için üyenin LID bilgisini kullanabilirsiniz. Bu bilgi üye <u>anketlere oy verdiğinde veya bir okuma mesajı yazdığında</u> oluşur. Algılanan LID kayıtlarından LID’yi kopyalayıp ilgili üyeye yapıştırın. </div>
 
-      </div>
-      <div style="background:rgba(88,28,135,.12);border:1px solid rgba(216,180,254,.18);border-radius:10px;padding:10px;margin-bottom:10px;text-align:left;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
-          <div style="font-size:13px;font-weight:700;color:#e9d5ff;">Hızlı öneriler <span id="suggestedVoterLidCount"></span></div>
-          <button type="button" class="copy-btn" style="font-size:11px;padding:6px 9px;" onclick="loadSuggestedVoterLids()">↻ Yenile</button>
-        </div>
-        <div id="suggestedVoterLidList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
       </div>
       <div style="background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;margin-bottom:10px;text-align:left;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
@@ -1818,7 +1867,7 @@
   <div class="toast" id="toastMsg"></div>
 
   <script>
-    const APP_VERSION = '2.0.4';
+    const APP_VERSION = '2.0.5';
     console.warn(
       `%c🚀 RoTaKip WhatsApp Panel v${APP_VERSION}`,
       'color:#0284c7;font-weight:700;font-size:13px;'
@@ -1842,6 +1891,8 @@
       pollEnabled: false,
       voteTrackingEnabled: false,
       messageReadingEnabled: false,
+      pollAutoUserProvisioningEnabled: false,
+      messageAutoUserProvisioningEnabled: false,
       sentenceEnabled: true,
       esmaulhusnaEnabled: false,
       weeklyReportEnabled: true,
@@ -2357,10 +2408,14 @@
     let groupSettingsRevision = 0;
 
     function readGroupConfigFeaturesFromForm() {
+      const voteTrackingEnabled = document.getElementById('ftVoteTrackingEnabled').checked;
+      const messageReadingEnabled = document.getElementById('ftMessageReadingEnabled').checked;
       return {
         pollEnabled: document.getElementById('ftPollEnabled').checked,
-        voteTrackingEnabled: document.getElementById('ftVoteTrackingEnabled').checked,
-        messageReadingEnabled: document.getElementById('ftMessageReadingEnabled').checked,
+        voteTrackingEnabled,
+        messageReadingEnabled,
+        pollAutoUserProvisioningEnabled: voteTrackingEnabled && document.getElementById('ftPollAutoUserProvisioningEnabled').checked,
+        messageAutoUserProvisioningEnabled: messageReadingEnabled && document.getElementById('ftMessageAutoUserProvisioningEnabled').checked,
         sentenceEnabled: document.getElementById('ftSentenceEnabled').checked,
         esmaulhusnaEnabled: document.getElementById('ftEsmaulhusnaEnabled').checked,
         weeklyReportEnabled: document.getElementById('ftWeeklyReportEnabled').checked,
@@ -2513,6 +2568,8 @@
       document.getElementById('ftPollEnabled').checked = features.pollEnabled;
       document.getElementById('ftVoteTrackingEnabled').checked = features.voteTrackingEnabled;
       document.getElementById('ftMessageReadingEnabled').checked = features.messageReadingEnabled;
+      document.getElementById('ftPollAutoUserProvisioningEnabled').checked = features.pollAutoUserProvisioningEnabled;
+      document.getElementById('ftMessageAutoUserProvisioningEnabled').checked = features.messageAutoUserProvisioningEnabled;
       document.getElementById('ftSentenceEnabled').checked = features.sentenceEnabled;
       document.getElementById('ftEsmaulhusnaEnabled').checked = features.esmaulhusnaEnabled;
       document.getElementById('ftWeeklyReportEnabled').checked = features.weeklyReportEnabled;
@@ -2521,6 +2578,8 @@
       document.getElementById('ftLeagueCongratulationEnabled').checked = features.leagueCongratulationEnabled;
       applyGroupConfigSchedulesToForm(config?.schedules);
       document.getElementById('ftPollScheduleSubSettings').style.display = 'none';
+      document.getElementById('ftPollDetectionSubSettings').style.display = 'none';
+      document.getElementById('ftMessageDetectionSubSettings').style.display = 'none';
       document.getElementById('ftSentenceScheduleSubSettings').style.display = 'none';
       document.getElementById('ftEsmaulhusnaScheduleSubSettings').style.display = 'none';
       document.getElementById('ftWeeklyReportSubSettings').style.display = 'none';
@@ -2574,8 +2633,40 @@
       onScheduledFeatureEnabledChange('poll');
       onScheduledFeatureEnabledChange('sentence');
       onScheduledFeatureEnabledChange('esmaulhusna');
+      onDetectionFeatureEnabledChange('poll');
+      onDetectionFeatureEnabledChange('message');
       onWeeklyReportEnabledChange();
       onLeagueCongratulationEnabledChange();
+    }
+
+    function detectionControlIds(source) {
+      return source === 'poll'
+        ? { enabled: 'ftVoteTrackingEnabled', gear: 'ftVoteTrackingGearBtn', sub: 'ftPollDetectionSubSettings', auto: 'ftPollAutoUserProvisioningEnabled' }
+        : { enabled: 'ftMessageReadingEnabled', gear: 'ftMessageReadingGearBtn', sub: 'ftMessageDetectionSubSettings', auto: 'ftMessageAutoUserProvisioningEnabled' };
+    }
+
+    function toggleDetectionSubSettings(source) {
+      const ids = detectionControlIds(source);
+      const gearBtn = document.getElementById(ids.gear);
+      if (gearBtn.disabled) return;
+      const sub = document.getElementById(ids.sub);
+      sub.style.display = (sub.style.display === 'none' || !sub.style.display) ? 'block' : 'none';
+    }
+
+    function onDetectionFeatureEnabledChange(source) {
+      const ids = detectionControlIds(source);
+      const enabled = document.getElementById(ids.enabled).checked;
+      const gearBtn = document.getElementById(ids.gear);
+      const sub = document.getElementById(ids.sub);
+      const autoToggle = document.getElementById(ids.auto);
+      gearBtn.disabled = !enabled;
+      gearBtn.style.opacity = enabled ? '1' : '0.35';
+      gearBtn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+      autoToggle.disabled = !enabled;
+      if (!enabled) {
+        autoToggle.checked = false;
+        sub.style.display = 'none';
+      }
     }
 
     function toggleScheduleSubSettings(scheduleKey) {
@@ -3057,8 +3148,6 @@
     let readingGroupPhoneLoadVersion = 0;
     let unresolvedVoterLidCache = [];
     let unresolvedVoterLidDocumentCount = 0;
-    let suggestedVoterLidCache = [];
-    let suggestedVoterLidCount = 0;
 
     const readingGroupAdminGrants = new Map();
     // Sunucudaki 24 saatlik yetkiden bir dakika önce yerel kaydı yenilet.
@@ -3329,14 +3418,10 @@
       readingGroupPhoneCacheGroupId = '';
       unresolvedVoterLidCache = [];
       unresolvedVoterLidDocumentCount = 0;
-      suggestedVoterLidCache = [];
-      suggestedVoterLidCount = 0;
       const lidButton = document.getElementById('openReadingGroupLidBtn');
       if (lidButton) lidButton.disabled = true;
       const unresolvedCountEl = document.getElementById('unresolvedVoterLidPanelCount');
       if (unresolvedCountEl) unresolvedCountEl.textContent = '…';
-      const suggestedCountEl = document.getElementById('suggestedVoterLidPanelCount');
-      if (suggestedCountEl) suggestedCountEl.textContent = '…';
       document.getElementById('readingGroupPhoneModalSub').textContent =
         'Okuma tespiti için grup üyelerinin telefon numaralarını veya LID bilgilerini kaydedin.';
       document.getElementById('readingGroupPhoneSearch').value = '';
@@ -3344,7 +3429,6 @@
         '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;min-height:300px;gap:12px;color:var(--text-sub);"><div class="spinner" style="margin:0;"></div><div style="font-size:12px;">Üye telefon listesi yükleniyor...</div></div>';
       document.getElementById('readingGroupPhoneModal').style.display = 'flex';
       void loadUnresolvedVoterLids();
-      void loadSuggestedVoterLids();
 
       try {
         const res = await fetch('/api/reading-group-phones', {
@@ -3482,19 +3566,34 @@
           return;
         }
         const cached = readingGroupPhoneCache.find(u => u.id === userId);
-        if (cached) cached.phone = data.phone || '';
+        if (cached) {
+          cached.phone = data.phone || '';
+          if (data.voterLid) cached.voterLid = data.voterLid;
+        }
+        if (data.unresolvedDeleted && data.voterLid) {
+          unresolvedVoterLidCache = unresolvedVoterLidCache.filter(record => record.voterLid !== data.voterLid);
+          unresolvedVoterLidDocumentCount = Math.max(0, unresolvedVoterLidDocumentCount - 1);
+          renderUnresolvedVoterLids();
+        }
         filterReadingGroupPhones(document.getElementById('readingGroupPhoneSearch')?.value || '');
-        void loadSuggestedVoterLids();
         const mappingStatus = data.lidMapping?.status;
-        showToast(mappingStatus === 'saved'
-          ? '✅ Telefon ve LID eşlemesi kaydedildi'
-          : (data.phone && mappingStatus === 'lid_not_found'
-            ? '✅ Telefon kaydedildi · LID bulunamadı'
-            : (data.phone && mappingStatus === 'whatsapp_not_ready'
-              ? '✅ Telefon kaydedildi · WhatsApp bağlantısı hazır değil'
-              : (data.phone && (mappingStatus === 'lookup_error' || mappingStatus === 'save_failed')
-                ? '✅ Telefon kaydedildi · LID eşlemesi tamamlanamadı'
-                : '✅ Telefon kaydedildi'))));
+        if (data.voterLidUpdate && !data.voterLidUpdate.success) {
+          showToast('⚠️ Telefon kaydedildi · ' + (data.voterLidUpdate.message || 'LID kullanıcıya atanamadı'));
+        } else if (data.voterLid) {
+          showToast(data.unresolvedDeleted
+            ? '✅ Telefon ve LID kullanıcıya kaydedildi · çözülemeyen kayıt temizlendi'
+            : '✅ Telefon ve LID kullanıcıya kaydedildi');
+        } else if (data.phone && mappingStatus === 'ambiguous_lid') {
+          showToast('⚠️ Telefon kaydedildi · birden fazla LID eşleşmesi bulundu');
+        } else if (data.phone && mappingStatus === 'lid_not_found') {
+          showToast('✅ Telefon kaydedildi · LID bulunamadı');
+        } else if (data.phone && mappingStatus === 'whatsapp_not_ready') {
+          showToast('✅ Telefon kaydedildi · WhatsApp bağlantısı hazır değil');
+        } else if (data.phone && (mappingStatus === 'lookup_error' || mappingStatus === 'save_failed')) {
+          showToast('✅ Telefon kaydedildi · LID eşlemesi tamamlanamadı');
+        } else {
+          showToast('✅ Telefon kaydedildi');
+        }
       } catch (e) {
         showToast('❌ Sunucu hatası');
       }
@@ -3514,7 +3613,7 @@
       document.getElementById('readingGroupLidSearch').value = '';
       document.getElementById('readingGroupLidModal').style.display = 'flex';
       renderReadingGroupLidUsers(getReadingGroupUsersWithoutPhone());
-      await Promise.all([loadUnresolvedVoterLids(), loadSuggestedVoterLids()]);
+      await loadUnresolvedVoterLids();
     }
 
     function closeReadingGroupLidModal() {
@@ -3564,7 +3663,7 @@
       const groupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
       if (!groupId || !getReadingGroupAdminAuth(groupId)) return;
       const listEl = document.getElementById('unresolvedVoterLidList');
-      listEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;min-height:56px;color:var(--text-sub);font-size:11px;"><div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;"></div> Yükleniyor...</div>';
+      listEl.innerHTML = '<div class="lid-list-state" style="color:var(--text-sub);"><div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;"></div> Yükleniyor...</div>';
 
       try {
         const res = await fetch('/api/reading-group-unresolved-lids', {
@@ -3583,7 +3682,7 @@
             showToast('⚠️ Yönetici oturumu geçersiz, yeniden giriş yapın.');
             return;
           }
-          listEl.innerHTML = `<div style="text-align:center;color:#f87171;padding:12px;font-size:11px;">${escapeHtml(data.message || 'LID kayıtları alınamadı')}</div>`;
+          listEl.innerHTML = `<div class="lid-list-state" style="color:#f87171;">${escapeHtml(data.message || 'LID kayıtları alınamadı')}</div>`;
           const panelCountEl = document.getElementById('unresolvedVoterLidPanelCount');
           if (panelCountEl) panelCountEl.textContent = '?';
           return;
@@ -3594,7 +3693,7 @@
           : unresolvedVoterLidCache.length;
         renderUnresolvedVoterLids();
       } catch (e) {
-        listEl.innerHTML = '<div style="text-align:center;color:#f87171;padding:12px;font-size:11px;">Sunucu hatası</div>';
+        listEl.innerHTML = '<div class="lid-list-state" style="color:#f87171;">Sunucu hatası</div>';
         const panelCountEl = document.getElementById('unresolvedVoterLidPanelCount');
         if (panelCountEl) panelCountEl.textContent = '?';
       }
@@ -3609,7 +3708,7 @@
         panelCountEl.textContent = String(unresolvedVoterLidDocumentCount);
       }
       if (unresolvedVoterLidCache.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:12px;font-size:11px;">Çözülemeyen LID kaydı yok.</div>';
+        listEl.innerHTML = '<div class="lid-list-state" style="color:var(--text-muted);">Çözülemeyen LID kaydı yok.</div>';
         return;
       }
 
@@ -3640,91 +3739,6 @@
               </div>
             </div>
             <code style="display:block;font-size:12px;color:#7dd3fc;word-break:break-all;">${escapeHtml(record.voterLid)}</code>
-          </div>
-        `;
-      }).join('');
-    }
-
-    async function loadSuggestedVoterLids() {
-      const groupId = selectedReadingGroupId || document.getElementById('gsReadingGroupId')?.value?.trim();
-      if (!groupId || !getReadingGroupAdminAuth(groupId)) return;
-      const listEl = document.getElementById('suggestedVoterLidList');
-      if (listEl) {
-        listEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;min-height:56px;color:var(--text-sub);font-size:11px;"><div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0;"></div> WhatsApp grubu taranıyor...</div>';
-      }
-
-      try {
-        const res = await fetch('/api/reading-group-lid-suggestions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            readingGroupId: groupId,
-            groupConfigId: getMatchingEditorGroupConfigId(groupId) || undefined
-          })
-        });
-        const data = await res.json();
-        if (!data.success) {
-          if (res.status === 401) {
-            clearReadingGroupAdminAuth(groupId);
-            closeReadingGroupPhoneModal();
-            showToast('⚠️ Yönetici oturumu geçersiz, yeniden giriş yapın.');
-            return;
-          }
-          throw new Error(data.message || 'LID önerileri alınamadı');
-        }
-
-        suggestedVoterLidCache = data.suggestions || [];
-        suggestedVoterLidCount = Number.isFinite(Number(data.count))
-          ? Number(data.count)
-          : suggestedVoterLidCache.length;
-        renderSuggestedVoterLids(data.available !== false, data.message || '');
-      } catch (error) {
-        suggestedVoterLidCache = [];
-        suggestedVoterLidCount = 0;
-        const badge = document.getElementById('suggestedVoterLidPanelCount');
-        if (badge) badge.textContent = '?';
-        if (listEl) {
-          listEl.innerHTML = `<div style="text-align:center;color:#f87171;padding:12px;font-size:11px;">${escapeHtml(error.message || 'Sunucu hatası')}</div>`;
-        }
-      }
-    }
-
-    function renderSuggestedVoterLids(available = true, unavailableMessage = '') {
-      const listEl = document.getElementById('suggestedVoterLidList');
-      const countEl = document.getElementById('suggestedVoterLidCount');
-      const panelCountEl = document.getElementById('suggestedVoterLidPanelCount');
-      if (countEl) countEl.textContent = suggestedVoterLidCount ? `(${suggestedVoterLidCount})` : '';
-      if (panelCountEl) panelCountEl.textContent = String(suggestedVoterLidCount);
-      if (!listEl) return;
-
-      if (!available) {
-        listEl.innerHTML = `<div style="text-align:center;color:#c4b5fd;padding:12px;font-size:11px;">${escapeHtml(unavailableMessage || 'WhatsApp bağlantısı hazır değil.')}</div>`;
-        return;
-      }
-      if (suggestedVoterLidCache.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:12px;font-size:11px;">Hızlı LID önerisi bulunamadı.</div>';
-        return;
-      }
-
-      listEl.innerHTML = suggestedVoterLidCache.map(record => {
-        const identityLines = [
-          record.name
-            ? `<div style="font-size:12px;font-weight:700;color:#f3e8ff;">İsim: ${escapeHtml(record.name)}</div>`
-            : '',
-          record.phone
-            ? `<div style="font-size:12px;font-weight:700;color:#f3e8ff;">Telefon: ${escapeHtml(record.phone)}</div>`
-            : ''
-        ].filter(Boolean).join('');
-        return `
-          <div style="background:rgba(46,16,101,.34);border:1px solid rgba(216,180,254,.18);border-radius:8px;padding:8px 9px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
-              <div style="min-width:0;">
-                ${identityLines}
-              </div>
-              <button type="button" class="copy-btn" style="font-size:11px;padding:5px 9px;flex-shrink:0;"
-                onclick="copyVoterLid('${record.voterLid}')">Kopyala</button>
-            </div>
-            <div style="font-size:11px;color:#c4b5fd;">LID: <code style="font-size:12px;color:#d8b4fe;word-break:break-all;">${escapeHtml(record.voterLid)}</code></div>
           </div>
         `;
       }).join('');
@@ -3827,7 +3841,6 @@
           }
           renderUnresolvedVoterLids();
         }
-        void loadSuggestedVoterLids();
         filterReadingGroupPhones(document.getElementById('readingGroupPhoneSearch')?.value || '');
         showToast(data.voterLid ? '✅ voterLid kaydedildi' : '✅ voterLid temizlendi');
       } catch (e) {

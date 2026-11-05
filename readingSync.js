@@ -1,4 +1,6 @@
 // WhatsApp oylarından okuma durumuna dönüşüm; RoTaKip sunucusundan bağımsızdır.
+const bcrypt = require('bcryptjs');
+const { ObjectId, Int32 } = require('mongodb');
 const {
   validateTextVoteSelectedOptions,
   isValidIsoDate
@@ -9,7 +11,13 @@ function trDate(value = new Date()) {
   return new Date(new Date(value).getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-function createReadingSync({ db, onPromotion = () => {}, getScope = async () => ({}) }) {
+function createReadingSync({
+  db,
+  onPromotion = () => {},
+  getScope = async () => ({}),
+  getGroupConfig = async () => null,
+  clearUnresolvedVoterLid = async () => {}
+}) {
   const MAX_SYNC_ATTEMPTS = 6;
   function getGroupCollections(groupId) {
     return {
@@ -216,18 +224,169 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
     return amount;
   }
 
+  function escapeRegex(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  async function findLimited(usersCollection, filter, limit = 2) {
+    return usersCollection.find(filter).limit(limit).toArray();
+  }
+
+  async function findUserByPhoneOrVoterLid(usersCollection, phone, voterLid) {
+    const phoneMatches = phone
+      ? await findLimited(usersCollection, { phone }, 2)
+      : [];
+    if (phoneMatches.length > 1) return { user: null, reason: 'ambiguous_phone' };
+
+    const lidVariants = voterLidVariants(voterLid);
+    const lidMatches = lidVariants.length > 0
+      ? await findLimited(usersCollection, { voterLid: { $in: lidVariants } }, 2)
+      : [];
+    if (lidMatches.length > 1) return { user: null, reason: 'ambiguous_voter_lid' };
+
+    if (phoneMatches.length === 1 && lidMatches.length === 1 &&
+        String(phoneMatches[0]._id) !== String(lidMatches[0]._id)) {
+      return { user: null, reason: 'ambiguous_identity' };
+    }
+    if (phoneMatches.length === 1) return { user: phoneMatches[0], matchedBy: 'phone' };
+    if (lidMatches.length === 1) return { user: lidMatches[0], matchedBy: 'voterLid' };
+    return { user: null, reason: 'user_not_found' };
+  }
+
+  async function findUniqueUserByPushName(usersCollection, pushName) {
+    const nameHint = pushName != null ? String(pushName).trim() : '';
+    if (!nameHint) return { user: null, reason: 'user_not_found' };
+    const byName = await findLimited(usersCollection, {
+      name: { $regex: `^${escapeRegex(nameHint)}$`, $options: 'i' }
+    }, 2);
+    if (byName.length === 1) return { user: byName[0], matchedBy: 'unique_push_name' };
+    if (byName.length > 1) return { user: null, reason: 'ambiguous_push_name' };
+    return { user: null, reason: 'user_not_found' };
+  }
+
+  async function isAutoUserProvisioningEnabled(voteDoc, source) {
+    if (!voteDoc?.groupId || !voteDoc?.readingGroupId || !voteDoc?.configKey) return false;
+    const config = await getGroupConfig({
+      groupId: voteDoc.groupId,
+      readingGroupId: voteDoc.readingGroupId,
+      configKey: voteDoc.configKey
+    });
+    const featureKey = source === 'poll'
+      ? 'pollAutoUserProvisioningEnabled'
+      : 'messageAutoUserProvisioningEnabled';
+    const detectorKey = source === 'poll'
+      ? 'voteTrackingEnabled'
+      : 'messageReadingEnabled';
+    return config?.features?.[detectorKey] === true && config.features[featureKey] === true;
+  }
+
+  async function usernameExists(usersCollection, username) {
+    const matches = await findLimited(usersCollection, {
+      username: { $regex: `^${escapeRegex(username)}$`, $options: 'i' }
+    }, 1);
+    return matches.length > 0;
+  }
+
+  async function nextAvailableUsername(usersCollection, baseUsername) {
+    const base = String(baseUsername || '').trim();
+    for (let suffix = 1; suffix <= 10000; suffix += 1) {
+      const candidate = suffix === 1 ? base : `${base}-${suffix}`;
+      if (!(await usernameExists(usersCollection, candidate))) return candidate;
+    }
+    throw new Error('Benzersiz otomatik kullanıcı adı üretilemedi.');
+  }
+
+  async function createAutomaticUser(usersCollection, { phone, voterLid, pushName }) {
+    const identity = phone || voterLid;
+    if (!identity) return { user: null, reason: 'missing_identity' };
+
+    const displayName = String(pushName || identity).trim() || identity;
+    const passwordHash = await bcrypt.hash(identity, 12);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const identityMatch = await findUserByPhoneOrVoterLid(usersCollection, phone, voterLid);
+      if (identityMatch.user || identityMatch.reason !== 'user_not_found') return identityMatch;
+
+      const username = await nextAvailableUsername(usersCollection, displayName);
+      const user = {
+        _id: new ObjectId(),
+        name: displayName,
+        profileImage: '/images/default.png',
+        username,
+        userpassword: passwordHash,
+        authority: 'member',
+        visibility: 'aktif',
+        loginStreak: new Int32(0),
+        lastLoginDate: null,
+        lastCongratulatedLeague: 'Bronz',
+        phone: phone || null
+      };
+      if (voterLid) user.voterLid = voterLid;
+
+      try {
+        await usersCollection.insertOne(user);
+        return { user, matchedBy: 'auto_created', created: true };
+      } catch (error) {
+        if (error?.code !== 11000 || attempt === 4) throw error;
+      }
+    }
+    return { user: null, reason: 'user_create_failed' };
+  }
+
+  async function resolveReadingUser(usersCollection, {
+    phone,
+    voterLid,
+    pushName,
+    positiveReading,
+    autoProvisioning,
+    allowLegacyPushName
+  }) {
+    let match = await findUserByPhoneOrVoterLid(usersCollection, phone, voterLid);
+    if (!match.user && match.reason !== 'user_not_found') return match;
+
+    // Otomasyon kapalıyken metin mesajlarının mevcut tekil pushName davranışını koru.
+    if (!match.user && !autoProvisioning && allowLegacyPushName) {
+      match = await findUniqueUserByPushName(usersCollection, pushName);
+    }
+
+    if (!match.user && autoProvisioning && positiveReading) {
+      match = await createAutomaticUser(usersCollection, { phone, voterLid, pushName });
+    }
+
+    if (match.user && autoProvisioning && positiveReading && match.user.visibility !== 'aktif') {
+      await usersCollection.updateOne(
+        { _id: match.user._id },
+        { $set: { visibility: 'aktif' } }
+      );
+      match.user.visibility = 'aktif';
+      match.activated = true;
+    }
+
+    return match;
+  }
+
+  async function clearResolvedVoterLid(voteDoc, voterLid) {
+    if (!voterLid) return;
+    await clearUnresolvedVoterLid({
+      configKey: voteDoc.configKey,
+      readingGroupId: voteDoc.readingGroupId,
+      groupId: voteDoc.groupId,
+      voterLid
+    });
+  }
+
   // Oy değişikliğini okuma durumuna (readingstatuses_<groupId>) senkronize eden fonksiyon
   // selectedOptions dizisine bakarak karar verir:
   //   - selectedOptions.length > 0  → "okudum" ekle
   //   - selectedOptions.length === 0 → "okudum" sil (oy geri çekilmiş)
   async function syncPollVoteToReadingStatus(voteDoc) {
-    if (!voteDoc || !voteDoc.pollId) return false;
+    if (!voteDoc || !voteDoc.pollId) return { success: false, reason: 'invalid_vote' };
 
     // Telefon varsa önce onu, yoksa WhatsApp LID kimliğini kullan.
     const rawPhone = voteDoc.voterPhone || '';
     const phone = formatPhoneNumber(rawPhone);
     const voterLid = normalizeVoterLid(voteDoc.voterLid);
-    if (!phone && !voterLid) return false;
+    if (!phone && !voterLid) return { success: false, reason: 'missing_identity' };
 
     // İlgili anketi aynı bot, okuma grubu ve WhatsApp grubu kapsamında bul.
     const pollFilter = { pollId: voteDoc.pollId };
@@ -271,11 +430,25 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
     // Hedef okuma grubu tespiti. poll.groupId WhatsApp grup JID'sidir;
     // readingstatuses koleksiyonu için yalnızca readingGroupId kullanılabilir.
     const targetGroupId = voteDoc.readingGroupId || poll?.readingGroupId;
+    const scopedVote = {
+      ...voteDoc,
+      readingGroupId: targetGroupId,
+      groupId: voteDoc.groupId || poll?.groupId,
+      configKey: voteDoc.configKey || poll?.configKey
+    };
+    const autoProvisioning = await isAutoUserProvisioningEnabled(scopedVote, 'poll');
 
     if (targetGroupId) {
       // Doğrudan ilgili gruptan işlem yap
       const { users, readingStatuses } = getGroupCollections(targetGroupId);
-      const userMatch = await findUserByPhoneOrVoterLid(users, phone, voterLid);
+      const userMatch = await resolveReadingUser(users, {
+        phone,
+        voterLid,
+        pushName: voteDoc.pushName,
+        positiveReading: hasVoted,
+        autoProvisioning,
+        allowLegacyPushName: false
+      });
       const user = userMatch.user;
 
       if (user) {
@@ -294,6 +467,7 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
           // Lig atlama kontrolü: okuma kaydı eklendikten sonra yeni ligi kontrol et
           const group = await db.collection("usergroups").findOne({ groupId: targetGroupId });
           await checkAndQueueLeaguePromotion(user, targetGroupId, group?.groupName || targetGroupId, dateStr);
+          await clearResolvedVoterLid(scopedVote, voterLid);
         } else {
           // Kullanıcı oyunu geri çekmiş (selectedOptions boş) -> okuma bilgisini sil
           await readingStatuses.findOneAndDelete({ userId, date: dateStr });
@@ -301,9 +475,9 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
         }
       } else {
         console.warn(`⚠️ WA anket: ${userMatch.reason} ${phone || voterLid} ${targetGroupId}`);
-        return false;
+        return { success: false, reason: userMatch.reason };
       }
-      return true;
+      return { success: true, matchedBy: userMatch.matchedBy };
     } else {
       // Fallback: readingGroupId bilgisi yoksa veritabanındaki tüm grupları tara
       const groups = await db.collection("usergroups").find({}).toArray();
@@ -311,7 +485,14 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
       let matched = false;
       for (const group of groups) {
         const { users, readingStatuses } = getGroupCollections(group.groupId);
-        const userMatch = await findUserByPhoneOrVoterLid(users, phone, voterLid);
+        const userMatch = await resolveReadingUser(users, {
+          phone,
+          voterLid,
+          pushName: voteDoc.pushName,
+          positiveReading: hasVoted,
+          autoProvisioning: false,
+          allowLegacyPushName: false
+        });
         const user = userMatch.user;
 
         if (user) {
@@ -335,39 +516,10 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
           }
         }
       }
-      return matched;
+      return matched
+        ? { success: true }
+        : { success: false, reason: 'user_not_found' };
     }
-  }
-
-  async function findUserByPhoneOrVoterLid(usersCollection, phone, voterLid) {
-    if (phone) {
-      const byPhone = await usersCollection.findOne({ phone });
-      if (byPhone) return { user: byPhone, matchedBy: 'phone' };
-    }
-
-    const lidVariants = voterLidVariants(voterLid);
-    if (lidVariants.length > 0) {
-      const byLid = await usersCollection.find({ voterLid: { $in: lidVariants } }).limit(2).toArray();
-      if (byLid.length === 1) return { user: byLid[0], matchedBy: 'voterLid' };
-      if (byLid.length > 1) return { user: null, reason: 'ambiguous_voter_lid' };
-    }
-
-    return { user: null, reason: 'user_not_found' };
-  }
-
-  /** text_votes: telefon/LID ile kullanıcı bul; yoksa yalnızca benzersiz pushName ↔ name eşleşmesini kabul et */
-  async function findUserForWhatsAppVote(usersCollection, phone, voterLid, pushName) {
-    const identityMatch = await findUserByPhoneOrVoterLid(usersCollection, phone, voterLid);
-    if (identityMatch.user || identityMatch.reason === 'ambiguous_voter_lid') return identityMatch;
-
-    const nameHint = pushName != null ? String(pushName).trim() : '';
-    if (!nameHint) return { user: null, reason: 'user_not_found' };
-    const byName = await usersCollection.find({
-      name: { $regex: `^${nameHint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' }
-    }).limit(2).toArray();
-    if (byName.length === 1) return { user: byName[0], matchedBy: 'unique_push_name' };
-    if (byName.length > 1) return { user: null, reason: 'ambiguous_push_name' };
-    return { user: null, reason: 'user_not_found' };
   }
 
   function resolveTextVoteDate(voteDoc) {
@@ -401,10 +553,18 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
     const targetGroupId = voteDoc.readingGroupId != null
       ? String(voteDoc.readingGroupId).trim()
       : '';
+    const autoProvisioning = await isAutoUserProvisioningEnabled(voteDoc, 'message');
 
     async function applyToGroup(groupId, groupName) {
       const { users, readingStatuses } = getGroupCollections(groupId);
-      const userMatch = await findUserForWhatsAppVote(users, phone, voterLid, pushName);
+      const userMatch = await resolveReadingUser(users, {
+        phone,
+        voterLid,
+        pushName,
+        positiveReading: hasVoted,
+        autoProvisioning,
+        allowLegacyPushName: true
+      });
       const user = userMatch.user;
 
       if (!user) {
@@ -427,6 +587,7 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
           groupName || groupId,
           dateStr
         );
+        await clearResolvedVoterLid(voteDoc, voterLid);
       } else {
         const today = trDate();
         // selectedOptions [] : bugün → kaydı sil (➖); geçmiş gün → okumadım (✖)
@@ -484,11 +645,7 @@ function createReadingSync({ db, onPromotion = () => {}, getScope = async () => 
     if (!vote) return { status: 'not_found' };
     let outcome;
     if (collectionName === 'poll_votes') {
-      const processed = await syncPollVoteToReadingStatus(vote);
-      outcome = {
-        success: processed,
-        reason: 'user_not_found_or_invalid_vote'
-      };
+      outcome = await syncPollVoteToReadingStatus(vote);
     } else {
       outcome = await syncTextVoteToReadingStatus(vote);
     }
