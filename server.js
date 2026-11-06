@@ -15,6 +15,7 @@ const {
   findGroupConfigByWhatsAppGroup, findGroupConfigByPair, createGroupConfig,
   updateGroupConfig, deleteGroupConfig, updateGroupConfigRuntimeState,
   claimGroupConfigScheduleRun, DEFAULT_GROUP_CONFIG_FEATURES,
+  AUTO_PROVISIONED_LID_ONLY_REASON,
   saveLocalIdMapping, getAllLocalIdMappings,
   findReadingGroupUserByVoterLid, saveUnresolvedVoterLid, deleteUnresolvedVoterLid,
   listUnresolvedVoterLids, countUnresolvedVoterLids,
@@ -997,11 +998,13 @@ async function processPollVoteUpdate(pollUpdateMsg) {
 
   console.log(`✅ [Deşifre Başarılı] Telefon: ${voterPhone || 'ÇÖZÜLEMEDİ'} (JID: ${activeVoterJid}, LID: ${voterLid || 'YOK'}) → Seçimler:`, selectedOptionNames);
 
+  let shouldSaveLidOnlyProvisionReview = false;
   if (!voterPhone) {
     const lidMatch = await resolveUserByVoterLid(currentReadingGroupId, voterLid);
     if (!lidMatch.user) {
       const mayAutoProvision = activeConfig.features?.pollAutoUserProvisioningEnabled === true &&
         selectedOptionNames.length > 0 && voterLid && lidMatch.reason === 'user_not_found';
+      shouldSaveLidOnlyProvisionReview = Boolean(mayAutoProvision);
       if (!mayAutoProvision) {
         if (voterLid) {
           await saveUnresolvedVoterLid({
@@ -1027,7 +1030,7 @@ async function processPollVoteUpdate(pollUpdateMsg) {
 
   // Oy, ayarlar sonradan değişmiş olsa bile anket oluşturulurken seçili olan
   // okuma grubuna yazılmalı.
-  await saveVote({
+  const voteResult = await saveVote({
     pollId: pollMsgId,
     voterJid: voterPhone || voterLid,
     voterPhone: voterPhone || undefined,
@@ -1040,6 +1043,20 @@ async function processPollVoteUpdate(pollUpdateMsg) {
     configKey: configKey,
     updatedAt: getTRDateString()
   });
+
+  if (voteResult && shouldSaveLidOnlyProvisionReview) {
+    await saveUnresolvedVoterLid({
+      configKey,
+      readingGroupId: currentReadingGroupId,
+      groupId: currentGroupId,
+      voterLid,
+      voterUsername,
+      pushName,
+      source: 'poll',
+      reason: AUTO_PROVISIONED_LID_ONLY_REASON,
+      date: getTRDateString().slice(0, 10)
+    });
+  }
 
   if (selectedOptionNames.length > 0) {
     console.log(`💾 Oy DB'ye kaydedildi! (${voterPhone || voterLid} -> ${selectedOptionNames.join(', ')})`);
@@ -1158,11 +1175,13 @@ async function processReadingMessage(msg) {
   ], incomingGroupId);
   const configKey = process.env.CONFIG_KEY ? process.env.CONFIG_KEY.trim() : null;
   const readingGroupId = groupConfig.readingGroupId;
+  let shouldSaveLidOnlyProvisionReview = false;
   if (!voterPhone) {
     const lidMatch = await resolveUserByVoterLid(readingGroupId, voterLid);
     if (!lidMatch.user) {
       const mayAutoProvision = groupConfig.features?.messageAutoUserProvisioningEnabled === true &&
         !parsed.invalidReason && !parsed.clear && voterLid && lidMatch.reason === 'user_not_found';
+      shouldSaveLidOnlyProvisionReview = Boolean(mayAutoProvision);
       if (!mayAutoProvision) {
         if (voterLid) {
           await saveUnresolvedVoterLid({
@@ -1204,6 +1223,19 @@ async function processReadingMessage(msg) {
   });
 
   if (!result?.saved) return;
+  if (shouldSaveLidOnlyProvisionReview) {
+    await saveUnresolvedVoterLid({
+      configKey,
+      readingGroupId,
+      groupId: incomingGroupId,
+      voterLid,
+      voterUsername: msg.key?.participantUsername || msg.key?.remoteJidUsername,
+      pushName: msg.pushName,
+      source: 'message',
+      reason: AUTO_PROVISIONED_LID_ONLY_REASON,
+      date
+    });
+  }
   if (parsed.invalidReason) return;
   if (result.syncResult?.status !== 'synced') {
     console.warn(
@@ -1759,11 +1791,13 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
             // Seçili hash varsa fakat çözülemiyorsa bunu oy geri çekme sayma.
             if (pollUpdate.vote.selectedOptions?.length > 0 && selectedOptions.length === 0) continue;
 
+            let shouldSaveLidOnlyProvisionReview = false;
             if (!voterPhone) {
               const lidMatch = await resolveUserByVoterLid(currentReadingGroupId, voterLid);
               if (!lidMatch.user) {
                 const mayAutoProvision = activeConfig.features?.pollAutoUserProvisioningEnabled === true &&
                   selectedOptions.length > 0 && voterLid && lidMatch.reason === 'user_not_found';
+                shouldSaveLidOnlyProvisionReview = Boolean(mayAutoProvision);
                 if (!mayAutoProvision) {
                   if (voterLid) {
                     await saveUnresolvedVoterLid({
@@ -1787,7 +1821,7 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
               }
             }
 
-            await saveVote({
+            const voteResult = await saveVote({
               pollId: key.id,
               voterJid: voterPhone || voterLid,
               voterPhone: voterPhone || undefined,
@@ -1800,6 +1834,19 @@ async function initWhatsAppClient(onlyIfSessionExists = false) {
               configKey,
               updatedAt: getTRDateString()
             });
+            if (voteResult && shouldSaveLidOnlyProvisionReview) {
+              await saveUnresolvedVoterLid({
+                configKey,
+                readingGroupId: currentReadingGroupId,
+                groupId: currentGroupId,
+                voterLid,
+                voterUsername: voteKey.participantUsername || voteKey.remoteJidUsername,
+                pushName: pollUpdate.pushName || voteKey.pushName,
+                source: 'poll-update',
+                reason: AUTO_PROVISIONED_LID_ONLY_REASON,
+                date: getTRDateString().slice(0, 10)
+              });
+            }
           }
         } catch (err) {
           console.error('❌ [update] Anket oy işleme hatası:', err.message);

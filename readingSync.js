@@ -365,13 +365,16 @@ function createReadingSync({
     return match;
   }
 
-  async function clearResolvedVoterLid(voteDoc, voterLid) {
+  async function clearResolvedVoterLid(voteDoc, voterLid, phone) {
     if (!voterLid) return;
     await clearUnresolvedVoterLid({
       configKey: voteDoc.configKey,
       readingGroupId: voteDoc.readingGroupId,
       groupId: voteDoc.groupId,
-      voterLid
+      voterLid,
+      // Yalnızca LID ile otomatik oluşturulan üye, gerçek kişi doğrulanana
+      // kadar yönetici inceleme listesinde kalmalıdır.
+      preserveAutoProvisionedLidOnly: !phone
     });
   }
 
@@ -467,7 +470,7 @@ function createReadingSync({
           // Lig atlama kontrolü: okuma kaydı eklendikten sonra yeni ligi kontrol et
           const group = await db.collection("usergroups").findOne({ groupId: targetGroupId });
           await checkAndQueueLeaguePromotion(user, targetGroupId, group?.groupName || targetGroupId, dateStr);
-          await clearResolvedVoterLid(scopedVote, voterLid);
+          await clearResolvedVoterLid(scopedVote, voterLid, phone);
         } else {
           // Kullanıcı oyunu geri çekmiş (selectedOptions boş) -> okuma bilgisini sil
           await readingStatuses.findOneAndDelete({ userId, date: dateStr });
@@ -587,7 +590,7 @@ function createReadingSync({
           groupName || groupId,
           dateStr
         );
-        await clearResolvedVoterLid(voteDoc, voterLid);
+        await clearResolvedVoterLid(voteDoc, voterLid, phone);
       } else {
         const today = trDate();
         // selectedOptions [] : bugün → kaydı sil (➖); geçmiş gün → okumadım (✖)

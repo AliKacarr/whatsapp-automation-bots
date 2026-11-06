@@ -36,6 +36,7 @@ const REMINDER_STATE_COLLECTION = 'reminder_delivery_state';
 const GROUP_CONFIG_COLLECTION = 'group_configs';
 const UNRESOLVED_VOTER_LIDS_COLLECTION = 'unresolved_voter_lids';
 const LOCAL_ID_MAPPINGS_COLLECTION = 'local_id_mappings';
+const AUTO_PROVISIONED_LID_ONLY_REASON = 'auto_provisioned_lid_only';
 
 /**
  * MONGO_URI ve DB_NAME tanımlı mı kontrol eder.
@@ -1150,7 +1151,13 @@ async function saveUnresolvedVoterLid(data) {
   }
 }
 
-async function deleteUnresolvedVoterLid({ configKey, readingGroupId, groupId, voterLid }) {
+async function deleteUnresolvedVoterLid({
+  configKey,
+  readingGroupId,
+  groupId,
+  voterLid,
+  preserveAutoProvisionedLidOnly = false
+}) {
   if (!dbEnabled || !db) return null;
   const bareLid = normalizeVoterLid(voterLid);
   const filter = {
@@ -1160,6 +1167,9 @@ async function deleteUnresolvedVoterLid({ configKey, readingGroupId, groupId, vo
     voterLid: bareLid
   };
   if (Object.values(filter).some(value => !value)) return null;
+  if (preserveAutoProvisionedLidOnly) {
+    filter.reason = { $ne: AUTO_PROVISIONED_LID_ONLY_REASON };
+  }
   try {
     return await db.collection(UNRESOLVED_VOTER_LIDS_COLLECTION).deleteOne(filter);
   } catch (error) {
@@ -2171,6 +2181,7 @@ module.exports = {
   updateGroupConfigRuntimeState,
   claimGroupConfigScheduleRun,
   DEFAULT_GROUP_CONFIG_FEATURES,
+  AUTO_PROVISIONED_LID_ONLY_REASON,
   DEFAULT_GROUP_CONFIG_SCHEDULES,
   LOCAL_ID_MAPPINGS_COLLECTION,
   normalizeLocalIdMappingValues,
