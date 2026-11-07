@@ -1733,8 +1733,8 @@ async function calculateReadingStreaks(passedReadingGroupId = null) {
     const usersCollName = `users_${readingGroupId}`;
     const statusesCollName = `readingstatuses_${readingGroupId}`;
 
-    // 1) Tüm kullanıcıları çek
-    const users = await db.collection(usersCollName).find({}).toArray();
+    // 1) Yalnızca aktif kullanıcıları çek; pasif üyeler haftalık rapora katılmaz.
+    const users = await db.collection(usersCollName).find({ visibility: 'aktif' }).toArray();
     if (!users || users.length === 0) return { readers: [], nonReaders: [] };
 
     const today = getTRTodayDate();

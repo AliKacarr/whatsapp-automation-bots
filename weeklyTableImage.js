@@ -391,7 +391,8 @@ async function generateWeeklyTableCanvas(db, passedReadingGroupId, options = {})
   const usersColl = db.collection(`users_${readingGroupId}`);
   const statusesColl = db.collection(`readingstatuses_${readingGroupId}`);
 
-  const users = await usersColl.find({}).sort({ name: 1 }).toArray();
+  // Pasif üyeler tablo satırlarına ve özet hesaplarına dahil edilmez.
+  const users = await usersColl.find({ visibility: 'aktif' }).sort({ name: 1 }).toArray();
   const allStatuses = await statusesColl.find({}).toArray();
 
   console.log(`📊 Tablo görseli oluşturuluyor [Koleksiyon: users_${readingGroupId}] → Kullanıcı sayısı: ${users.length}`);
